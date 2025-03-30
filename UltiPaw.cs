@@ -16,17 +16,43 @@ public class UltiPaw : MonoBehaviour
     public List<DefaultAsset> filesC = new List<DefaultAsset>();
 
     private string defaultWinterpawLocation = "Assets/MasculineCanine/FX/MasculineCanine.v1.5.fbx";
-    private string defaultUltiPawLocation = "Assets/UltiPaw/ultipaw.bin";
+    private string defaultUltiPawLocation   = "Assets/UltiPaw/ultipaw.bin";
+
+    // -------------------------------------------
+    // 1) Track whether we’re in "UltiPaw" state
+    // -------------------------------------------
+    [HideInInspector] public bool isUltiPaw = false;
+
+    // -------------------------------------------
+    // 2) Blendshape Toggling Support
+    //    - Put your blendshape names here
+    // -------------------------------------------
+    [HideInInspector] public List<string> blendShapeNames = new List<string>
+    {
+        "orbit muscles",
+        "orbit face",
+        "jawline",
+        "goatee",
+        "heavy cheek fluff"
+    };
+
+    // Keep track of which blendshapes are toggled on (100%) or off (0%)
+    [HideInInspector] public List<bool> blendShapeStates = new List<bool>();
 
 #if UNITY_EDITOR
     private void OnValidate()
     {
-        // Auto-assign defaults only if lists are empty
+        // Ensure blendShapeStates matches the count of blendShapeNames
+        while (blendShapeStates.Count < blendShapeNames.Count)
+            blendShapeStates.Add(false);
+        while (blendShapeStates.Count > blendShapeNames.Count)
+            blendShapeStates.RemoveAt(blendShapeStates.Count - 1);
+
+        // Auto-assign defaults only if lists are empty and user hasn’t toggled custom files
         if (!specifyCustomFiles)
         {
             AssignDefaultFiles();
         }
-
         ValidateFiles();
     }
 
@@ -53,6 +79,9 @@ public class UltiPaw : MonoBehaviour
     }
 #endif
 
+    // -----------------------------------------------------------
+    // 3) Called by the big green button in the editor script
+    // -----------------------------------------------------------
     public void TurnItIntoUltiPaw()
     {
 #if UNITY_EDITOR
@@ -60,51 +89,37 @@ public class UltiPaw : MonoBehaviour
         {
             if (i >= filesC.Count || filesA[i] == null || filesC[i] == null) continue;
 
-            // Get the original file path (should be .fbx for models)
-            string originalPath = UnityEditor.AssetDatabase.GetAssetPath(filesA[i]);
-            bool isFBX = originalPath.EndsWith(".fbx", System.StringComparison.OrdinalIgnoreCase);
-            string keyPath = originalPath;
-            string tempPath = originalPath;
+            string pathA = AssetDatabase.GetAssetPath(filesA[i]);
+            string pathC = AssetDatabase.GetAssetPath(filesC[i]);
 
-            // If it's an FBX, change the extension to .bin to prevent auto-import issues.
-            if (isFBX)
-            {
-                tempPath = Path.ChangeExtension(originalPath, ".bin");
-                if (File.Exists(tempPath)) File.Delete(tempPath);
-                File.Move(originalPath, tempPath);
-                keyPath = tempPath;
-            }
-
-            string pathC = UnityEditor.AssetDatabase.GetAssetPath(filesC[i]);
-
-            byte[] dataA = File.ReadAllBytes(keyPath);
+            byte[] dataA = File.ReadAllBytes(pathA);
             byte[] dataC = File.ReadAllBytes(pathC);
+
             byte[] dataB = new byte[dataC.Length];
             for (int j = 0; j < dataC.Length; j++)
                 dataB[j] = (byte)(dataC[j] ^ dataA[j % dataA.Length]);
 
-            // Backup the key file
-            string backupPath = keyPath + ".old";
+            // Backup original
+            string backupPath = pathA + ".old";
             if (File.Exists(backupPath)) File.Delete(backupPath);
-            File.Move(keyPath, backupPath);
+            File.Move(pathA, backupPath);
 
-            // Write the XOR result to keyPath
-            File.WriteAllBytes(keyPath, dataB);
+            // Write new file
+            File.WriteAllBytes(pathA, dataB);
 
-            // If it was an FBX, rename it back to .fbx.
-            if (isFBX)
-            {
-                if (File.Exists(originalPath)) File.Delete(originalPath);
-                File.Move(keyPath, originalPath);
-            }
-
-            Debug.Log($"Transformed {originalPath}");
+            Debug.Log($"Transformed {pathA}");
         }
 
-        UnityEditor.AssetDatabase.Refresh();
+        // Mark state as "UltiPaw" now
+        isUltiPaw = true;
+
+        AssetDatabase.Refresh();
 #endif
     }
 
+    // -----------------------------------------------------------
+    // 4) Called by "reset into WinterPaw" in the editor script
+    // -----------------------------------------------------------
     public void ResetIntoWinterPaw()
     {
 #if UNITY_EDITOR
@@ -112,30 +127,58 @@ public class UltiPaw : MonoBehaviour
         {
             if (fileA == null) continue;
 
-            string originalPath = UnityEditor.AssetDatabase.GetAssetPath(fileA);
-            bool isFBX = originalPath.EndsWith(".fbx", System.StringComparison.OrdinalIgnoreCase);
-            string backupPath = "";
-
-            if (isFBX)
-            {
-                // For FBX, the backup was created on the temporary .bin file.
-                string tempPath = Path.ChangeExtension(originalPath, ".bin");
-                backupPath = tempPath + ".old";
-            }
-            else
-            {
-                backupPath = originalPath + ".old";
-            }
+            string path = AssetDatabase.GetAssetPath(fileA);
+            string backupPath = path + ".old";
 
             if (File.Exists(backupPath))
             {
-                if (File.Exists(originalPath)) File.Delete(originalPath);
-                File.Move(backupPath, originalPath);
-                Debug.Log($"Restored {originalPath}");
+                if (File.Exists(path)) File.Delete(path);
+                File.Move(backupPath, path);
+                Debug.Log($"Restored {path}");
             }
         }
 
-        UnityEditor.AssetDatabase.Refresh();
+        // Mark state as not UltiPaw
+        isUltiPaw = false;
+
+        // Reset all blendshapes to 0
+        for (int i = 0; i < blendShapeStates.Count; i++)
+        {
+            blendShapeStates[i] = false;
+            ToggleBlendShape(blendShapeNames[i], false);
+        }
+
+        AssetDatabase.Refresh();
 #endif
+    }
+
+    // -----------------------------------------------------------
+    // 5) Toggle a given blendshape on the "Body" GameObject
+    // -----------------------------------------------------------
+    public void ToggleBlendShape(string shapeName, bool isOn)
+    {
+        // Try to find "Body" in the scene
+        GameObject body = GameObject.Find("Body");
+        if (!body)
+        {
+            Debug.LogWarning("UltiPaw: Could not find GameObject named 'Body' in the scene.");
+            return;
+        }
+
+        var skinnedRenderer = body.GetComponent<SkinnedMeshRenderer>();
+        if (!skinnedRenderer || !skinnedRenderer.sharedMesh)
+        {
+            Debug.LogWarning("UltiPaw: 'Body' has no SkinnedMeshRenderer or no sharedMesh.");
+            return;
+        }
+
+        int shapeIndex = skinnedRenderer.sharedMesh.GetBlendShapeIndex(shapeName);
+        if (shapeIndex < 0)
+        {
+            Debug.LogWarning($"UltiPaw: Blend shape '{shapeName}' not found on Body's mesh.");
+            return;
+        }
+
+        skinnedRenderer.SetBlendShapeWeight(shapeIndex, isOn ? 100f : 0f);
     }
 }
