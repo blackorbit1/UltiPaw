@@ -1,11 +1,11 @@
-#if UNITY_EDITOR
 using UnityEditor;
-#endif
 using System.Collections.Generic;
 using UnityEngine;
 using System.IO;
+using IEditorOnly = VRC.SDKBase.IEditorOnly;
 
-public class UltiPaw : MonoBehaviour
+#if UNITY_EDITOR
+public class UltiPaw : MonoBehaviour, IEditorOnly
 {
     public bool specifyCustomFiles = false;
 
@@ -182,3 +182,4 @@ public class UltiPaw : MonoBehaviour
         skinnedRenderer.SetBlendShapeWeight(shapeIndex, isOn ? 100f : 0f);
     }
 }
+#endif
