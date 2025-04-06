@@ -3,132 +3,123 @@ using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq; // Added for Linq
 
 [CustomEditor(typeof(UltiPaw))]
 public class UltiPawEditor : Editor
 {
     private Texture2D bannerTexture;
+    private SerializedProperty baseFbxFilesProp; // Use SerializedProperty for list editing
 
     private void OnEnable()
     {
-        bannerTexture = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/UltiPaw/banner.png");
+        bannerTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(UltiPawUtils.BASE_FOLDER + "/banner.png");
+        baseFbxFilesProp = serializedObject.FindProperty("baseFbxFiles"); // Get SerializedProperty
     }
 
     public override void OnInspectorGUI()
     {
+        serializedObject.Update(); // Always start with this
+
         UltiPaw ultipaw = (UltiPaw)target;
 
-        // ░▒▓ BANNER ▓▒░
+        // --- Banner ---
         if (bannerTexture != null)
         {
-            float aspect     = (float)bannerTexture.width / bannerTexture.height;
-            float desiredWidth  = EditorGUIUtility.currentViewWidth - 40;
+            // ... (banner drawing code remains the same) ...
+            float aspect = (float)bannerTexture.width / bannerTexture.height;
+            float desiredWidth = EditorGUIUtility.currentViewWidth - 40; // Adjust padding as needed
             float desiredHeight = desiredWidth / aspect;
-            Rect rect = GUILayoutUtility.GetRect(desiredWidth, desiredHeight, GUILayout.ExpandWidth(false));
+            Rect rect = GUILayoutUtility.GetRect(desiredWidth, desiredHeight, GUILayout.ExpandWidth(true)); // Use ExpandWidth true
             GUI.DrawTexture(rect, bannerTexture, ScaleMode.ScaleToFit);
+            GUILayout.Space(5); // Add some space after banner
         }
 
+        // --- File Configuration ---
+        EditorGUILayout.LabelField("Configuration", EditorStyles.boldLabel);
+        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+        // Toggle for specifying base FBX
+        EditorGUI.BeginChangeCheck();
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("specifyCustomBaseFbx"), new GUIContent("Specify Base FBX Manually"));
+        if (EditorGUI.EndChangeCheck())
+        {
+             serializedObject.ApplyModifiedProperties(); // Apply immediately if changed
+             // If switching back to default, trigger assignment if needed
+             if (!ultipaw.specifyCustomBaseFbx)
+             {
+                 CallMethodByName(ultipaw, "AssignDefaultBaseFbx");
+             }
+        }
+
+
+        // Show Base FBX list only if specifying custom OR if default assignment failed
+        if (ultipaw.specifyCustomBaseFbx || (!ultipaw.specifyCustomBaseFbx && ultipaw.baseFbxFiles.Count == 0))
+        {
+            EditorGUILayout.PropertyField(baseFbxFilesProp, new GUIContent("Base FBX File(s)"), true); // Use PropertyField for list
+        }
+        else if (!ultipaw.specifyCustomBaseFbx && ultipaw.baseFbxFiles.Count > 0 && ultipaw.baseFbxFiles[0] != null)
+        {
+             // Show the default path being used
+             GUI.enabled = false; // Make it read-only
+             EditorGUILayout.ObjectField("Using Default Base FBX", ultipaw.baseFbxFiles[0], typeof(GameObject), false);
+             GUI.enabled = true;
+        }
+
+        // Display Selected UltiPaw Version Info
+        EditorGUILayout.Space();
+        EditorGUILayout.LabelField("Active UltiPaw Version", EditorStyles.boldLabel);
+        if (ultipaw.activeUltiPawVersion != null && !string.IsNullOrEmpty(ultipaw.selectedUltiPawBinPath))
+        {
+            EditorGUILayout.LabelField("Version:", ultipaw.activeUltiPawVersion.version);
+            EditorGUILayout.LabelField("Scope:", ultipaw.activeUltiPawVersion.scope);
+            EditorGUILayout.LabelField("Path:", ultipaw.selectedUltiPawBinPath, EditorStyles.wordWrappedMiniLabel); // Show path concisely
+        }
+        else
+        {
+            EditorGUILayout.HelpBox("No UltiPaw version selected. Use 'UltiPaw > Version Manager' to select and download a version.", MessageType.Info);
+        }
+
+        EditorGUILayout.EndVertical(); // End Configuration Box
         EditorGUILayout.Space();
 
-        // -----------------------
-        // 1) File location toggle
-        // -----------------------
-        ultipaw.specifyCustomFiles = EditorGUILayout.Toggle("Specify file locations", ultipaw.specifyCustomFiles);
 
-        bool hasValidFilesA = ValidateFileList(ultipaw.filesA);
-        bool hasValidFilesC = ValidateFileList(ultipaw.filesC);
-        bool allFilesPresent = hasValidFilesA && hasValidFilesC;
+        // --- Action Buttons ---
+        bool canTransform = ultipaw.baseFbxFiles.Count > 0 && ultipaw.baseFbxFiles[0] != null &&
+                            !string.IsNullOrEmpty(ultipaw.selectedUltiPawBinPath) &&
+                            File.Exists(ultipaw.selectedUltiPawBinPath) &&
+                            !ultipaw.isUltiPaw;
 
-        // Show the custom file fields only if user toggles them
-        if (ultipaw.specifyCustomFiles)
-        {
-            EditorGUILayout.Space();
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-
-            // ---- FILES A (Key) ----
-            EditorGUILayout.LabelField("Files A (Key)", EditorStyles.boldLabel);
-            for (int i = 0; i < ultipaw.filesA.Count; i++)
-            {
-                var newA = (GameObject)EditorGUILayout.ObjectField(
-                    $"File A [{i}]",
-                    ultipaw.filesA[i],
-                    typeof(GameObject),
-                    false
-                );
-
-                // Log path when changed
-                if (newA != ultipaw.filesA[i])
-                {
-                    string path = AssetDatabase.GetAssetPath(newA);
-                    Debug.Log($"[UltiPaw] Selected File A [{i}] Path: {path}");
-                }
-                ultipaw.filesA[i] = newA;
-            }
-
-            EditorGUILayout.Space();
-
-            // ---- FILES C (Encrypted) ----
-            EditorGUILayout.LabelField("Files C (Encrypted)", EditorStyles.boldLabel);
-            for (int i = 0; i < ultipaw.filesC.Count; i++)
-            {
-                var newC = (DefaultAsset)EditorGUILayout.ObjectField(
-                    $"File C [{i}]",
-                    ultipaw.filesC[i],
-                    typeof(DefaultAsset),
-                    false
-                );
-
-                if (newC != ultipaw.filesC[i])
-                {
-                    string path = AssetDatabase.GetAssetPath(newC);
-                    Debug.Log($"[UltiPaw] Selected File C [{i}] Path: {path}");
-                }
-                ultipaw.filesC[i] = newC;
-            }
-
-            EditorGUILayout.Space();
-
-            // Reset Defaults Button
-            if (GUILayout.Button("Reset to Default Locations"))
-            {
-                Undo.RecordObject(ultipaw, "Reset UltiPaw Defaults");
-                CallMethodByName(ultipaw, "AssignDefaultFiles");
-                GUI.FocusControl(null);
-            }
-
-            EditorGUILayout.EndVertical();
-            EditorGUILayout.Space();
-        }
-
-        // ------------------------------------------
-        // 2) "turn it into a UltiPaw" button
-        //    - Disabled if files are missing OR
-        //      if already isUltiPaw
-        // ------------------------------------------
-        GUI.enabled = allFilesPresent && !ultipaw.isUltiPaw;
+        GUI.enabled = canTransform;
         GUI.backgroundColor = Color.green;
-        if (GUILayout.Button("turn it into a UltiPaw", GUILayout.Height(40)))
+        if (GUILayout.Button("Turn into UltiPaw", GUILayout.Height(40)))
         {
-            ultipaw.TurnItIntoUltiPaw();
+            // Confirmation recommended due to file modification
+            if (EditorUtility.DisplayDialog("Confirm Transformation",
+                $"This will modify:\n{AssetDatabase.GetAssetPath(ultipaw.baseFbxFiles[0])}\n\nUsing UltiPaw version: {ultipaw.activeUltiPawVersion?.version ?? "Unknown"}\nA backup (.old) will be created.",
+                "Proceed", "Cancel"))
+            {
+                ultipaw.TurnItIntoUltiPaw();
+            }
         }
         GUI.backgroundColor = Color.white;
-        GUI.enabled = true;
+        GUI.enabled = true; // Reset GUI enabled state
 
-        // ------------------------------------------
-        // 3) "reset into WinterPaw" button
-        //    - Enabled only if a .old backup exists
-        // ------------------------------------------
-        bool hasRestoreCandidates = AnyBackupExists(ultipaw.filesA);
-        GUI.enabled = hasRestoreCandidates;
-        if (GUILayout.Button("reset into WinterPaw"))
+
+        bool hasRestoreCandidates = AnyBackupExists(ultipaw.baseFbxFiles); // Use correct list name
+        GUI.enabled = hasRestoreCandidates && ultipaw.isUltiPaw; // Enable only if in UltiPaw state and backups exist
+        if (GUILayout.Button("Reset to Original FBX"))
         {
-            ultipaw.ResetIntoWinterPaw();
+             if (EditorUtility.DisplayDialog("Confirm Reset",
+                "This will restore the original FBX file(s) from their '.old' backups (if they exist) and reset blendshapes.",
+                "Reset", "Cancel"))
+            {
+                ultipaw.ResetIntoWinterPaw();
+            }
         }
-        GUI.enabled = true;
+        GUI.enabled = true; // Reset GUI enabled state
 
-        // ------------------------------------------
-        // 4) Show the blendshape 3×N grid if isUltiPaw
-        // ------------------------------------------
+        // --- Blendshapes ---
         if (ultipaw.isUltiPaw)
         {
             EditorGUILayout.Space();
@@ -163,53 +154,46 @@ public class UltiPawEditor : Editor
             EditorGUILayout.EndVertical();
         }
 
-        // ------------------------------------------
-        // 5) Show "Help" section at the bottom
-        // ------------------------------------------
+        // --- Help Box ---
         EditorGUILayout.Space();
         EditorGUILayout.HelpBox(
-            "If the 'reset into WinterPaw' button is disabled while your project is still not back to its default WinterPaw state, please, reimport the winterpaw avatar package",
+            "Use 'UltiPaw > Version Manager' to fetch, download, and select UltiPaw versions compatible with your base FBX.\n" +
+            "The 'Turn into UltiPaw' button modifies your base FBX file directly (a backup '.old' file is created).\n" +
+            "The 'Reset' button restores from the '.old' backup.",
             MessageType.Info
         );
 
-        if (GUI.changed)
+        // Apply changes to the serialized object
+        if (GUI.changed || serializedObject.ApplyModifiedProperties())
         {
-            EditorUtility.SetDirty(ultipaw);
+            // No explicit SetDirty needed when using SerializedObject/PropertyField
+            // EditorUtility.SetDirty(ultipaw);
         }
     }
 
-    // ------------------------------------------
-    // Helpers
-    // ------------------------------------------
-    private bool ValidateFileList<T>(List<T> list) where T : Object
+    // --- Helpers --- (Keep these as they are, but ensure list name is correct)
+    private bool ValidateFileList<T>(List<T> list) where T : Object // Keep generic version if needed elsewhere
     {
-        if (list == null || list.Count == 0) return false;
-
-        foreach (var obj in list)
-        {
-            if (obj == null) return false;
-            string path = AssetDatabase.GetAssetPath(obj);
-            if (!File.Exists(path)) return false;
-        }
-        return true;
+        // ... (implementation remains the same) ...
+         if (list == null || list.Count == 0) return false;
+         return list.All(obj => obj != null && File.Exists(AssetDatabase.GetAssetPath(obj)));
     }
 
-    private bool AnyBackupExists(List<GameObject> files)
-    {
-        foreach (var file in files)
-        {
-            if (!file) continue;
-            string path = AssetDatabase.GetAssetPath(file);
-            if (File.Exists(path + ".old")) return true;
-        }
-        return false;
-    }
+     private bool AnyBackupExists(List<GameObject> files)
+     {
+         if (files == null) return false;
+         return files.Any(file => file != null && File.Exists(AssetDatabase.GetAssetPath(file) + ".old"));
+     }
 
+
+    // Reflection helper (keep as is)
     private void CallMethodByName(Object target, string methodName)
     {
+        // ... (implementation remains the same) ...
         var method = target.GetType().GetMethod(methodName,
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public); // Add Public flag just in case
         if (method != null) method.Invoke(target, null);
+        else Debug.LogError($"[UltiPawEditor] Could not find method '{methodName}' on target '{target.GetType().Name}'");
     }
 }
 #endif
