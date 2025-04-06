@@ -39,7 +39,7 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
     // Keep track of which blendshapes are toggled on (100%) or off (0%)
     [HideInInspector] public List<bool> blendShapeStates = new List<bool>();
 
-#if UNITY_EDITOR
+
     private void OnValidate()
     {
         // Ensure blendShapeStates matches the count of blendShapeNames
@@ -77,14 +77,13 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
         if (filesC.Count == 0 || filesC[0] == null)
             Debug.LogWarning("UltiPaw: Default File C not found at " + defaultUltiPawLocation);
     }
-#endif
+
 
     // -----------------------------------------------------------
     // 3) Called by the big green button in the editor script
     // -----------------------------------------------------------
     public void TurnItIntoUltiPaw()
     {
-#if UNITY_EDITOR
         for (int i = 0; i < filesA.Count; i++)
         {
             if (i >= filesC.Count || filesA[i] == null || filesC[i] == null) continue;
@@ -107,6 +106,22 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
             // Write new file
             File.WriteAllBytes(pathA, dataB);
 
+            // Use the UltiPaw avatar rig configuration
+            string avatarPath = "Assets/UltiPaw/UltiPaw Rig.avatar";
+            UltiPawAvatarUtility.ApplyExternalAvatar(filesA[i], avatarPath);
+
+            // Auto-detect failed avatar assignment for the chest bone
+            Animator animator = filesA[i].GetComponent<Animator>();
+            if (animator && animator.avatar != null)
+            {
+                var chest = animator.GetBoneTransform(HumanBodyBones.Chest);
+                if (!chest)
+                {
+                    Debug.LogWarning("⚠️ Chest bone is missing after reimport. Check avatar mapping or bone names.");
+                }
+            }
+
+
             Debug.Log($"Transformed {pathA}");
         }
 
@@ -114,7 +129,7 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
         isUltiPaw = true;
 
         AssetDatabase.Refresh();
-#endif
+
     }
 
     // -----------------------------------------------------------
@@ -122,7 +137,6 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
     // -----------------------------------------------------------
     public void ResetIntoWinterPaw()
     {
-#if UNITY_EDITOR
         foreach (var fileA in filesA)
         {
             if (fileA == null) continue;
@@ -149,7 +163,6 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
         }
 
         AssetDatabase.Refresh();
-#endif
     }
 
     // -----------------------------------------------------------
