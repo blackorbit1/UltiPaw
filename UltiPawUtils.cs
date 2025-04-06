@@ -36,28 +36,62 @@ public static class UltiPawUtils
         }
     }
 
-    // Generates the path for a specific version's data
-    public static string GetVersionDataPath(string ultiPawVersion, string baseFbxHash)
+    // Generates the path for a specific version's data folder
+    // Uses UltiPaw version and the *Base FBX* version string
+    public static string GetVersionDataPath(string ultiPawVersion, string defaultFbxVersion)
     {
-        // Use a shortened hash for the folder name for brevity if desired
-        string shortHash = baseFbxHash.Length > 8 ? baseFbxHash.Substring(0, 8) : baseFbxHash;
-        return $"{VERSIONS_FOLDER}/u{ultiPawVersion}d{shortHash}";
+        if (string.IsNullOrEmpty(ultiPawVersion) || string.IsNullOrEmpty(defaultFbxVersion))
+        {
+            Debug.LogError("[UltiPawUtils] Cannot generate version path with null/empty version strings.");
+            // Return a fallback or handle appropriately, maybe use hash as fallback?
+            // For now, return path based on input even if potentially invalid.
+            return $"{VERSIONS_FOLDER}/u{ultiPawVersion ?? "unknown" }d{defaultFbxVersion ?? "unknown"}";
+        }
+        // Clean version strings slightly (replace dots, spaces if needed, though usually not necessary for folders)
+        // string cleanUltiPawVersion = ultiPawVersion.Replace(".", "_");
+        // string cleanDefaultFbxVersion = defaultFbxVersion.Replace(".", "_");
+        return $"{VERSIONS_FOLDER}/u{ultiPawVersion}d{defaultFbxVersion}";
     }
 
     // Generates the full path to the downloaded .bin file for a version
-    public static string GetVersionBinPath(string ultiPawVersion, string baseFbxHash)
+    public static string GetVersionBinPath(string ultiPawVersion, string defaultFbxVersion)
     {
-        return $"{GetVersionDataPath(ultiPawVersion, baseFbxHash)}/ultipaw.bin";
+        // Ensure the base path is valid before appending
+        string dataPath = GetVersionDataPath(ultiPawVersion, defaultFbxVersion);
+        return $"{dataPath}/ultipaw.bin"; // Assuming bin file is always named this
     }
 
-     // Ensures the directory exists
-    public static void EnsureDirectoryExists(string path)
+    // Generates the full path to an avatar file within a version folder
+    public static string GetVersionAvatarPath(string ultiPawVersion, string defaultFbxVersion, string relativeAvatarPath)
     {
-        string directory = Path.GetDirectoryName(path);
-        if (!Directory.Exists(directory))
+        if (string.IsNullOrEmpty(relativeAvatarPath)) return null;
+        string dataPath = GetVersionDataPath(ultiPawVersion, defaultFbxVersion);
+        // Use Path.Combine for robustness across OS
+        return Path.Combine(dataPath, relativeAvatarPath).Replace("\\", "/");
+    }
+
+
+    // Ensures the directory exists
+    public static void EnsureDirectoryExists(string directoryPath) // Renamed parameter for clarity
+    {
+        // Check if the path is actually a directory path, not a file path
+        string directory = directoryPath;
+        if (!string.IsNullOrEmpty(Path.GetExtension(directoryPath))) // If it has an extension, likely a file path
         {
-            Directory.CreateDirectory(directory);
-            AssetDatabase.Refresh(); // Make Unity aware of the new folder
+            directory = Path.GetDirectoryName(directoryPath);
+        }
+
+        if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+        {
+            try
+            {
+                Directory.CreateDirectory(directory);
+                AssetDatabase.Refresh(); // Make Unity aware of the new folder
+            }
+            catch (System.Exception e)
+            {
+                 Debug.LogError($"[UltiPawUtils] Failed to create directory '{directory}': {e.Message}");
+            }
         }
     }
 }
