@@ -40,25 +40,23 @@ public static class UltiPawUtils
     // Uses UltiPaw version and the *Base FBX* version string
     public static string GetVersionDataPath(string ultiPawVersion, string defaultFbxVersion)
     {
+        // *** Return null if inputs are invalid ***
         if (string.IsNullOrEmpty(ultiPawVersion) || string.IsNullOrEmpty(defaultFbxVersion))
         {
-            Debug.LogError("[UltiPawUtils] Cannot generate version path with null/empty version strings.");
-            // Return a fallback or handle appropriately, maybe use hash as fallback?
-            // For now, return path based on input even if potentially invalid.
-            return $"{VERSIONS_FOLDER}/u{ultiPawVersion ?? "unknown" }d{defaultFbxVersion ?? "unknown"}";
+            // *** Log Warning instead of Error, and only if needed (maybe remove log entirely) ***
+            // Debug.LogWarning("[UltiPawUtils] Cannot generate version path with null/empty version strings.");
+            return null; // Indicate failure clearly
         }
-        // Clean version strings slightly (replace dots, spaces if needed, though usually not necessary for folders)
-        // string cleanUltiPawVersion = ultiPawVersion.Replace(".", "_");
-        // string cleanDefaultFbxVersion = defaultFbxVersion.Replace(".", "_");
         return $"{VERSIONS_FOLDER}/u{ultiPawVersion}d{defaultFbxVersion}";
     }
 
     // Generates the full path to the downloaded .bin file for a version
     public static string GetVersionBinPath(string ultiPawVersion, string defaultFbxVersion)
     {
-        // Ensure the base path is valid before appending
         string dataPath = GetVersionDataPath(ultiPawVersion, defaultFbxVersion);
-        return $"{dataPath}/ultipaw.bin"; // Assuming bin file is always named this
+        // *** Handle null return from GetVersionDataPath ***
+        if (dataPath == null) return null;
+        return $"{dataPath}/ultipaw.bin";
     }
 
     // Generates the full path to an avatar file within a version folder
@@ -66,7 +64,8 @@ public static class UltiPawUtils
     {
         if (string.IsNullOrEmpty(relativeAvatarPath)) return null;
         string dataPath = GetVersionDataPath(ultiPawVersion, defaultFbxVersion);
-        // Use Path.Combine for robustness across OS
+        // *** Handle null return from GetVersionDataPath ***
+        if (dataPath == null) return null;
         return Path.Combine(dataPath, relativeAvatarPath).Replace("\\", "/");
     }
 

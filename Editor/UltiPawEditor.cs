@@ -14,86 +14,68 @@ public class UltiPawEditor : Editor
     private Texture2D bannerTexture;
     private SerializedProperty baseFbxFilesProp;
     private SerializedProperty specifyCustomBaseFbxProp;
-    private SerializedProperty blendShapeNamesProp; // Needed if we modify list directly
+    private SerializedProperty blendShapeNamesProp;
     private SerializedProperty blendShapeValuesProp;
 
-    // Version management state (kept within the editor script)
+    // Version management state
     private List<UltiPawVersion> serverVersions = new List<UltiPawVersion>();
-    private string recommendedVersionGuid = ""; // Store version string, not index
-    private UltiPawVersion selectedVersion = null; // The one actively chosen by user or recommended
-    private UltiPawVersion recommendedVersionDetails = null; // Details of the recommended version
+    private string recommendedVersionGuid = "";
+    private UltiPawVersion selectedVersion = null;
+    private UltiPawVersion recommendedVersionDetails = null;
 
     private bool isFetching = false;
     private bool isDownloading = false;
     private string fetchError = "";
     private string downloadError = "";
-    private string lastFetchedHash = null; // Track hash used for last successful fetch
-    private bool versionsFoldout = false; // State for the available versions foldout
+    private string lastFetchedHash = null; // Keep track of hash used for fetch, might still be useful for checks
+    private bool versionsFoldout = false;
 
     // Server settings
     private const string serverBaseUrl = "http://192.168.1.180:8080"; // Update with your server URL
     private const string versionsEndpoint = "/ultipaw/getVersions";
-    private const string modelEndpoint = "/ultipaw/getModel"; // Assuming endpoint for zip download
+    private const string modelEndpoint = "/ultipaw/getModel";
 
     private void OnEnable()
     {
-        // Load banner
         bannerTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(UltiPawUtils.BASE_FOLDER + "/banner.png");
-
-        // Get SerializedProperties
         baseFbxFilesProp = serializedObject.FindProperty("baseFbxFiles");
         specifyCustomBaseFbxProp = serializedObject.FindProperty("specifyCustomBaseFbx");
         blendShapeNamesProp = serializedObject.FindProperty("blendShapeNames");
         blendShapeValuesProp = serializedObject.FindProperty("blendShapeValues");
 
-        // Initial fetch when inspector becomes visible or script reloads
         UltiPaw ultiPaw = (UltiPaw)target;
-        if (ultiPaw.UpdateCurrentBaseFbxHash() || lastFetchedHash == null) // Fetch if hash changed or never fetched
+        // Restore selected version state from the component if possible
+        selectedVersion = ultiPaw.activeUltiPawVersion;
+
+        // Initial fetch if hash changed or never fetched
+        if (ultiPaw.UpdateCurrentBaseFbxHash() || lastFetchedHash == null || selectedVersion == null)
         {
-            StartVersionFetch(ultiPaw);
-        }
-        else
-        {
-            // Ensure selectedVersion reflects the active one on enable
-            selectedVersion = ultiPaw.activeUltiPawVersion;
+            // Don't block OnEnable, schedule the fetch
+            EditorApplication.delayCall += () => StartVersionFetch(ultiPaw);
         }
     }
 
     public override void OnInspectorGUI()
     {
-        serializedObject.Update(); // Read latest values from UltiPaw component
+        serializedObject.Update();
         UltiPaw ultiPaw = (UltiPaw)target;
 
-        // --- Banner ---
-        DrawBanner(); // Encapsulated banner drawing
+        DrawBanner();
+        DrawFileConfiguration(ultiPaw); // This might trigger a fetch if FBX changes
 
-        // --- File Configuration ---
-        DrawFileConfiguration(ultiPaw); // Encapsulated file config section
-
-        // --- Version Management Section ---
-        DrawVersionManagement(ultiPaw); // Encapsulated version management UI
-
-        // --- Action Buttons ---
-        DrawActionButtons(ultiPaw); // Encapsulated action buttons
-
-        // --- Blendshape Sliders ---
-        DrawBlendshapeSliders(ultiPaw); // Encapsulated blendshape sliders
-
-        // --- Help Section ---
-        DrawHelpBox(); // Encapsulated help box
-
-        // Apply any changes made through SerializedProperties
-        if (serializedObject.ApplyModifiedProperties())
+        // Ensure hash is current before drawing version management
+        bool hashChanged = ultiPaw.UpdateCurrentBaseFbxHash();
+        if (hashChanged && !isFetching) // Fetch if hash changed and not already fetching
         {
-            // If properties changed, might need to trigger updates
-            // e.g., if baseFbxFiles changed, re-calculate hash and fetch
-             if (ultiPaw.UpdateCurrentBaseFbxHash()) {
-                 StartVersionFetch(ultiPaw);
-             }
+             EditorApplication.delayCall += () => StartVersionFetch(ultiPaw);
         }
 
-        // Note: Avoid calling SetDirty frequently here to prevent lag.
-        // It's called within specific actions like SelectVersion, TurnItIntoUltiPaw etc.
+        DrawVersionManagement(ultiPaw);
+        DrawActionButtons(ultiPaw);
+        DrawBlendshapeSliders(ultiPaw);
+        DrawHelpBox();
+
+        serializedObject.ApplyModifiedProperties();
     }
 
     // --- UI Drawing Helper Methods ---
@@ -120,29 +102,31 @@ public class UltiPawEditor : Editor
         EditorGUILayout.PropertyField(specifyCustomBaseFbxProp, new GUIContent("Specify Base FBX Manually"));
         bool fbxSpecChanged = EditorGUI.EndChangeCheck();
 
+        bool fbxFieldChanged = false;
         if (specifyCustomBaseFbxProp.boolValue)
         {
             EditorGUI.BeginChangeCheck();
             EditorGUILayout.PropertyField(baseFbxFilesProp, new GUIContent("Base FBX File(s)"), true);
-            if (EditorGUI.EndChangeCheck() || fbxSpecChanged)
-            {
-                serializedObject.ApplyModifiedProperties(); // Apply immediately
-                if (ultiPaw.UpdateCurrentBaseFbxHash()) StartVersionFetch(ultiPaw); // Fetch if hash changed
-            }
+            fbxFieldChanged = EditorGUI.EndChangeCheck();
         }
         else // Auto-detect mode
         {
             if (fbxSpecChanged) // Just switched to auto-detect
             {
-                serializedObject.ApplyModifiedProperties(); // Apply the toggle change
-                ultiPaw.AutoDetectBaseFbxViaHierarchy(); // Trigger detection
-                if (ultiPaw.UpdateCurrentBaseFbxHash()) StartVersionFetch(ultiPaw); // Fetch if detection changed hash
+                EditorApplication.delayCall += ultiPaw.AutoDetectBaseFbxViaHierarchy; // Schedule detection
             }
-
             GUI.enabled = false;
             EditorGUILayout.PropertyField(baseFbxFilesProp, new GUIContent("Detected Base FBX"), true);
             GUI.enabled = true;
         }
+
+        // If any relevant property changed, apply and potentially trigger fetch
+        if (fbxSpecChanged || fbxFieldChanged)
+        {
+            serializedObject.ApplyModifiedProperties(); // Apply changes first
+            // Fetch will be triggered by hash check in OnInspectorGUI
+        }
+
         EditorGUILayout.EndVertical();
         EditorGUILayout.Space();
     }
@@ -152,69 +136,73 @@ public class UltiPawEditor : Editor
         EditorGUILayout.LabelField("UltiPaw Version Manager", EditorStyles.boldLabel);
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
 
+        // Display Errors First (without hiding rest of UI)
+        if (!string.IsNullOrEmpty(fetchError))
+        {
+            EditorGUILayout.HelpBox("Fetch Error: " + fetchError, MessageType.Error);
+        }
+        if (!string.IsNullOrEmpty(downloadError))
+        {
+            EditorGUILayout.HelpBox("Download Error: " + downloadError, MessageType.Warning); // Warning, might be recoverable
+        }
+
         // Update/Fetch Button
         GUI.enabled = !isFetching && !isDownloading;
         if (GUILayout.Button(isFetching ? "Fetching..." : "Check for Updates"))
         {
-            StartVersionFetch(ultiPaw);
+            StartVersionFetch(ultiPaw); // Manually trigger fetch
         }
-        GUI.enabled = true;
+        GUI.enabled = true; // Re-enable GUI for elements below
 
-        // Display Fetching Errors
-        if (!string.IsNullOrEmpty(fetchError))
+        // Display Version Info only if fetch hasn't failed catastrophically
+        if (string.IsNullOrEmpty(fetchError) || fetchError.Contains("parse") || fetchError.Contains("406")) // Show UI even on parsing/406 errors
         {
-            EditorGUILayout.HelpBox("Error fetching versions: " + fetchError, MessageType.Error);
-        }
-        // Display Download Errors
-        else if (!string.IsNullOrEmpty(downloadError))
-        {
-             EditorGUILayout.HelpBox("Error downloading version: " + downloadError, MessageType.Error);
-        }
-        // Display Version Info if fetch was successful
-        else if (lastFetchedHash != null) // Indicates a successful fetch happened at some point
-        {
-            // Display Recommended / Currently Selected Version
-            UltiPawVersion versionToShow = selectedVersion ?? recommendedVersionDetails; // Show selected, fallback to recommended
+             // Display Recommended / Currently Selected Version
+            UltiPawVersion versionToShow = selectedVersion ?? recommendedVersionDetails;
 
             if (versionToShow != null)
             {
                 EditorGUILayout.LabelField("Selected Version:", EditorStyles.boldLabel);
-                DrawVersionDetails(versionToShow, ultiPaw, true); // Draw details prominently
+                DrawVersionDetails(versionToShow, ultiPaw, true);
             }
-            else if (serverVersions.Count > 0)
+            else if (serverVersions.Count > 0 && !isFetching) // Fetch succeeded but no recommended/selected
             {
-                 EditorGUILayout.HelpBox("No version selected. Recommended version details could not be determined.", MessageType.Warning);
+                 EditorGUILayout.HelpBox("Please select a version from the list below.", MessageType.Info);
             }
-            else if (!isFetching)
+             else if (!isFetching && lastFetchedHash != null && serverVersions.Count == 0) // Fetch succeeded, hash known, but no versions returned
             {
                  EditorGUILayout.HelpBox("No compatible versions found for the detected Base FBX hash.", MessageType.Warning);
+            }
+            else if (!isFetching && lastFetchedHash == null) // Haven't fetched successfully yet
+            {
+                 EditorGUILayout.HelpBox("Click 'Check for Updates' or assign a Base FBX.", MessageType.Info);
             }
 
 
             // Foldout for other available versions
-            if (serverVersions.Count > 1 || (serverVersions.Count == 1 && serverVersions[0] != versionToShow))
+            if (serverVersions.Count > 0) // Only show foldout if there are versions
             {
-                versionsFoldout = EditorGUILayout.Foldout(versionsFoldout, "Available Versions", true);
-                if (versionsFoldout)
+                // Determine if there are versions *other* than the one displayed prominently
+                bool hasOtherVersions = serverVersions.Any(v => v != versionToShow);
+
+                if (hasOtherVersions)
                 {
-                    EditorGUI.indentLevel++;
-                    foreach (var ver in serverVersions)
+                    versionsFoldout = EditorGUILayout.Foldout(versionsFoldout, "Other Versions", true);
+                    if (versionsFoldout)
                     {
-                        // Skip drawing the one already displayed prominently above if it's the only one
-                        if (ver == versionToShow && serverVersions.Count == 1) continue;
-                        // Skip drawing the prominently displayed one if it's different from selected
-                        if (ver == versionToShow && selectedVersion != recommendedVersionDetails) continue;
-
-
-                        DrawVersionListItem(ver, ultiPaw);
+                        EditorGUI.indentLevel++;
+                        foreach (var ver in serverVersions)
+                        {
+                            if (ver != versionToShow) // Only draw versions not already shown above
+                            {
+                                DrawVersionListItem(ver, ultiPaw);
+                            }
+                        }
+                        EditorGUI.indentLevel--;
                     }
-                     EditorGUI.indentLevel--;
                 }
+                // If only one version exists and it's already displayed, don't show the foldout.
             }
-        }
-        else if (!isFetching)
-        {
-            EditorGUILayout.HelpBox("Click 'Check for Updates' to fetch compatible versions.", MessageType.Info);
         }
 
 
@@ -222,84 +210,121 @@ public class UltiPawEditor : Editor
         EditorGUILayout.Space();
     }
 
-    // Helper to draw details of a specific version (used for recommended/selected)
-    private void DrawVersionDetails(UltiPawVersion ver, UltiPaw ultiPaw, bool showDownloadButton)
+    private void DrawVersionDetails(UltiPawVersion ver, UltiPaw ultiPaw, bool showDownloadOrSelect)
     {
-         EditorGUILayout.BeginHorizontal();
-         GUILayout.Label($"UltiPaw {ver.version}", EditorStyles.boldLabel, GUILayout.Width(100));
-         DrawScopeLabel(ver.scope);
-         GUILayout.FlexibleSpace(); // Push download button to the right
+        // *** Add check for valid version object ***
+        if (ver == null) return;
 
-         // Check if downloaded
-         string expectedBinPath = UltiPawUtils.GetVersionBinPath(ver.version, lastFetchedHash); // Use last fetched hash for path consistency
-         bool isDownloaded = File.Exists(expectedBinPath);
+        EditorGUILayout.BeginHorizontal();
+        // *** Add check for valid version strings before using them ***
+        bool hasValidVersionStrings = !string.IsNullOrEmpty(ver.version) && !string.IsNullOrEmpty(ver.defaultAviVersion);
 
-         if (showDownloadButton)
-         {
-             GUI.enabled = !isDownloading && !isFetching;
-             if (isDownloaded)
-             {
-                 // Optionally show a "Re-download" button or just indicate downloaded
-                 Color oldCol = GUI.color;
-                 GUI.color = Color.green;
-                 GUILayout.Label("(Downloaded)", GUILayout.Width(100));
-                 GUI.color = oldCol;
-             }
-             else
-             {
-                 if (GUILayout.Button(isDownloading ? "Downloading..." : "Download", GUILayout.Width(100)))
+        GUILayout.Label($"UltiPaw {ver.version ?? "N/A"}", EditorStyles.boldLabel, GUILayout.Width(100));
+        DrawScopeLabel(ver.scope);
+        GUILayout.FlexibleSpace();
+
+        // Only proceed if version strings are valid
+        if (hasValidVersionStrings)
+        {
+            string expectedBinPath = UltiPawUtils.GetVersionBinPath(ver.version, ver.defaultAviVersion);
+            bool isDownloaded = !string.IsNullOrEmpty(expectedBinPath) && File.Exists(expectedBinPath);
+
+            if (showDownloadOrSelect)
+            {
+                // ... (rest of the button logic remains the same, but is now conditional) ...
+                 if (selectedVersion == ver) // If this is the currently selected one
                  {
-                     StartVersionDownload(ver, ultiPaw);
+                     GUI.enabled = false;
+                     GUILayout.Button("Selected", GUILayout.Width(100));
+                     GUI.enabled = true;
                  }
-             }
-             GUI.enabled = true;
-         }
+                 else if (isDownloaded) // If downloaded but not selected
+                 {
+                    GUI.enabled = !isFetching && !isDownloading;
+                    if (GUILayout.Button("Select", GUILayout.Width(100)))
+                    {
+                        SelectVersion(ver, ultiPaw, expectedBinPath);
+                    }
+                     GUI.enabled = true;
+                 }
+                 else // Not downloaded
+                 {
+                    GUI.enabled = !isDownloading && !isFetching;
+                    if (GUILayout.Button(isDownloading ? "Downloading..." : "Download", GUILayout.Width(100)))
+                    {
+                        StartVersionDownload(ver, ultiPaw);
+                    }
+                    GUI.enabled = true;
+                 }
+            }
+        } else {
+            // Optionally display a message if strings are invalid
+            GUILayout.Label("(Invalid Version Data)", EditorStyles.miniLabel);
+        }
 
-         EditorGUILayout.EndHorizontal();
 
-         // Display Changelog
-         if (!string.IsNullOrEmpty(ver.changelog))
-         {
-             EditorGUILayout.LabelField("Changelog:", EditorStyles.miniBoldLabel);
-             EditorGUILayout.HelpBox(ver.changelog, MessageType.None);
-         }
-         GUILayout.Space(5);
+        EditorGUILayout.EndHorizontal();
+
+        // Display Changelog (safe even if version strings were invalid)
+        if (!string.IsNullOrEmpty(ver.changelog))
+        {
+            EditorGUILayout.LabelField("Changelog:", EditorStyles.miniBoldLabel);
+            EditorGUILayout.HelpBox(ver.changelog, MessageType.None);
+        }
+        GUILayout.Space(5);
     }
 
 
-    // Helper to draw a single item in the "Available Versions" list
     private void DrawVersionListItem(UltiPawVersion ver, UltiPaw ultiPaw)
     {
-        EditorGUILayout.BeginHorizontal(EditorStyles.helpBox); // Use helpBox for slight bordering
-        GUILayout.Label($"UltiPaw {ver.version}", GUILayout.Width(100));
+        // *** Add check for valid version object ***
+        if (ver == null) return;
+
+        EditorGUILayout.BeginHorizontal(EditorStyles.helpBox);
+        // *** Add check for valid version strings before using them ***
+        bool hasValidVersionStrings = !string.IsNullOrEmpty(ver.version) && !string.IsNullOrEmpty(ver.defaultAviVersion);
+
+        GUILayout.Label($"UltiPaw {ver.version ?? "N/A"}", GUILayout.Width(100));
         DrawScopeLabel(ver.scope);
-        GUILayout.FlexibleSpace(); // Pushes button to the right
+        GUILayout.FlexibleSpace();
 
-        if (selectedVersion != null && selectedVersion.version == ver.version)
+        // Only proceed if version strings are valid
+        if (hasValidVersionStrings)
         {
-            GUI.enabled = false;
-            GUILayout.Button("Selected", GUILayout.Width(80));
-            GUI.enabled = true;
-        }
-        else
-        {
-             // Check if downloaded before allowing selection
-             string expectedBinPath = UltiPawUtils.GetVersionBinPath(ver.version, lastFetchedHash);
-             bool isDownloaded = File.Exists(expectedBinPath);
+            string expectedBinPath = UltiPawUtils.GetVersionBinPath(ver.version, ver.defaultAviVersion);
+            bool isDownloaded = !string.IsNullOrEmpty(expectedBinPath) && File.Exists(expectedBinPath);
 
-             GUI.enabled = isDownloaded && !isFetching && !isDownloading; // Can only select if downloaded
-             if (GUILayout.Button("Select", GUILayout.Width(80)))
-             {
-                 SelectVersion(ver, ultiPaw, expectedBinPath);
-             }
-             GUI.enabled = true;
-
-             if (!isDownloaded) {
-                 GUILayout.Label("(Not Downloaded)", EditorStyles.miniLabel, GUILayout.Width(100));
-             }
+            if (selectedVersion != null && selectedVersion.version == ver.version && selectedVersion.defaultAviVersion == ver.defaultAviVersion) // Compare both versions for robustness
+            {
+                GUI.enabled = false;
+                GUILayout.Button("Selected", GUILayout.Width(80));
+                GUI.enabled = true;
+            }
+            else if (isDownloaded)
+            {
+                GUI.enabled = !isFetching && !isDownloading;
+                if (GUILayout.Button("Select", GUILayout.Width(80)))
+                {
+                    SelectVersion(ver, ultiPaw, expectedBinPath);
+                }
+                GUI.enabled = true;
+            }
+            else // Not downloaded
+            {
+                GUI.enabled = !isDownloading && !isFetching;
+                if (GUILayout.Button(isDownloading ? "Downloading..." : "Download", GUILayout.Width(80)))
+                {
+                    StartVersionDownload(ver, ultiPaw);
+                }
+                GUI.enabled = true;
+            }
+        } else {
+             GUILayout.Label("(Invalid Data)", EditorStyles.miniLabel);
         }
+
         EditorGUILayout.EndHorizontal();
     }
+
 
     // Helper to draw the scope label with color
     private void DrawScopeLabel(string scope)
@@ -439,53 +464,58 @@ public class UltiPawEditor : Editor
 
     private void StartVersionFetch(UltiPaw ultiPaw)
     {
-        if (isFetching) return; // Don't start if already fetching
+        if (isFetching) return;
 
-        // Ensure hash is up-to-date before fetching
+        // Ensure hash is up-to-date
         ultiPaw.UpdateCurrentBaseFbxHash();
         string hashToFetch = ultiPaw.currentBaseFbxHash;
 
         if (string.IsNullOrEmpty(hashToFetch))
         {
-            fetchError = "Base FBX hash could not be calculated. Assign a valid FBX.";
+            // Don't set fetchError here, let the UI show "Assign FBX" message
+            // Clear previous results though
             serverVersions.Clear();
             selectedVersion = null;
             recommendedVersionDetails = null;
             lastFetchedHash = null;
-            Repaint(); // Update UI to show error
+            fetchError = ""; // Clear previous errors
+            downloadError = "";
+            Repaint();
             return;
         }
 
-        // Reset state for new fetch
         fetchError = "";
-        downloadError = ""; // Clear download error too
+        downloadError = "";
         isFetching = true;
-        Repaint(); // Show "Fetching..." button state
+        Repaint();
 
         EditorCoroutineUtility.StartCoroutineOwnerless(FetchVersionsCoroutine(hashToFetch, ultiPaw));
     }
 
-     private void StartVersionDownload(UltiPawVersion versionToDownload, UltiPaw ultiPaw)
+    private void StartVersionDownload(UltiPawVersion versionToDownload, UltiPaw ultiPaw)
     {
         if (isDownloading || isFetching) return;
 
-        // Need the hash the versions were fetched *with* to construct the correct download path/URL
-        if (string.IsNullOrEmpty(lastFetchedHash)) {
-            downloadError = "Cannot download: Base FBX hash is unknown or versions haven't been fetched.";
+        // Use the defaultAviVersion from the specific version being downloaded
+        if (string.IsNullOrEmpty(versionToDownload?.defaultAviVersion)) {
+            downloadError = "Version data is missing required 'defaultAviVersion'. Cannot determine download path.";
+            Debug.LogError("[UltiPawEditor] " + downloadError);
             Repaint();
             return;
         }
 
         downloadError = "";
         isDownloading = true;
-        Repaint(); // Show "Downloading..." button state
+        Repaint();
 
-        EditorCoroutineUtility.StartCoroutineOwnerless(DownloadVersionCoroutine(versionToDownload, lastFetchedHash, ultiPaw));
+        // Pass the correct defaultAviVersion for path generation
+        EditorCoroutineUtility.StartCoroutineOwnerless(DownloadVersionCoroutine(versionToDownload, ultiPaw));
     }
 
 
     private IEnumerator FetchVersionsCoroutine(string baseFbxHash, UltiPaw ultiPaw)
     {
+        // ... (URL construction and request sending are the same) ...
         string url = $"{serverBaseUrl}{versionsEndpoint}?s={UltiPaw.SCRIPT_VERSION}&d={baseFbxHash}";
         Debug.Log($"[UltiPawEditor] Fetching versions from: {url}");
 
@@ -493,11 +523,11 @@ public class UltiPawEditor : Editor
         {
             yield return req.SendWebRequest();
 
-            isFetching = false; // Fetch attempt finished
+            isFetching = false;
 
             if (req.result == UnityWebRequest.Result.ConnectionError || req.result == UnityWebRequest.Result.ProtocolError)
             {
-                HandleFetchError(req);
+                HandleFetchError(req, ultiPaw); // Pass ultiPaw to clear selection
             }
             else // Success
             {
@@ -517,45 +547,40 @@ public class UltiPawEditor : Editor
                         // Find recommended version details
                         recommendedVersionDetails = serverVersions.FirstOrDefault(v => v.version == recommendedVersionGuid);
 
-                        // Auto-select recommended version if nothing is selected or current selection is invalid
-                        if (selectedVersion == null || !serverVersions.Any(v => v.version == selectedVersion.version))
-                        {
-                            if (recommendedVersionDetails != null)
-                            {
-                                 string expectedBinPath = UltiPawUtils.GetVersionBinPath(recommendedVersionDetails.version, lastFetchedHash);
-                                 if(File.Exists(expectedBinPath)) {
-                                     SelectVersion(recommendedVersionDetails, ultiPaw, expectedBinPath);
-                                 } else {
-                                     // Recommended isn't downloaded, clear selection
-                                     ClearSelection(ultiPaw);
-                                 }
-                            } else {
-                                ClearSelection(ultiPaw);
+                        // Auto-select logic (only if downloaded)
+                        bool selectionMade = false;
+                        if (selectedVersion != null) {
+                            // Check if current selection is still valid and downloaded
+                            var currentSelectedInNewList = serverVersions.FirstOrDefault(v => v.version == selectedVersion.version);
+                            if(currentSelectedInNewList != null) {
+                                string binPath = UltiPawUtils.GetVersionBinPath(currentSelectedInNewList.version, currentSelectedInNewList.defaultAviVersion);
+                                if(File.Exists(binPath)) {
+                                    // Re-select to ensure references are correct
+                                    SelectVersion(currentSelectedInNewList, ultiPaw, binPath);
+                                    selectionMade = true;
+                                }
                             }
                         }
-                        // If current selection is still valid in the new list, keep it
-                        else if (selectedVersion != null) {
-                             // Re-find the selected version object from the new list to ensure it's the current reference
-                             var currentSelectedInNewList = serverVersions.FirstOrDefault(v => v.version == selectedVersion.version);
-                             if(currentSelectedInNewList != null) {
-                                 selectedVersion = currentSelectedInNewList; // Update reference
-                                 ultiPaw.activeUltiPawVersion = selectedVersion; // Ensure component has updated reference
-                             } else {
-                                 // Previous selection is no longer valid, try recommended
-                                 if (recommendedVersionDetails != null) {
-                                     string expectedBinPath = UltiPawUtils.GetVersionBinPath(recommendedVersionDetails.version, lastFetchedHash);
-                                     if(File.Exists(expectedBinPath)) {
-                                         SelectVersion(recommendedVersionDetails, ultiPaw, expectedBinPath);
-                                     } else { ClearSelection(ultiPaw); }
-                                 } else { ClearSelection(ultiPaw); }
+
+                        // If no valid selection yet, try recommended (if downloaded)
+                        if (!selectionMade && recommendedVersionDetails != null)
+                        {
+                             string binPath = UltiPawUtils.GetVersionBinPath(recommendedVersionDetails.version, recommendedVersionDetails.defaultAviVersion);
+                             if(File.Exists(binPath)) {
+                                 SelectVersion(recommendedVersionDetails, ultiPaw, binPath);
+                                 selectionMade = true;
                              }
                         }
 
+                        // If still no selection, clear it
+                        if (!selectionMade) {
+                            ClearSelection(ultiPaw);
+                        }
                     }
                     else
                     {
-                        fetchError = "Failed to parse server response.";
-                        Debug.LogError("[UltiPawEditor] JSON parsing error or null response/versions.");
+                        fetchError = "Failed to parse server response (JSON structure might be incorrect).";
+                        Debug.LogError("[UltiPawEditor] JSON parsing error or null response/versions. Check server response format.");
                         serverVersions.Clear();
                         recommendedVersionDetails = null;
                         ClearSelection(ultiPaw);
@@ -563,7 +588,7 @@ public class UltiPawEditor : Editor
                 }
                 catch (System.Exception e)
                 {
-                    fetchError = "Exception while parsing server response.";
+                    fetchError = $"Exception parsing server response: {e.Message}";
                     Debug.LogError($"[UltiPawEditor] Exception: {e}");
                     serverVersions.Clear();
                     recommendedVersionDetails = null;
@@ -572,158 +597,186 @@ public class UltiPawEditor : Editor
             }
         } // Dispose UnityWebRequest
 
-        Repaint(); // Update UI with results or errors
+        Repaint();
     }
 
 
-     private IEnumerator DownloadVersionCoroutine(UltiPawVersion versionToDownload, string baseFbxHashForPath, UltiPaw ultiPaw)
+    private IEnumerator DownloadVersionCoroutine(UltiPawVersion versionToDownload, UltiPaw ultiPaw)
     {
-        string downloadUrl = $"{serverBaseUrl}{modelEndpoint}?version={UnityWebRequest.EscapeURL(versionToDownload.version)}&d={baseFbxHashForPath}"; // Assuming server needs hash
-        string targetZipPath = Path.Combine(Path.GetTempPath(), $"ultipaw_{versionToDownload.version}.zip"); // Download to temp file
-        string targetExtractFolder = UltiPawUtils.GetVersionDataPath(versionToDownload.version, baseFbxHashForPath);
+        // --- Setup ---
+        string baseFbxHashForQuery = lastFetchedHash ?? "unknown";
+        string downloadUrl = $"{serverBaseUrl}{modelEndpoint}?version={UnityWebRequest.EscapeURL(versionToDownload.version)}&d={baseFbxHashForQuery}";
+        string targetExtractFolder = UltiPawUtils.GetVersionDataPath(versionToDownload.version, versionToDownload.defaultAviVersion);
+        string targetZipPath = Path.Combine(Path.GetTempPath(), $"ultipaw_{versionToDownload.version}_{versionToDownload.defaultAviVersion}.zip"); // More unique temp name
 
-        Debug.Log($"[UltiPawEditor] Starting download for version {versionToDownload.version}...");
+        Debug.Log($"[UltiPawEditor] Starting download for version {versionToDownload.version} (Base: {versionToDownload.defaultAviVersion})");
         Debug.Log($"[UltiPawEditor] Download URL: {downloadUrl}");
         Debug.Log($"[UltiPawEditor] Target Extract Folder: {targetExtractFolder}");
 
-        UltiPawUtils.EnsureDirectoryExists(targetExtractFolder); // Ensure target directory exists before extraction
+        UltiPawUtils.EnsureDirectoryExists(targetExtractFolder);
 
-        using (UnityWebRequest req = UnityWebRequest.Get(downloadUrl))
+        DownloadHandlerFile downloadHandler = null;
+        UnityWebRequest req = null;
+        bool webRequestSuccessful = false;
+
+        // --- Web Request (outside try...finally for yield) ---
+        try
         {
-            req.downloadHandler = new DownloadHandlerFile(targetZipPath); // Download to temp zip file
+            downloadHandler = new DownloadHandlerFile(targetZipPath);
+            req = new UnityWebRequest(downloadUrl, UnityWebRequest.kHttpVerbGET, downloadHandler, null);
 
-            yield return req.SendWebRequest();
+            // *** Move yield return here ***
+            yield return req.SendWebRequest(); // Wait for the download to complete or fail
 
-            isDownloading = false; // Download attempt finished
-
+            // Check result *after* yield completes
             if (req.result != UnityWebRequest.Result.Success)
             {
-                downloadError = $"HTTP {req.responseCode}: {req.error}";
-                Debug.LogError($"[UltiPawEditor] Failed to download version {versionToDownload.version}: {downloadError}");
-                if (File.Exists(targetZipPath)) File.Delete(targetZipPath); // Clean up temp file on error
+                downloadError = $"Download failed [{req.responseCode} {req.result}]: {req.error}";
+                Debug.LogError($"[UltiPawEditor] {downloadError}");
+                webRequestSuccessful = false;
             }
             else
             {
                 Debug.Log($"[UltiPawEditor] Successfully downloaded ZIP to: {targetZipPath}");
                 downloadError = ""; // Clear error on success
+                webRequestSuccessful = true;
+            }
+        }
+        catch (System.Exception webEx) // Catch exceptions during web request setup/send itself
+        {
+             downloadError = $"Download Coroutine Exception: {webEx.Message}";
+             Debug.LogError($"[UltiPawEditor] {downloadError}");
+             webRequestSuccessful = false; // Mark as failed
+        }
+
+        // --- File Operations and Cleanup (inside try...finally) ---
+        try
+        {
+            if (webRequestSuccessful) // Only attempt extraction if download succeeded
+            {
+                // Ensure handler is disposed BEFORE extraction
+                downloadHandler?.Dispose();
+                downloadHandler = null;
 
                 // --- Extraction ---
                 try
                 {
-                    // Ensure target directory is clean before extracting (optional, prevents issues with old files)
-                    if (Directory.Exists(targetExtractFolder))
-                    {
-                        // Directory.Delete(targetExtractFolder, true); // Use with caution!
-                        // Directory.CreateDirectory(targetExtractFolder);
-                    }
-
-                    ZipFile.ExtractToDirectory(targetZipPath, targetExtractFolder, true); // Use System.IO.Compression, overwrite files
+                    ZipFile.ExtractToDirectory(targetZipPath, targetExtractFolder, true);
                     Debug.Log($"[UltiPawEditor] Successfully extracted files to: {targetExtractFolder}");
+                    AssetDatabase.Refresh();
 
-                    // Clean up downloaded zip file
-                    if (File.Exists(targetZipPath)) File.Delete(targetZipPath);
-
-                    AssetDatabase.Refresh(); // IMPORTANT: Make Unity aware of the new/updated files
-
-                    // Automatically select the downloaded version if it was the recommended one or only one
-                     if (selectedVersion == null && versionToDownload == recommendedVersionDetails) {
-                         string expectedBinPath = UltiPawUtils.GetVersionBinPath(versionToDownload.version, baseFbxHashForPath);
-                         SelectVersion(versionToDownload, ultiPaw, expectedBinPath);
-                     }
-                     // Or if the user explicitly clicked download for this version, select it
-                     else if (selectedVersion == null || selectedVersion.version != versionToDownload.version) {
-                          string expectedBinPath = UltiPawUtils.GetVersionBinPath(versionToDownload.version, baseFbxHashForPath);
-                          SelectVersion(versionToDownload, ultiPaw, expectedBinPath);
-                     }
-
-
+                    // Auto-select after successful download and extraction
+                    string expectedBinPath = UltiPawUtils.GetVersionBinPath(versionToDownload.version, versionToDownload.defaultAviVersion);
+                    SelectVersion(versionToDownload, ultiPaw, expectedBinPath);
                 }
                 catch (System.Exception e)
                 {
+                    // Keep downloadError empty if download was ok but extraction failed
+                    // Or set a specific extraction error? Let's set it.
                     downloadError = $"Extraction failed: {e.Message}";
                     Debug.LogError($"[UltiPawEditor] Failed to extract ZIP file '{targetZipPath}' to '{targetExtractFolder}': {e}");
-                    // Don't delete the zip on extraction error, user might want it
-                    AssetDatabase.Refresh(); // Refresh anyway to show potentially partial extraction
+                    AssetDatabase.Refresh(); // Refresh anyway
                 }
             }
-        } // Dispose UnityWebRequest
+        }
+        finally // Ensure disposal and cleanup happens
+        {
+            isDownloading = false; // Mark download process as finished
 
-        Repaint(); // Update UI
+            // Dispose handlers if they weren't already (e.g., if web request failed before disposal)
+            downloadHandler?.Dispose();
+            req?.Dispose();
+
+            // Attempt to clean up temp file
+            if (File.Exists(targetZipPath))
+            {
+                try
+                {
+                    File.Delete(targetZipPath);
+                }
+                catch (IOException ioEx)
+                {
+                    Debug.LogWarning($"[UltiPawEditor] Could not delete temp file '{targetZipPath}' (might be locked): {ioEx.Message}");
+                }
+                 catch (System.Exception ex)
+                {
+                    Debug.LogWarning($"[UltiPawEditor] Error deleting temp file '{targetZipPath}': {ex.Message}");
+                }
+            }
+            Repaint(); // Update UI after everything
+        }
     }
 
-
-    private void HandleFetchError(UnityWebRequest req)
+    private void HandleFetchError(UnityWebRequest req, UltiPaw ultiPaw)
     {
-        if (req.responseCode == 406) // Specific server errors
+        if (req.responseCode == 406)
         {
-            fetchError = req.downloadHandler.text; // Display server message directly
+            fetchError = $"Server rejected request [{req.responseCode}]: {req.downloadHandler?.text ?? req.error}";
             Debug.LogError($"[UltiPawEditor] Server Error 406: {fetchError}");
         }
-        else // Generic network/protocol errors
+        else
         {
-            fetchError = $"Error {req.responseCode}: {req.error}";
+            fetchError = $"Network Error [{req.responseCode} {req.result}]: {req.error}";
             Debug.LogError($"[UltiPawEditor] Fetch Error: {fetchError}");
         }
         serverVersions.Clear();
         recommendedVersionDetails = null;
-        lastFetchedHash = null; // Fetch failed, invalidate hash
-        ClearSelection(null); // Clear selection on fetch error
+        lastFetchedHash = null;
+        ClearSelection(ultiPaw); // Pass ultiPaw instance
     }
 
     private void SelectVersion(UltiPawVersion version, UltiPaw ultiPaw, string binPath)
     {
-        if (version == null) return;
+        if (version == null || ultiPaw == null) return;
+
+        // Check if already selected
+        if (selectedVersion == version) return;
 
         selectedVersion = version;
-        ultiPaw.activeUltiPawVersion = version; // Update component
-        ultiPaw.selectedUltiPawBinPath = binPath; // Update component
 
-        // Update blendshapes from the version's customBlendshapes.
-        Undo.RecordObject(ultiPaw, "Select UltiPaw Version"); // Record state change for Undo
+        // Record Undo for changes to the UltiPaw component
+        Undo.RecordObject(ultiPaw, "Select UltiPaw Version");
 
-        if (version.customBlendshapes != null)
+        ultiPaw.activeUltiPawVersion = version;
+        ultiPaw.selectedUltiPawBinPath = binPath;
+
+        // Update blendshapes safely
+        var newBlendshapes = version.customBlendshapes ?? new string[0]; // Ensure not null
+        if (!ultiPaw.blendShapeNames.SequenceEqual(newBlendshapes))
         {
-            // Check if blendshapes actually changed to avoid unnecessary list recreation
-            if (!ultiPaw.blendShapeNames.SequenceEqual(version.customBlendshapes))
+            ultiPaw.blendShapeNames = new List<string>(newBlendshapes);
+            ultiPaw.SyncBlendshapeLists(); // Resizes value list, resets values to 0
+
+            // Reset actual model blendshapes for the new set
+            foreach (var name in ultiPaw.blendShapeNames)
             {
-                 ultiPaw.blendShapeNames = new List<string>(version.customBlendshapes);
-                 ultiPaw.SyncBlendshapeLists(); // Resize value list, reset values to 0
-                 // Reset actual model blendshapes to 0 for the new set
-                 foreach(var name in ultiPaw.blendShapeNames) {
-                     ultiPaw.UpdateBlendshapeFromSlider(name, 0f);
-                 }
-                 // Update SerializedProperty representation
-                 serializedObject.Update(); // Fetch latest state after list change
+                ultiPaw.UpdateBlendshapeFromSlider(name, 0f); // Use the method that finds Body SMR
             }
         }
-        else // No blendshapes defined for this version
-        {
-             if (ultiPaw.blendShapeNames.Count > 0) {
-                 ultiPaw.blendShapeNames.Clear();
-                 ultiPaw.blendShapeValues.Clear();
-                 serializedObject.Update();
-             }
-        }
 
-        EditorUtility.SetDirty(ultiPaw); // Mark component dirty
+        EditorUtility.SetDirty(ultiPaw);
+        serializedObject.Update(); // Update serialized object to reflect component changes
         Debug.Log($"[UltiPawEditor] Selected version: {version.version}");
-        Repaint(); // Update UI to show selection change
+        Repaint();
     }
 
-     private void ClearSelection(UltiPaw ultiPaw) {
-         selectedVersion = null;
-         if (ultiPaw != null) {
-             if (ultiPaw.activeUltiPawVersion != null) {
-                 Undo.RecordObject(ultiPaw, "Clear UltiPaw Selection");
-                 ultiPaw.activeUltiPawVersion = null;
-                 ultiPaw.selectedUltiPawBinPath = null;
-                 // Optionally clear blendshapes? Or keep last used ones? Let's clear them.
-                 ultiPaw.blendShapeNames.Clear();
-                 ultiPaw.blendShapeValues.Clear();
-                 EditorUtility.SetDirty(ultiPaw);
-                 serializedObject.Update(); // Update editor's view of the object
-             }
-         }
+    private void ClearSelection(UltiPaw ultiPaw) {
+        if (selectedVersion == null && (ultiPaw == null || ultiPaw.activeUltiPawVersion == null)) return; // Nothing to clear
+
+        selectedVersion = null;
+        if (ultiPaw != null) {
+            Undo.RecordObject(ultiPaw, "Clear UltiPaw Selection");
+            ultiPaw.activeUltiPawVersion = null;
+            ultiPaw.selectedUltiPawBinPath = null;
+            // Keep blendshapes as they were? Or clear? Let's clear for consistency.
+            if (ultiPaw.blendShapeNames.Count > 0) {
+                ultiPaw.blendShapeNames.Clear();
+                ultiPaw.blendShapeValues.Clear();
+            }
+            EditorUtility.SetDirty(ultiPaw);
+            serializedObject.Update();
+        }
+        Repaint();
      }
 
 
