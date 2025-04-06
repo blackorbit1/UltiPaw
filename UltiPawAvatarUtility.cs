@@ -7,23 +7,24 @@ public static class UltiPawAvatarUtility
 {
     public static void ApplyExternalAvatar(GameObject fbx, string avatarAssetPath)
     {
-        var importer = AssetImporter.GetAtPath(AssetDatabase.GetAssetPath(fbx)) as ModelImporter;
+        string fbxPath = AssetDatabase.GetAssetPath(fbx);
+        var importer = AssetImporter.GetAtPath(fbxPath) as ModelImporter;
         if (importer == null)
         {
-            Debug.LogError("[UltiPaw] Failed to get ModelImporter.");
+            Debug.LogError("[UltiPaw] Failed to get ModelImporter for FBX.");
             return;
         }
 
         if (!File.Exists(avatarAssetPath))
         {
-            Debug.LogWarning($"[UltiPaw] ⚠️ Avatar file not found at: {avatarAssetPath}");
+            Debug.LogWarning($"[UltiPaw] Avatar file not found at: {avatarAssetPath}");
             return;
         }
 
         Avatar avatar = AssetDatabase.LoadAssetAtPath<Avatar>(avatarAssetPath);
         if (avatar == null)
         {
-            Debug.LogWarning($"[UltiPaw] ❌ Could not load Avatar at: {avatarAssetPath}");
+            Debug.LogWarning($"[UltiPaw] Could not load Avatar at: {avatarAssetPath}");
             return;
         }
 
@@ -34,7 +35,7 @@ public static class UltiPawAvatarUtility
         EditorUtility.SetDirty(importer);
         importer.SaveAndReimport();
 
-        Debug.Log($"[UltiPaw] ✅ Avatar '{avatar.name}' successfully assigned.");
+        Debug.Log($"[UltiPaw] Avatar '{avatar.name}' applied successfully.");
     }
 }
 #endif

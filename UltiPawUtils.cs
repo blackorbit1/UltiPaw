@@ -1,16 +1,15 @@
 #if UNITY_EDITOR
+using UnityEditor;
+using UnityEngine;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
-using UnityEditor;
-using UnityEngine;
 
 public static class UltiPawUtils
 {
     public const string SCRIPT_VERSION = "0.1";
     public const string BASE_FOLDER = "Assets/UltiPaw";
     public const string VERSIONS_FOLDER = BASE_FOLDER + "/versions";
-    public const string DEFAULT_AVATAR_RIG_PATH = BASE_FOLDER + "/UltiPaw Rig.avatar"; // Assuming this stays fixed for now
 
     // Calculates SHA256 hash of a file
     public static string CalculateFileHash(string filePath)
@@ -28,9 +27,9 @@ public static class UltiPawUtils
                 byte[] hashBytes = sha256.ComputeHash(stream);
                 // Convert byte array to a lowercase hex string
                 StringBuilder builder = new StringBuilder();
-                for (int i = 0; i < hashBytes.Length; i++)
+                foreach (byte b in hashBytes)
                 {
-                    builder.Append(hashBytes[i].ToString("x2"));
+                    builder.Append(b.ToString("x2"));
                 }
                 return builder.ToString();
             }
