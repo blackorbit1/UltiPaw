@@ -603,63 +603,82 @@ public class UltiPawEditor : Editor
 
     private IEnumerator DownloadVersionCoroutine(UltiPawVersion versionToDownload, UltiPaw ultiPaw)
     {
-        // --- Setup ---
+        // --- 1. Setup ---
         string baseFbxHashForQuery = lastFetchedHash ?? "unknown";
         string downloadUrl = $"{serverBaseUrl}{modelEndpoint}?version={UnityWebRequest.EscapeURL(versionToDownload.version)}&d={baseFbxHashForQuery}";
         string targetExtractFolder = UltiPawUtils.GetVersionDataPath(versionToDownload.version, versionToDownload.defaultAviVersion);
-        string targetZipPath = Path.Combine(Path.GetTempPath(), $"ultipaw_{versionToDownload.version}_{versionToDownload.defaultAviVersion}.zip"); // More unique temp name
+        string targetZipPath = Path.Combine(Path.GetTempPath(), $"ultipaw_{versionToDownload.version}_{versionToDownload.defaultAviVersion}.zip");
+
+        // Ensure target directory exists *before* download attempt
+        UltiPawUtils.EnsureDirectoryExists(targetExtractFolder);
+        if (!Directory.Exists(Path.GetDirectoryName(targetZipPath))) // Ensure temp dir exists too
+        {
+             Directory.CreateDirectory(Path.GetDirectoryName(targetZipPath));
+        }
+
 
         Debug.Log($"[UltiPawEditor] Starting download for version {versionToDownload.version} (Base: {versionToDownload.defaultAviVersion})");
         Debug.Log($"[UltiPawEditor] Download URL: {downloadUrl}");
         Debug.Log($"[UltiPawEditor] Target Extract Folder: {targetExtractFolder}");
 
-        UltiPawUtils.EnsureDirectoryExists(targetExtractFolder);
+        // Clear previous errors for this operation
+        downloadError = "";
+        isDownloading = true;
+        Repaint(); // Show downloading state
 
-        DownloadHandlerFile downloadHandler = null;
+        // --- 2. Create Request Objects (Minimal try for object creation failure) ---
         UnityWebRequest req = null;
-        bool webRequestSuccessful = false;
-
-        // --- Web Request (outside try...finally for yield) ---
+        DownloadHandlerFile downloadHandler = null;
+        bool setupOk = false;
         try
         {
+            // Ensure previous temp file is gone before starting download
+            if (File.Exists(targetZipPath)) File.Delete(targetZipPath);
+
             downloadHandler = new DownloadHandlerFile(targetZipPath);
             req = new UnityWebRequest(downloadUrl, UnityWebRequest.kHttpVerbGET, downloadHandler, null);
-
-            // *** Move yield return here ***
-            yield return req.SendWebRequest(); // Wait for the download to complete or fail
-
-            // Check result *after* yield completes
-            if (req.result != UnityWebRequest.Result.Success)
-            {
-                downloadError = $"Download failed [{req.responseCode} {req.result}]: {req.error}";
-                Debug.LogError($"[UltiPawEditor] {downloadError}");
-                webRequestSuccessful = false;
-            }
-            else
-            {
-                Debug.Log($"[UltiPawEditor] Successfully downloaded ZIP to: {targetZipPath}");
-                downloadError = ""; // Clear error on success
-                webRequestSuccessful = true;
-            }
+            setupOk = true;
         }
-        catch (System.Exception webEx) // Catch exceptions during web request setup/send itself
+        catch (System.Exception setupEx)
         {
-             downloadError = $"Download Coroutine Exception: {webEx.Message}";
-             Debug.LogError($"[UltiPawEditor] {downloadError}");
-             webRequestSuccessful = false; // Mark as failed
+            downloadError = $"Download setup failed: {setupEx.Message}";
+            Debug.LogError($"[UltiPawEditor] {downloadError}");
+            // No yield happened, jump straight to cleanup
         }
 
-        // --- File Operations and Cleanup (inside try...finally) ---
-        try
+        // --- 3. Execute Web Request (Yield is outside try/catch/finally) ---
+        if (setupOk)
         {
-            if (webRequestSuccessful) // Only attempt extraction if download succeeded
+            yield return req.SendWebRequest(); // <<< YIELD HERE
+        }
+
+        // --- 4. Process Result and Cleanup (Uses try/finally for resource disposal) ---
+        bool downloadSucceeded = false;
+        try // This try is primarily for the finally block to ensure disposal
+        {
+            if (setupOk && req != null) // Check if request was actually sent
             {
-                // Ensure handler is disposed BEFORE extraction
+                if (req.result != UnityWebRequest.Result.Success)
+                {
+                    downloadError = $"Download failed [{req.responseCode} {req.result}]: {req.error}";
+                    Debug.LogError($"[UltiPawEditor] {downloadError}");
+                }
+                else
+                {
+                    Debug.Log($"[UltiPawEditor] Successfully downloaded ZIP to: {targetZipPath}");
+                    downloadSucceeded = true; // Mark download as successful
+                }
+            }
+            // If setup failed, downloadError was already set
+
+            // --- 5. Extraction (Only if download succeeded) ---
+            if (downloadSucceeded)
+            {
+                // Dispose handler *before* extraction
                 downloadHandler?.Dispose();
-                downloadHandler = null;
+                downloadHandler = null; // Prevent double disposal
 
-                // --- Extraction ---
-                try
+                try // Separate try/catch specifically for extraction errors
                 {
                     ZipFile.ExtractToDirectory(targetZipPath, targetExtractFolder, true);
                     Debug.Log($"[UltiPawEditor] Successfully extracted files to: {targetExtractFolder}");
@@ -669,43 +688,33 @@ public class UltiPawEditor : Editor
                     string expectedBinPath = UltiPawUtils.GetVersionBinPath(versionToDownload.version, versionToDownload.defaultAviVersion);
                     SelectVersion(versionToDownload, ultiPaw, expectedBinPath);
                 }
-                catch (System.Exception e)
+                catch (System.Exception ex)
                 {
-                    // Keep downloadError empty if download was ok but extraction failed
-                    // Or set a specific extraction error? Let's set it.
-                    downloadError = $"Extraction failed: {e.Message}";
-                    Debug.LogError($"[UltiPawEditor] Failed to extract ZIP file '{targetZipPath}' to '{targetExtractFolder}': {e}");
+                    downloadError = $"Extraction failed: {ex.Message}"; // Set specific error
+                    Debug.LogError($"[UltiPawEditor] Failed to extract ZIP file '{targetZipPath}' to '{targetExtractFolder}': {ex}");
                     AssetDatabase.Refresh(); // Refresh anyway
                 }
             }
         }
-        finally // Ensure disposal and cleanup happens
+        finally // This block ensures disposal and cleanup happens
         {
-            isDownloading = false; // Mark download process as finished
+            isDownloading = false; // Mark process finished
 
-            // Dispose handlers if they weren't already (e.g., if web request failed before disposal)
+            // Dispose handlers if they exist and weren't disposed earlier
             downloadHandler?.Dispose();
             req?.Dispose();
 
-            // Attempt to clean up temp file
+            // Clean up temp file if it exists
             if (File.Exists(targetZipPath))
             {
-                try
-                {
-                    File.Delete(targetZipPath);
-                }
-                catch (IOException ioEx)
-                {
-                    Debug.LogWarning($"[UltiPawEditor] Could not delete temp file '{targetZipPath}' (might be locked): {ioEx.Message}");
-                }
-                 catch (System.Exception ex)
-                {
-                    Debug.LogWarning($"[UltiPawEditor] Error deleting temp file '{targetZipPath}': {ex.Message}");
-                }
+                try { File.Delete(targetZipPath); }
+                catch (IOException ioEx) { Debug.LogWarning($"[UltiPawEditor] Could not delete temp file '{targetZipPath}' (might be locked): {ioEx.Message}"); }
+                catch (System.Exception ex) { Debug.LogWarning($"[UltiPawEditor] Error deleting temp file '{targetZipPath}': {ex.Message}"); }
             }
             Repaint(); // Update UI after everything
         }
     }
+
 
     private void HandleFetchError(UnityWebRequest req, UltiPaw ultiPaw)
     {
