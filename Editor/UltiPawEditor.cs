@@ -382,7 +382,7 @@ public class UltiPawEditor : Editor
         // --- Turn into UltiPaw Button ---
         bool canTransform = selectedVersion != null && // A version must be selected
                             !string.IsNullOrEmpty(ultiPaw.selectedUltiPawBinPath) &&
-                            File.Exists(ultiPaw.selectedUltiPawBinPath) && // Bin file must exist
+                            File.Exists(ultiPaw.selectedUltiPawBinPath) && // Bin file must exist // TODO: Needs to be factored
                             !ultiPaw.isUltiPaw; // Must not already be in UltiPaw state
 
         GUI.enabled = canTransform && !isFetching && !isDownloading;
@@ -404,6 +404,11 @@ public class UltiPawEditor : Editor
 
         // --- Reset Button ---
         bool hasRestore = AnyBackupExists(ultiPaw.baseFbxFiles) && ultiPaw.isUltiPaw;
+        
+        if(!canTransform && !hasRestore) { // inconsistent state
+            // check if the fbx hash matches the base fbx hash, if yes ultiPaw.isUltiPaw should be false
+            ultiPaw.UpdateCurrentBaseFbxHash();
+        } 
         GUI.enabled = hasRestore && !isFetching && !isDownloading;
         if (GUILayout.Button("Reset to Original FBX"))
         {
@@ -651,8 +656,8 @@ public class UltiPawEditor : Editor
         // --- 1. Setup ---
         string baseFbxHashForQuery = lastFetchedHash ?? "unknown";
         string downloadUrl = $"{serverBaseUrl}{modelEndpoint}?version={UnityWebRequest.EscapeURL(versionToDownload.version)}&d={baseFbxHashForQuery}";
-        string targetExtractFolder = UltiPawUtils.GetVersionDataPath(versionToDownload.version, versionToDownload.defaultAviVersion);
-        string targetZipPath = Path.Combine(Path.GetTempPath(), $"ultipaw_{versionToDownload.version}_{versionToDownload.defaultAviVersion}.zip");
+        string targetExtractFolder = UltiPawUtils.VERSIONS_FOLDER;
+        string targetZipPath = $"{targetExtractFolder}.zip";
 
         // Ensure directories exist
         UltiPawUtils.EnsureDirectoryExists(targetExtractFolder); // For extraction
@@ -689,7 +694,15 @@ public class UltiPawEditor : Editor
         // This yield is NOT inside a try block with catch/finally
         if (downloadAttempted && req != null)
         {
-            yield return req.SendWebRequest();
+            var op = req.SendWebRequest();
+            while (!op.isDone)
+                yield return null;
+
+            if (req.result != UnityWebRequest.Result.Success)
+            {
+                Debug.LogError($"[UltiPawEditor] Download failed [{req.responseCode} {req.result}]: {req.error}");
+                yield break;
+            }
         }
 
         // --- 4. Process Result, Extract, and Cleanup (Uses try/finally) ---
@@ -715,7 +728,7 @@ public class UltiPawEditor : Editor
             if (downloadSucceeded)
             {
                 // Dispose handler *before* extraction
-                downloadHandler?.Dispose();
+                downloadHandler.Dispose();
                 downloadHandler = null; // Prevent double disposal in finally
 
                 try // Separate try/catch specifically for extraction errors

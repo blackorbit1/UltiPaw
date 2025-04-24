@@ -203,6 +203,11 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
         if (!string.IsNullOrEmpty(path) && File.Exists(path))
         {
             string newHash = UltiPawUtils.CalculateFileHash(path);
+            if (newHash.Equals(activeUltiPawVersion.defaultAviHash))
+            {
+                Debug.LogError("[UltiPaw] newHash equals defaultAviHash, isUltiPaw set to false");
+                isUltiPaw = false;
+            }
             if (newHash != currentBaseFbxHash)
             {
                 currentBaseFbxHash = newHash;
