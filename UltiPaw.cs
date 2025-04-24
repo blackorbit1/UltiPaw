@@ -24,8 +24,6 @@ public class UltiPawVersion
     public string changelog;
     public string customAviHash;
     public string defaultAviHash;
-    public string defaultAvatarPath; // Relative path like "default avatar.avatar"
-    public string ultipawAvatarPath; // Relative path like "ultipaw avatar.avatar"
     public string[] customBlendshapes;
     public Dictionary<string, string> dependencies;
 }
@@ -264,8 +262,8 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
         if (!baseHashMatch || !binHashMatch)
         {
             string message = $"Hash mismatch detected for selected version '{activeUltiPawVersion.version}':\n\n";
-            if (!baseHashMatch) message += $"Base FBX Hash: MISMATCH\n (Expected: {activeUltiPawVersion.defaultAviHash?.Substring(0, 12) ?? "N/A"}... Found: {currentBaseFbxHash?.Substring(0, 12) ?? "N/A"}...)\n";
-            if (!binHashMatch) message += $"UltiPaw .bin Hash: MISMATCH\n (Expected: {activeUltiPawVersion.customAviHash?.Substring(0, 12) ?? "N/A"}... Found: {currentBinHash?.Substring(0, 12) ?? "N/A"}...)\n";
+            if (!baseHashMatch) message += $"Base FBX Hash: MISMATCH\n (Expected: {activeUltiPawVersion.defaultAviHash ?? "N/A"}... Found: {currentBaseFbxHash ?? "N/A"}...)\n";
+            if (!binHashMatch) message += $"UltiPaw .bin Hash: MISMATCH\n (Expected: {activeUltiPawVersion.customAviHash ?? "N/A"}... Found: {currentBinHash ?? "N/A"}...)\n";
             message += "\nApplying this version might lead to unexpected results or errors. Are you sure you want to continue?";
 
             if (!EditorUtility.DisplayDialog("UltiPaw - Hash Mismatch", message, "Continue Anyway", "Cancel"))
@@ -297,6 +295,8 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
             if (File.Exists(backupPath)) File.Delete(backupPath);
             File.Move(baseFbxPath, backupPath);
             Debug.Log($"[UltiPaw] Backed up original FBX to: {backupPath}");
+            
+            // --- Stops here --> Error 
 
             // Write transformed FBX.
             File.WriteAllBytes(baseFbxPath, transformedData);
@@ -307,10 +307,10 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
             Debug.Log($"[UltiPaw] Reimporting {baseFbxPath}...");
 
             // Apply external avatar using the ultipaw avatar file from the selected version.
-            string versionDataPath = UltiPawUtils.GetVersionDataPath(activeUltiPawVersion.version, currentBaseFbxHash); // Use current hash for path consistency
-            string ultiAvatarFullPath = Path.Combine(versionDataPath, activeUltiPawVersion.ultipawAvatarPath).Replace("\\", "/");
+            string versionDataPath = UltiPawUtils.GetVersionDataPath(activeUltiPawVersion.version, activeUltiPawVersion.defaultAviVersion); // Use current hash for path consistency
+            string ultiAvatarFullPath = Path.Combine(versionDataPath, UltiPawUtils.ULTIPAW_AVATAR_NAME).Replace("\\", "/");
 
-            if (!string.IsNullOrEmpty(activeUltiPawVersion.ultipawAvatarPath) && File.Exists(ultiAvatarFullPath))
+            if (File.Exists(ultiAvatarFullPath))
             {
                 // Apply to ModelImporter
                 UltiPawAvatarUtility.ApplyExternalAvatar(baseFbxFiles[0], ultiAvatarFullPath);
@@ -387,11 +387,11 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
 
         // Apply default avatar rig using the default avatar from the *previously* active version if available
         // Or potentially try to find a default rig if no version was active? For now, rely on activeVersion
-        if (activeUltiPawVersion != null && !string.IsNullOrEmpty(activeUltiPawVersion.defaultAvatarPath))
+        if (activeUltiPawVersion != null)
         {
             UpdateCurrentBaseFbxHash(); // Need hash for path generation
             string versionDataPath = UltiPawUtils.GetVersionDataPath(activeUltiPawVersion.version, currentBaseFbxHash ?? "unknown"); // Use hash if available
-            string defaultAvatarFullPath = Path.Combine(versionDataPath, activeUltiPawVersion.defaultAvatarPath).Replace("\\", "/");
+            string defaultAvatarFullPath = Path.Combine(versionDataPath, UltiPawUtils.DEFAULT_AVATAR_NAME).Replace("\\", "/");
 
             if (File.Exists(defaultAvatarFullPath))
             {
