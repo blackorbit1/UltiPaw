@@ -205,8 +205,12 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
             string newHash = UltiPawUtils.CalculateFileHash(path);
             if (newHash.Equals(activeUltiPawVersion.defaultAviHash))
             {
-                Debug.LogError("[UltiPaw] newHash equals defaultAviHash, isUltiPaw set to false");
+                Debug.Log("[UltiPaw] newHash equals defaultAviHash, isUltiPaw set to false");
                 isUltiPaw = false;
+            } else if (newHash.Equals(activeUltiPawVersion.customAviHash))
+            {
+                Debug.Log("[UltiPaw] newHash equals customAviHash, isUltiPaw set to true");
+                isUltiPaw = true;
             }
             if (newHash != currentBaseFbxHash)
             {
@@ -307,9 +311,9 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
             File.WriteAllBytes(baseFbxPath, transformedData);
             Debug.Log($"[UltiPaw] Wrote transformed data to: {baseFbxPath}");
 
-            // Force reimport.
-            AssetDatabase.ImportAsset(baseFbxPath, ImportAssetOptions.ForceUpdate);
-            Debug.Log($"[UltiPaw] Reimporting {baseFbxPath}...");
+            // Force reimport. --> Might not be needed as we will reimport in ApplyExternalAvatar()
+            //AssetDatabase.ImportAsset(baseFbxPath, ImportAssetOptions.ForceUpdate);
+            //Debug.Log($"[UltiPaw] Reimporting {baseFbxPath}...");
 
             // Apply external avatar using the ultipaw avatar file from the selected version.
             string versionDataPath = UltiPawUtils.GetVersionDataPath(activeUltiPawVersion.version, activeUltiPawVersion.defaultAviVersion); // Use current hash for path consistency

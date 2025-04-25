@@ -10,8 +10,8 @@ public static class UltiPawUtils
     public const string SCRIPT_VERSION = "0.1";
     public const string BASE_FOLDER = "Assets/UltiPaw";
     public const string VERSIONS_FOLDER = BASE_FOLDER + "/versions";
-    public const string DEFAULT_AVATAR_NAME = "default avatar";
-    public const string ULTIPAW_AVATAR_NAME = "ultiPaw avatar";
+    public const string DEFAULT_AVATAR_NAME = "default avatar.asset";
+    public const string ULTIPAW_AVATAR_NAME = "ultipaw avatar.asset";
 
     // Calculates SHA256 hash of a file
     public static string CalculateFileHash(string filePath)

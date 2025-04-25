@@ -163,14 +163,9 @@ public class UltiPawEditor : Editor
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
 
         // Display Errors First (without hiding rest of UI)
-        if (!string.IsNullOrEmpty(fetchError))
-        {
-            EditorGUILayout.HelpBox("Fetch Error: " + fetchError, MessageType.Error);
-        }
-        if (!string.IsNullOrEmpty(downloadError))
-        {
-            EditorGUILayout.HelpBox("Download Error: " + downloadError, MessageType.Warning); // Warning, might be recoverable
-        }
+        if (!string.IsNullOrEmpty(fetchError)) EditorGUILayout.HelpBox("Fetch Error: " + fetchError, MessageType.Error);
+        if (!string.IsNullOrEmpty(downloadError)) EditorGUILayout.HelpBox("Download Error: " + downloadError, MessageType.Warning);
+
 
         // Update/Fetch Button
         GUI.enabled = !isFetching && !isDownloading;
