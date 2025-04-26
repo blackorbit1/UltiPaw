@@ -31,7 +31,7 @@ public class UltiPawEditor : Editor
     private bool versionsFoldout = false;
 
     // Server settings
-    private const string serverBaseUrl = "http://192.168.1.180:8080"; // Update with your server URL
+    private const string serverBaseUrl = "http://orbiters.cc:8080"; // Update with your server URL
     private const string versionsEndpoint = "/ultipaw/getVersions";
     private const string modelEndpoint = "/ultipaw/getModel";
 
@@ -437,11 +437,8 @@ public class UltiPawEditor : Editor
             }
 
 
-            int columns = Mathf.Max(1, (int)(EditorGUIUtility.currentViewWidth - 50) / 180); // Dynamic columns based on width
             for (int i = 0; i < ultiPaw.blendShapeNames.Count; i++)
             {
-                if (i % columns == 0) EditorGUILayout.BeginHorizontal();
-
                 // Get the specific element property
                 SerializedProperty blendValProp = blendShapeValuesProp.GetArrayElementAtIndex(i);
 
@@ -462,11 +459,6 @@ public class UltiPawEditor : Editor
                     blendValProp.floatValue = newValue;
                     // Apply the change to the actual blendshape on the model
                     ultiPaw.UpdateBlendshapeFromSlider(ultiPaw.blendShapeNames[i], newValue);
-                }
-
-                if (i % columns == columns - 1 || i == ultiPaw.blendShapeNames.Count - 1)
-                {
-                    EditorGUILayout.EndHorizontal();
                 }
             }
             EditorGUILayout.EndVertical();
