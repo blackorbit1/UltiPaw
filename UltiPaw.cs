@@ -195,6 +195,21 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
 #endif
     }
 
+    public bool refreshIsUltiPaw()
+    {
+        if (currentBaseFbxHash.Equals(activeUltiPawVersion.defaultAviHash))
+        {
+            Debug.Log("[UltiPaw] newHash equals defaultAviHash, isUltiPaw set to false");
+            isUltiPaw = false;
+        } else if (currentBaseFbxHash.Equals(activeUltiPawVersion.customAviHash))
+        {
+            Debug.Log("[UltiPaw] newHash equals customAviHash, isUltiPaw set to true");
+            isUltiPaw = true;
+        }
+
+        return isUltiPaw;
+    }
+
     // Calculates and updates the hash for the current base FBX
     public bool UpdateCurrentBaseFbxHash()
     {
