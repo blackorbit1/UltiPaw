@@ -380,6 +380,7 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
                 File.Move(backupPath, baseFbxPath);
                 Debug.Log($"[UltiPaw] Restored original FBX from: {backupPath}");
                 AssetDatabase.ImportAsset(baseFbxPath, ImportAssetOptions.ForceUpdate);
+                AssetDatabase.SaveAssets();
                 restored = true;
             }
             catch (System.Exception e)
@@ -399,7 +400,7 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
         if (activeUltiPawVersion != null)
         {
             UpdateCurrentBaseFbxHash(); // Need hash for path generation
-            string versionDataPath = UltiPawUtils.GetVersionDataPath(activeUltiPawVersion.version, currentBaseFbxHash ?? "unknown"); // Use hash if available
+            string versionDataPath = UltiPawUtils.GetVersionDataPath(activeUltiPawVersion.version, activeUltiPawVersion.defaultAviVersion ?? "unknown"); // Use hash if available
             string defaultAvatarFullPath = Path.Combine(versionDataPath, UltiPawUtils.DEFAULT_AVATAR_NAME).Replace("\\", "/");
 
             if (File.Exists(defaultAvatarFullPath))
@@ -452,26 +453,34 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
 #if UNITY_EDITOR
         if (this == null || transform == null) return;
         Transform root = transform.root;
-        if (root != null)
-        {
-            Animator animator = root.GetComponent<Animator>();
-            if (animator != null)
-            {
-                Avatar avatar = null;
-                if (!string.IsNullOrEmpty(avatarAssetPath) && File.Exists(avatarAssetPath))
-                {
-                     avatar = AssetDatabase.LoadAssetAtPath<Avatar>(avatarAssetPath);
-                }
+        if (root == null) return;
 
-                if (animator.avatar != avatar) // Only update if changed
-                {
-                    Undo.RecordObject(animator, "Set Root Animator Avatar");
-                    animator.avatar = avatar;
-                    EditorUtility.SetDirty(animator);
-                    Debug.Log($"[UltiPaw] Root Animator's Avatar set to {(avatar != null ? avatar.name : "None")}");
-                }
-            }
-            // else { Debug.LogWarning("[UltiPaw] Root object has no Animator component."); }
+        GameObject rootObject = root.gameObject;
+
+        // Ensure an Animator exists, create if missing
+        Animator animator = rootObject.GetComponent<Animator>();
+        if (animator == null)
+        {
+            Undo.RecordObject(rootObject, "Add Animator Component");
+            animator = rootObject.AddComponent<Animator>();
+            EditorUtility.SetDirty(rootObject);
+            Debug.Log($"[UltiPaw] Animator component added to root object '{rootObject.name}'.");
+        }
+
+        // Load avatar if provided
+        Avatar avatar = null;
+        if (!string.IsNullOrEmpty(avatarAssetPath) && File.Exists(avatarAssetPath))
+        {
+            avatar = AssetDatabase.LoadAssetAtPath<Avatar>(avatarAssetPath);
+        }
+
+        // Only set avatar if different
+        if (animator.avatar != avatar)
+        {
+            Undo.RecordObject(animator, "Set Root Animator Avatar");
+            animator.avatar = avatar;
+            EditorUtility.SetDirty(animator);
+            Debug.Log($"[UltiPaw] Root Animator's avatar set to {(avatar != null ? avatar.name : "None")}.");
         }
 #endif
     }

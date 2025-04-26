@@ -380,6 +380,13 @@ public class UltiPawEditor : Editor
                             File.Exists(ultiPaw.selectedUltiPawBinPath) && // Bin file must exist // TODO: Needs to be factored
                             !ultiPaw.isUltiPaw; // Must not already be in UltiPaw state
 
+        bool hasRestore = AnyBackupExists(ultiPaw.baseFbxFiles) && ultiPaw.isUltiPaw;
+        
+        if(!canTransform && !hasRestore) { // inconsistent state
+            // check if the fbx hash matches the base fbx hash, if yes ultiPaw.isUltiPaw should be false
+            ultiPaw.UpdateCurrentBaseFbxHash();
+        } 
+        
         GUI.enabled = canTransform && !isFetching && !isDownloading;
         GUI.backgroundColor = Color.green;
         if (GUILayout.Button("Turn into UltiPaw", GUILayout.Height(40)))
@@ -398,13 +405,8 @@ public class UltiPawEditor : Editor
         GUI.enabled = true;
 
         // --- Reset Button ---
-        bool hasRestore = AnyBackupExists(ultiPaw.baseFbxFiles) && ultiPaw.isUltiPaw;
-        
-        if(!canTransform && !hasRestore) { // inconsistent state
-            // check if the fbx hash matches the base fbx hash, if yes ultiPaw.isUltiPaw should be false
-            ultiPaw.UpdateCurrentBaseFbxHash();
-        } 
-        GUI.enabled = hasRestore && !isFetching && !isDownloading;
+
+        GUI.enabled = hasRestore;
         if (GUILayout.Button("Reset to Original FBX"))
         {
             if (EditorUtility.DisplayDialog("Confirm Reset", "This will restore the original FBX (from its '.old' backup, if found) and attempt to reapply the default avatar configuration.", "Reset", "Cancel"))

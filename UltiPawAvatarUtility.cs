@@ -34,6 +34,10 @@ public static class UltiPawAvatarUtility
 
         EditorUtility.SetDirty(importer);
         importer.SaveAndReimport();
+        
+        // Persist the new import settings to disk so Unity won't pop up
+        // “Unapplied import settings…” when you hit Play.
+        AssetDatabase.SaveAssets();
 
         Debug.Log($"[UltiPaw] Avatar '{avatar.name}' applied successfully.");
     }
