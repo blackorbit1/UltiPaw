@@ -7,7 +7,7 @@ Avatar:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: ultipaw avatar
-  m_AvatarSize: 24648
+  m_AvatarSize: 24484
   m_Avatar:
     serializedVersion: 3
     m_AvatarSkeleton:
@@ -1080,9 +1080,9 @@ Avatar:
               m_AxesId: 5
             - m_ParentId: 5
               m_AxesId: 6
-            - m_ParentId: 5
-              m_AxesId: 7
             - m_ParentId: 3
+              m_AxesId: 7
+            - m_ParentId: 8
               m_AxesId: 8
             - m_ParentId: 9
               m_AxesId: 9
@@ -1094,33 +1094,33 @@ Avatar:
               m_AxesId: 12
             - m_ParentId: 13
               m_AxesId: 13
-            - m_ParentId: 14
+            - m_ParentId: 11
               m_AxesId: 14
-            - m_ParentId: 12
+            - m_ParentId: 15
               m_AxesId: 15
             - m_ParentId: 16
               m_AxesId: 16
-            - m_ParentId: 17
+            - m_ParentId: 11
               m_AxesId: 17
-            - m_ParentId: 12
+            - m_ParentId: 18
               m_AxesId: 18
             - m_ParentId: 19
               m_AxesId: 19
-            - m_ParentId: 20
+            - m_ParentId: 11
               m_AxesId: 20
-            - m_ParentId: 12
+            - m_ParentId: 21
               m_AxesId: 21
             - m_ParentId: 22
               m_AxesId: 22
-            - m_ParentId: 23
+            - m_ParentId: 11
               m_AxesId: 23
-            - m_ParentId: 12
+            - m_ParentId: 24
               m_AxesId: 24
             - m_ParentId: 25
               m_AxesId: 25
-            - m_ParentId: 26
-              m_AxesId: 26
             - m_ParentId: 3
+              m_AxesId: 26
+            - m_ParentId: 27
               m_AxesId: 27
             - m_ParentId: 28
               m_AxesId: 28
@@ -1132,49 +1132,47 @@ Avatar:
               m_AxesId: 31
             - m_ParentId: 32
               m_AxesId: 32
-            - m_ParentId: 33
+            - m_ParentId: 30
               m_AxesId: 33
-            - m_ParentId: 31
+            - m_ParentId: 34
               m_AxesId: 34
             - m_ParentId: 35
               m_AxesId: 35
-            - m_ParentId: 36
+            - m_ParentId: 30
               m_AxesId: 36
-            - m_ParentId: 31
+            - m_ParentId: 37
               m_AxesId: 37
             - m_ParentId: 38
               m_AxesId: 38
-            - m_ParentId: 39
+            - m_ParentId: 30
               m_AxesId: 39
-            - m_ParentId: 31
+            - m_ParentId: 40
               m_AxesId: 40
             - m_ParentId: 41
               m_AxesId: 41
-            - m_ParentId: 42
+            - m_ParentId: 30
               m_AxesId: 42
-            - m_ParentId: 31
+            - m_ParentId: 43
               m_AxesId: 43
             - m_ParentId: 44
               m_AxesId: 44
-            - m_ParentId: 45
-              m_AxesId: 45
             - m_ParentId: 1
+              m_AxesId: 45
+            - m_ParentId: 46
               m_AxesId: 46
             - m_ParentId: 47
               m_AxesId: 47
             - m_ParentId: 48
               m_AxesId: 48
-            - m_ParentId: 49
-              m_AxesId: 49
             - m_ParentId: 1
+              m_AxesId: 49
+            - m_ParentId: 50
               m_AxesId: 50
             - m_ParentId: 51
               m_AxesId: 51
             - m_ParentId: 52
               m_AxesId: 52
-            - m_ParentId: 53
-              m_AxesId: 53
-            m_ID: b28d6c7da8964ed447d35688f558d7664dfed8118273afb567dfa1ad5cef4e254c176ece2bb36c3b6e58b81f6fb9879b0cd69a2dd8e56013e64a9e06e1ec93ea39e0d497bb5924f8ac6eb53bcc510f6aa92d957c5007cc9598ab4ea6f7029d4c4b209786039619a6f7ebaa4368ec0835488e63c167cf56abd1dc0971d4eef24803e170d5125be96a9ae0c4410b9bd3dc185b126ce85c315b2848865583b9f6e50200d259dfff9c405868c628ea55fa84d892096003fadd2f13e05f9e887ca9cf44e56764cca91d4c8862b0d2632b0022877666d790bdb2e21cdf7d00
+            m_ID: b28d6c7da8964ed447d35688f558d7664dfed8118273afb55cef4e254c176ece2bb36c3b6e58b81f6fb9879b0cd69a2dd8e56013e64a9e06e1ec93ea39e0d497bb5924f8ac6eb53bcc510f6aa92d957c5007cc9598ab4ea6f7029d4c4b209786039619a6f7ebaa4368ec0835488e63c167cf56abd1dc0971d4eef24803e170d5125be96a9ae0c4410b9bd3dc185b126ce85c315b2848865583b9f6e50200d259dfff9c405868c628ea55fa84d892096003fadd2f13e05f9e887ca9cf44e56764cca91d4c8862b0d2632b0022877666d790bdb2e21cdf7d00
             m_AxesArray:
             - m_PreQ: {x: -0.50000006, y: -0.49999994, z: 0.50000006, w: 0.49999994}
               m_PostQ: {x: -0.50029665, y: -0.50029665, z: 0.49970323, w: 0.49970323}
@@ -1215,14 +1213,6 @@ Avatar:
                 m_Min: {x: -0.6981317, y: -0.6981317, z: -0.6981317}
                 m_Max: {x: 0.6981317, y: 0.6981317, z: 0.6981317}
               m_Length: 0.08045923
-              m_Type: 1
-            - m_PreQ: {x: 0.7069161, y: -0.01641977, z: 0.7069162, w: -0.016419776}
-              m_PostQ: {x: 0.35403576, y: 0.61209756, z: 0.35403332, w: 0.61209136}
-              m_Sgn: {x: 1, y: 1, z: -1}
-              m_Limit:
-                m_Min: {x: 0, y: -0.17453292, z: -0.17453292}
-                m_Max: {x: 0, y: 0.17453292, z: 0.17453292}
-              m_Length: 0.1
               m_Type: 1
             - m_PreQ: {x: 0.7055422, y: 0.047012657, z: 0.7055423, w: 0.047012664}
               m_PostQ: {x: 0.7071068, y: -0.000000077008096, z: 0.7071068, w: -0.000000081042586}
@@ -1629,9 +1619,6 @@ Avatar:
             - t: {x: 1.6875392e-14, y: 0.08045924, z: -0.0000000037252907}
               q: {x: 0.0121683255, y: -0.00000011895669, z: 0.000000004246128, w: 0.99992627}
               s: {x: 1, y: 1, z: 1}
-            - t: {x: -0.0000000089760785, y: 0.06107997, z: 0.03763683}
-              q: {x: 0.83042896, y: -0.0000020659636, z: -0.0000041443323, w: 0.55712515}
-              s: {x: 1, y: 1, z: 1}
             - t: {x: -0.044540692, y: 0.10613305, z: 0.05169306}
               q: {x: -0.066486076, y: -0.00000011905567, z: -0.000000010734659, w: 0.99778765}
               s: {x: 1, y: 0.9999992, z: 0.9999992}
@@ -1778,11 +1765,11 @@ Avatar:
               s: {x: 1, y: 1, z: 0.99999994}
         m_LeftHand:
           data:
-            m_HandBoneIndex: 1000000011000000120000000d0000000e0000000f000000130000001400000015000000160000001700000018000000190000001a0000001b000000
+            m_HandBoneIndex: 0f00000010000000110000000c0000000d0000000e00000012000000130000001400000015000000160000001700000018000000190000001a000000
         m_RightHand:
           data:
-            m_HandBoneIndex: 230000002400000025000000200000002100000022000000260000002700000028000000290000002a0000002b0000002c0000002d0000002e000000
-        m_HumanBoneIndex: 010000002f00000033000000300000003400000031000000350000000200000003000000ffffffff0400000005000000090000001c0000000a0000001d0000000b0000001e0000000c0000001f0000003200000036000000070000000800000006000000
+            m_HandBoneIndex: 2200000023000000240000001f000000200000002100000025000000260000002700000028000000290000002a0000002b0000002c0000002d000000
+        m_HumanBoneIndex: 010000002e000000320000002f0000003300000030000000340000000200000003000000ffffffff0400000005000000080000001b000000090000001c0000000a0000001d0000000b0000001e00000031000000350000000600000007000000ffffffff
         m_HumanBoneMass:
         - 0.14545456
         - 0.12121213
@@ -1820,8 +1807,8 @@ Avatar:
         m_HasLeftHand: 1
         m_HasRightHand: 1
         m_HasTDoF: 0
-    m_HumanSkeletonIndexArray: 010000000200000003000000040000000500000006000000070000000d0000000f000000330000003400000035000000360000003700000038000000390000003b0000003c0000003d0000003f00000040000000410000004300000044000000450000004700000048000000490000004b0000004c0000004d0000004e0000004f00000050000000510000005300000054000000550000005700000058000000590000005b0000005c0000005d0000005f00000060000000610000006300000064000000650000006600000068000000690000006a0000006b000000
-    m_HumanSkeletonReverseIndexArray: ffffffff00000000010000000200000003000000040000000500000006000000ffffffffffffffffffffffffffffffffffffffff07000000ffffffff08000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff090000000a0000000b0000000c0000000d0000000e0000000f000000ffffffff100000001100000012000000ffffffff130000001400000015000000ffffffff160000001700000018000000ffffffff190000001a0000001b000000ffffffff1c0000001d0000001e0000001f000000200000002100000022000000ffffffff230000002400000025000000ffffffff260000002700000028000000ffffffff290000002a0000002b000000ffffffff2c0000002d0000002e000000ffffffff2f000000300000003100000032000000ffffffff33000000340000003500000036000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+    m_HumanSkeletonIndexArray: 0100000002000000030000000400000005000000060000000d0000000f000000330000003400000035000000360000003700000038000000390000003b0000003c0000003d0000003f00000040000000410000004300000044000000450000004700000048000000490000004b0000004c0000004d0000004e0000004f00000050000000510000005300000054000000550000005700000058000000590000005b0000005c0000005d0000005f00000060000000610000006300000064000000650000006600000068000000690000006a0000006b000000
+    m_HumanSkeletonReverseIndexArray: ffffffff000000000100000002000000030000000400000005000000ffffffffffffffffffffffffffffffffffffffffffffffff06000000ffffffff07000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff08000000090000000a0000000b0000000c0000000d0000000e000000ffffffff0f0000001000000011000000ffffffff120000001300000014000000ffffffff150000001600000017000000ffffffff18000000190000001a000000ffffffff1b0000001c0000001d0000001e0000001f0000002000000021000000ffffffff220000002300000024000000ffffffff250000002600000027000000ffffffff28000000290000002a000000ffffffff2b0000002c0000002d000000ffffffff2e0000002f0000003000000031000000ffffffff32000000330000003400000035000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
     m_RootMotionBoneIndex: -1
     m_RootMotionBoneX:
       t: {x: 0, y: 0, z: 0}
@@ -2139,14 +2126,6 @@ Avatar:
         m_Modified: 0
     - m_BoneName: RightEye
       m_HumanName: RightEye
-      m_Limit:
-        m_Min: {x: 0, y: 0, z: 0}
-        m_Max: {x: 0, y: 0, z: 0}
-        m_Value: {x: 0, y: 0, z: 0}
-        m_Length: 0
-        m_Modified: 0
-    - m_BoneName: jaw
-      m_HumanName: Jaw
       m_Limit:
         m_Min: {x: 0, y: 0, z: 0}
         m_Max: {x: 0, y: 0, z: 0}
