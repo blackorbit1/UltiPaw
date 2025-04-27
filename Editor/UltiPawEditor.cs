@@ -39,7 +39,7 @@ public class UltiPawEditor : Editor
     // This is called when we show the component (not when it gets enabled)
     private void OnEnable()
     {
-        bannerTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(UltiPawUtils.BASE_FOLDER + "/banner.png");
+        bannerTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(UltiPawUtils.BASE_FOLDER + "/Editor/banner.png");
         baseFbxFilesProp = serializedObject.FindProperty("baseFbxFiles");
         specifyCustomBaseFbxProp = serializedObject.FindProperty("specifyCustomBaseFbx");
         blendShapeNamesProp = serializedObject.FindProperty("blendShapeNames");
