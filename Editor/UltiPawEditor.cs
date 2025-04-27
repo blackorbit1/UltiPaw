@@ -384,7 +384,6 @@ public class UltiPawEditor : Editor
 
 
 
-    // New method to draw list items with split buttons
     private void DrawVersionListItemWithSplitButtons(UltiPawVersion ver, UltiPaw ultiPaw)
     {
         if (ver == null) return;
@@ -400,6 +399,16 @@ public class UltiPawEditor : Editor
         bool isDownloaded = !string.IsNullOrEmpty(expectedBinPath) && File.Exists(expectedBinPath);
         bool isCurrentlySelected = selectedVersion != null && selectedVersion.Equals(ver);
         bool isCurrentlyApplied = ultiPaw.appliedUltiPawVersion != null && ultiPaw.appliedUltiPawVersion.Equals(ver);
+        bool canInteract = !isFetching && !isDownloading && !isDeleting;
+
+        // Prepare Icons (using built-in icons)
+        // Find suitable icons: e.g., 'd_Toolbar Plus', 'd_Toolbar Minus', 'Download-Available', 'TreeEditor.Trash'
+        GUIContent downloadIcon = EditorGUIUtility.IconContent("Download-Available", "|Download this version");
+        GUIContent deleteIcon = EditorGUIUtility.IconContent("TreeEditor.Trash", "|Delete downloaded files for this version");
+        // Fallback icons if the above aren't found
+        if (downloadIcon.image == null) downloadIcon = new GUIContent("↓", "|Download this version");
+        if (deleteIcon.image == null) deleteIcon = new GUIContent("X", "|Delete downloaded files for this version");
+
 
         EditorGUILayout.BeginVertical(EditorStyles.helpBox); // Box around each item
 
@@ -407,88 +416,30 @@ public class UltiPawEditor : Editor
         EditorGUILayout.BeginHorizontal();
         GUILayout.Label($"UltiPaw {ver.version}", GUILayout.Width(100));
         GUILayout.FlexibleSpace();
-        
+
         if (isCurrentlyApplied)
         {
-             //Color oldColor = GUI.color;
-             //GUI.color = Color.cyan;
-             //GUILayout.Label("[Applied]", EditorStyles.boldLabel, GUILayout.Width(60));
-             //GUI.color = oldColor;
-             
              DrawChipLabel("Applied", BACKGROUND_COLOR, Color.cyan, Color.cyan);
         }
-        else if (isCurrentlySelected)
-        {
-             //GUILayout.Label("[Selected]", EditorStyles.boldLabel, GUILayout.Width(60));
-             DrawChipLabel("Selected", BACKGROUND_COLOR, Color.white, Color.white);
-        }
+        GUILayout.FlexibleSpace();
         DrawScopeLabel(ver.scope);
-        EditorGUILayout.EndHorizontal();
+        GUILayout.FlexibleSpace();
 
-        // Row 2: Action Buttons
-        EditorGUILayout.BeginHorizontal();
-        GUILayout.Space(18); // Indent buttons slightly
+        // Row 2: Action Icons & Selection Radio Button
+        // Row 2: Action Icons & Selection Radio Button
+        //EditorGUILayout.BeginHorizontal();
+        GUILayout.Space(18); // Indent icons slightly
 
-        // --- Top Button (Select/Update/Downgrade/Applied) ---
-        bool canInteract = !isFetching && !isDownloading && !isDeleting;
-        GUI.enabled = canInteract && isDownloaded; // Enable only if downloaded and not busy
-
-        if (isCurrentlyApplied)
-        {
-            GUI.enabled = false; // Disable if applied
-            GUILayout.Button("Applied", GUILayout.Width(100));
-            GUI.enabled = true; // Re-enable for next element
-        }
-        else if (isCurrentlySelected)
-        {
-            // Option 1: Show "Selected" and disable
-            GUI.enabled = false;
-            GUILayout.Button("Selected", GUILayout.Width(100));
-            GUI.enabled = true;
-            // Option 2: Allow re-selecting (might be confusing)
-            // if (GUILayout.Button("Select", GUILayout.Width(100))) { SelectVersion(ver, ultiPaw, expectedBinPath); }
-        }
-        else // Downloaded, but not applied or selected
-        {
-            GUI.enabled = canInteract; // Ensure enabled if downloaded and not busy
-            string buttonText = "Select";
-            Color buttonColor = GUI.backgroundColor;
-            int comparison = 0;
-            if (ultiPaw.appliedUltiPawVersion != null)
-            {
-                comparison = CompareVersions(ver.version, ultiPaw.appliedUltiPawVersion.version);
-            }
-
-            if (comparison > 0)
-            {
-                buttonText = "Update";
-                GUI.backgroundColor = Color.green;
-            }
-            else if (comparison < 0)
-            {
-                buttonText = "Downgrade";
-                GUI.backgroundColor = OrangeColor;
-            }
-            // else comparison == 0 or no applied version, keep "Select"
-
-            if (GUILayout.Button(buttonText, GUILayout.Width(100)))
-            {
-                SelectVersion(ver, ultiPaw, expectedBinPath);
-            }
-            GUI.backgroundColor = buttonColor; // Restore color
-        }
-        GUI.enabled = true; // Ensure GUI is enabled after this button block
-
-        GUILayout.Space(10); // Space between buttons
-
-        // --- Bottom Button (Download/Delete) ---
+        // --- Download/Delete Icon Buttons ---
         GUI.enabled = canInteract; // Enable if not busy
+
+        float iconButtonSize = 22f; // Adjust size as needed
 
         if (isDownloaded)
         {
-            // Prevent deleting the applied or selected version for safety
-            GUI.enabled = canInteract;
-            if (GUILayout.Button(isDeleting ? "Deleting..." : "Delete", GUILayout.Width(100)))
+            // Prevent deleting the applied version for safety (allow deleting selected, user can re-select)
+            GUI.enabled = canInteract && !isCurrentlyApplied;
+            if (GUILayout.Button(deleteIcon, GUILayout.Width(iconButtonSize), GUILayout.Height(iconButtonSize)))
             {
                 if (EditorUtility.DisplayDialog("Confirm Delete",
                     $"Are you sure you want to delete the downloaded files for UltiPaw version {ver.version} (Base: {ver.defaultAviVersion})?",
@@ -501,25 +452,35 @@ public class UltiPawEditor : Editor
         else // Not downloaded
         {
             GUI.enabled = canInteract; // Enable if not busy
-            if (GUILayout.Button(isDownloading ? "Downloading..." : "Download", GUILayout.Width(100)))
+            if (GUILayout.Button(downloadIcon, GUILayout.Width(iconButtonSize), GUILayout.Height(iconButtonSize)))
             {
                 StartVersionDownload(ver, ultiPaw);
             }
         }
         GUI.enabled = true; // Ensure GUI is enabled after this button block
 
+        //GUILayout.FlexibleSpace(); // Push radio button to the right
 
-        GUILayout.FlexibleSpace(); // Push buttons left
+        // --- Selection Radio Button ---
+        // Enable radio button only if the version is downloaded OR if it's the currently applied one
+        // (Allow selecting the applied version even if files were deleted externally)
+        // Also disable if busy.
+        GUI.enabled = canInteract && (isDownloaded || isCurrentlyApplied);
+        EditorGUI.BeginChangeCheck();
+        // Use an empty label "" for the toggle itself
+        bool selectionToggle = EditorGUILayout.Toggle("", isCurrentlySelected, EditorStyles.radioButton, GUILayout.Width(18));
+        if (EditorGUI.EndChangeCheck() && selectionToggle) // If changed state *to true*
+        {
+            // Select this version (binPath might be null if selecting applied version whose files were deleted)
+            SelectVersion(ver, ultiPaw, expectedBinPath);
+        }
+        GUI.enabled = true; // Restore GUI enabled state
+
+
         EditorGUILayout.EndHorizontal();
-
-        // Row 3: Changelog (Optional - could make list long)
-        // if (!string.IsNullOrEmpty(ver.changelog)) {
-        //     EditorGUILayout.HelpBox(ver.changelog, MessageType.None);
-        // }
 
         EditorGUILayout.EndVertical(); // End box for item
     }
-
 
     // Helper to draw the scope label with color
     private void DrawScopeLabel(string scope)
