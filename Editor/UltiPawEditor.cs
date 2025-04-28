@@ -199,8 +199,8 @@ public class UltiPawEditor : Editor
 
     private void DrawVersionManagement(UltiPaw ultiPaw)
     {
-        EditorGUILayout.LabelField("UltiPaw Version Manager", EditorStyles.boldLabel);
-        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+        //EditorGUILayout.LabelField("UltiPaw Version Manager", EditorStyles.boldLabel);
+        EditorGUILayout.BeginVertical();
 
         // Display Errors First
         if (!string.IsNullOrEmpty(fetchError)) EditorGUILayout.HelpBox("Fetch Error: " + fetchError, MessageType.Error);
@@ -216,13 +216,9 @@ public class UltiPawEditor : Editor
             StartVersionFetch(ultiPaw); // Manually trigger fetch
         }
         GUI.enabled = true;
-
-        // Display Currently Selected Version Info (UI Selection)
-        if (selectedVersion != null)
-        {
-            DrawVersionDetails(selectedVersion, ultiPaw, true); // Don't show action buttons here
-        }
-        else if (!isFetching && serverVersions.Count > 0)
+        
+        
+        if (selectedVersion == null && !isFetching && serverVersions.Count > 0)
         {
              EditorGUILayout.HelpBox("Select a version from the list below to apply or manage.", MessageType.Info);
         }
@@ -230,10 +226,10 @@ public class UltiPawEditor : Editor
         // Foldout for all available versions
         if (serverVersions.Count > 0 || isFetching) // Show foldout even while fetching
         {
-            versionsFoldout = EditorGUILayout.Foldout(versionsFoldout, "All Available Versions", true, EditorStyles.foldoutHeader); // Use header style
+            versionsFoldout = EditorGUILayout.Foldout(versionsFoldout, "All UltiPaw Versions", true, EditorStyles.foldoutHeader); // Use header style
             if (versionsFoldout && !isFetching) // Only draw list content if not fetching
             {
-                EditorGUI.indentLevel++;
+                //EditorGUI.indentLevel++;
                 // Sort versions (newest first) - requires System.Version parsing
                 var sortedVersions = serverVersions
                     .Where(v => v != null && !string.IsNullOrEmpty(v.version)) // Filter out invalid entries
@@ -245,7 +241,7 @@ public class UltiPawEditor : Editor
                     DrawVersionListItemWithSplitButtons(ver, ultiPaw); // Use the new drawing method
                     EditorGUILayout.Space(2); // Add a little space between items
                 }
-                EditorGUI.indentLevel--;
+                //EditorGUI.indentLevel--;
             }
             else if (versionsFoldout && isFetching)
             {
@@ -266,36 +262,8 @@ public class UltiPawEditor : Editor
         }
 
 
-        EditorGUILayout.EndVertical();
         EditorGUILayout.Space();
-    }
-
-    // Draws details for a specific version (used for Selected Version area)
-    private void DrawVersionDetails(UltiPawVersion ver, UltiPaw ultiPaw, bool showActionButtons)
-    {
-        if (ver == null) return;
-
-        EditorGUILayout.BeginHorizontal();
-        GUILayout.Label($"UltiPaw {ver.version ?? "N/A"}", EditorStyles.boldLabel, GUILayout.Width(100));
-        GUILayout.FlexibleSpace();
-        
-
-        // Indicate if this version is currently applied
-        bool isApplied = ultiPaw.appliedUltiPawVersion != null && ultiPaw.appliedUltiPawVersion.Equals(ver);
-        if (isApplied)
-        {
-            DrawChipLabel("Applied", new Color(0.28f, 0.28f, 0.28f), new Color(0.33f, 0.79f, 0f), new Color(0.54f, 0.54f, 0.54f));
-        }
-        DrawScopeLabel(ver.scope);
-
-        EditorGUILayout.EndHorizontal();
-
-        if (!string.IsNullOrEmpty(ver.changelog))
-        {
-            EditorGUILayout.LabelField("Changelog:", EditorStyles.miniBoldLabel);
-            EditorGUILayout.HelpBox(ver.changelog, MessageType.None);
-        }
-        GUILayout.Space(5); // Add space after details
+        EditorGUILayout.EndVertical();
     }
     
     private void DrawChipLabel(string text, Color backgroundColor, Color textColor, Color? borderColor = null, int width = 65, int height = 18, float cornerRadius = 8f, float borderWidth = 1f)
@@ -383,7 +351,7 @@ public class UltiPawEditor : Editor
 
 
 
-
+    // Draws a single version item in the list
     private void DrawVersionListItemWithSplitButtons(UltiPawVersion ver, UltiPaw ultiPaw)
     {
         if (ver == null) return;
@@ -401,44 +369,53 @@ public class UltiPawEditor : Editor
         bool isCurrentlyApplied = ultiPaw.appliedUltiPawVersion != null && ultiPaw.appliedUltiPawVersion.Equals(ver);
         bool canInteract = !isFetching && !isDownloading && !isDeleting;
 
-        // Prepare Icons (using built-in icons)
-        // Find suitable icons: e.g., 'd_Toolbar Plus', 'd_Toolbar Minus', 'Download-Available', 'TreeEditor.Trash'
+        // Prepare Icons
         GUIContent downloadIcon = EditorGUIUtility.IconContent("Download-Available", "|Download this version");
         GUIContent deleteIcon = EditorGUIUtility.IconContent("TreeEditor.Trash", "|Delete downloaded files for this version");
-        // Fallback icons if the above aren't found
         if (downloadIcon.image == null) downloadIcon = new GUIContent("↓", "|Download this version");
         if (deleteIcon.image == null) deleteIcon = new GUIContent("X", "|Delete downloaded files for this version");
 
-
-        EditorGUILayout.BeginVertical(EditorStyles.helpBox); // Box around each item
-
-        // Row 1: Version Info
+        // Begin the main horizontal row with the helpBox style
+        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
         EditorGUILayout.BeginHorizontal();
-        GUILayout.Label($"UltiPaw {ver.version}", GUILayout.Width(100));
-        GUILayout.FlexibleSpace();
 
+        // --- Column 1: Version Label (Vertically Centered) ---
+        EditorGUILayout.BeginVertical(GUILayout.Width(100)); // Fixed width for label column
+        GUILayout.FlexibleSpace(); // Push label down
+        GUILayout.Label($"UltiPaw {ver.version}");
+        GUILayout.FlexibleSpace(); // Push label up (centers it)
+        EditorGUILayout.EndVertical();
+
+        // --- Spacer ---
+        GUILayout.FlexibleSpace(); // Pushes all subsequent elements to the right
+
+        // --- Column 2: Applied Chip (Vertically Centered) ---
         if (isCurrentlyApplied)
         {
-             DrawChipLabel("Applied", BACKGROUND_COLOR, Color.cyan, Color.cyan);
+            EditorGUILayout.BeginVertical();
+            GUILayout.FlexibleSpace();
+            DrawChipLabel("Installed", new Color(0.28f, 0.28f, 0.28f), new Color(0.33f, 0.79f, 0f), new Color(0.54f, 0.54f, 0.54f));
+            GUILayout.FlexibleSpace();
+            EditorGUILayout.EndVertical();
+            GUILayout.Space(5); // Space after chip
         }
+
+        // --- Column 3: Scope Chip (Vertically Centered) ---
+        EditorGUILayout.BeginVertical();
         GUILayout.FlexibleSpace();
         DrawScopeLabel(ver.scope);
         GUILayout.FlexibleSpace();
+        EditorGUILayout.EndVertical();
+        GUILayout.Space(10); // Space before icons
 
-        // Row 2: Action Icons & Selection Radio Button
-        // Row 2: Action Icons & Selection Radio Button
-        //EditorGUILayout.BeginHorizontal();
-        GUILayout.Space(18); // Indent icons slightly
-
-        // --- Download/Delete Icon Buttons ---
-        GUI.enabled = canInteract; // Enable if not busy
-
-        float iconButtonSize = 22f; // Adjust size as needed
-
+        // --- Column 4: Download/Delete Icon Button (Vertically Centered) ---
+        float iconButtonSize = 22f; // Keep button size reasonable
+        EditorGUILayout.BeginVertical(GUILayout.Width(iconButtonSize)); // Constrain width
+        GUILayout.FlexibleSpace();
+        GUI.enabled = canInteract; // Base interaction state
         if (isDownloaded)
         {
-            // Prevent deleting the applied version for safety (allow deleting selected, user can re-select)
-            GUI.enabled = canInteract && !isCurrentlyApplied;
+            GUI.enabled = canInteract; // Disable delete for applied version
             if (GUILayout.Button(deleteIcon, GUILayout.Width(iconButtonSize), GUILayout.Height(iconButtonSize)))
             {
                 if (EditorUtility.DisplayDialog("Confirm Delete",
@@ -451,37 +428,49 @@ public class UltiPawEditor : Editor
         }
         else // Not downloaded
         {
-            GUI.enabled = canInteract; // Enable if not busy
+            GUI.enabled = canInteract; // Enable download if possible
             if (GUILayout.Button(downloadIcon, GUILayout.Width(iconButtonSize), GUILayout.Height(iconButtonSize)))
             {
                 StartVersionDownload(ver, ultiPaw);
             }
         }
-        GUI.enabled = true; // Ensure GUI is enabled after this button block
+        GUI.enabled = true; // Reset base enabled state
+        GUILayout.FlexibleSpace();
+        EditorGUILayout.EndVertical();
+        GUILayout.Space(5); // Space before radio button
 
-        //GUILayout.FlexibleSpace(); // Push radio button to the right
-
-        // --- Selection Radio Button ---
-        // Enable radio button only if the version is downloaded OR if it's the currently applied one
-        // (Allow selecting the applied version even if files were deleted externally)
-        // Also disable if busy.
-        GUI.enabled = canInteract && (isDownloaded || isCurrentlyApplied);
+        // --- Column 5: Selection Radio Button (Vertically Centered) ---
+        EditorGUILayout.BeginVertical(GUILayout.Width(18)); // Constrain width
+        GUILayout.FlexibleSpace();
+        GUI.enabled = canInteract && (isDownloaded || isCurrentlyApplied); // Enable selection if possible
         EditorGUI.BeginChangeCheck();
-        // Use an empty label "" for the toggle itself
-        bool selectionToggle = EditorGUILayout.Toggle("", isCurrentlySelected, EditorStyles.radioButton, GUILayout.Width(18));
-        if (EditorGUI.EndChangeCheck() && selectionToggle) // If changed state *to true*
+        // Use GUILayout.Toggle for better integration
+        bool selectionToggle = GUILayout.Toggle(isCurrentlySelected, "", EditorStyles.radioButton);
+        if (EditorGUI.EndChangeCheck() && selectionToggle)
         {
-            // Select this version (binPath might be null if selecting applied version whose files were deleted)
             SelectVersion(ver, ultiPaw, expectedBinPath);
         }
         GUI.enabled = true; // Restore GUI enabled state
+        GUILayout.FlexibleSpace();
+        EditorGUILayout.EndVertical();
 
-
+        // End the main horizontal row
         EditorGUILayout.EndHorizontal();
-
-        EditorGUILayout.EndVertical(); // End box for item
+        EditorGUILayout.Space(2);
+        //EditorGUILayout.BeginHorizontal();
+        
+        if (!string.IsNullOrEmpty(ver.changelog))
+        {
+            EditorGUILayout.LabelField("Changelog:", EditorStyles.miniBoldLabel);
+            EditorGUILayout.HelpBox(ver.changelog, MessageType.None);
+        }
+        GUILayout.Space(5); // Add space after details
+        
+        //EditorGUILayout.EndHorizontal();
+        EditorGUILayout.EndVertical();
     }
-
+    
+    
     // Helper to draw the scope label with color
     private void DrawScopeLabel(string scope)
     {
@@ -564,6 +553,7 @@ public class UltiPawEditor : Editor
         }
 
         bool canTransformCurrentSelection = selectedVersion != null &&
+                                            !selectedVersion.Equals(ultiPaw.appliedUltiPawVersion) &&
                                             !string.IsNullOrEmpty(ultiPaw.selectedUltiPawBinPath) &&
                                             File.Exists(ultiPaw.selectedUltiPawBinPath) &&
                                             !ultiPaw.isUltiPaw; // Can only transform if not already in UltiPaw state (matching applied version)
@@ -602,7 +592,26 @@ public class UltiPawEditor : Editor
             // Check if the *selected* version can be applied
             GUI.enabled = canInteract && canTransformCurrentSelection;
             GUI.backgroundColor = Color.green;
-            if (GUILayout.Button($"Turn into UltiPaw ({selectedVersion?.version ?? "Select version"})", GUILayout.Height(40)))
+            
+            var buttonText = "Turn into UltiPaw";
+            var compareResult = CompareVersions(selectedVersion?.version, ultiPaw.appliedUltiPawVersion?.version);
+            
+            if(compareResult < 0)
+            {
+                buttonText = $"Downgrade to v{selectedVersion?.version}";
+                GUI.backgroundColor = OrangeColor; // Use defined orange color for downgrade
+            }
+            else if (compareResult > 0)
+            {
+                buttonText = $"Upgrade to v{selectedVersion?.version}";
+            }
+            else if (compareResult == 0)
+            {
+                buttonText = $"Installed (v{selectedVersion?.version})";
+                GUI.enabled = false; // Disable if already on the same version
+            }
+            
+            if (GUILayout.Button(buttonText, GUILayout.Height(40)))
             {
                 if (EditorUtility.DisplayDialog("Confirm Transformation",
                     $"This will modify your base FBX file using the selected UltiPaw version '{selectedVersion?.version ?? "Unknown"}'.\nA backup (.old) will be created.",
