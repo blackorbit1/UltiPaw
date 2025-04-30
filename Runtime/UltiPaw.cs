@@ -6,28 +6,31 @@ using UnityEngine;
 using System.IO;
 using System.Linq; // Keep Linq
 using IEditorOnly = VRC.SDKBase.IEditorOnly;
-using System; // Needed for Version comparison
+using System;
+using System.Runtime.Serialization;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Converters; // Needed for Version comparison
 
-[System.Serializable]
+[JsonObject(MemberSerialization.OptIn)]
 public class UltiPawVersionResponse
 {
-    public string recommendedVersion;
-    public List<UltiPawVersion> versions;
+    [JsonProperty] public string recommendedVersion;
+    [JsonProperty] public List<UltiPawVersion> versions;
 }
 
-[System.Serializable]
+[JsonObject(MemberSerialization.OptIn)]
 public class UltiPawVersion : IEquatable<UltiPawVersion> // Add IEquatable for easier comparison
 {
-    public string version; // UltiPaw Version (e.g., "1.2.6", "0.1") - Matches JSON example
-    public string defaultAviVersion; // Base FBX Version (e.g., "1.5") - New field
-    public string scope;
-    public string date;
-    public string changelog;
-    public string customAviHash;
-    public string appliedCustomAviHash;
-    public string defaultAviHash;
-    public string[] customBlendshapes;
-    public Dictionary<string, string> dependencies;
+    [JsonProperty] public string version; // UltiPaw Version (e.g., "1.2.6", "0.1") - Matches JSON example
+    [JsonProperty] public string defaultAviVersion; // Base FBX Version (e.g., "1.5") - New field
+    [JsonProperty] public Scope scope;
+    [JsonProperty] public string date;
+    [JsonProperty] public string changelog;
+    [JsonProperty] public string customAviHash;
+    [JsonProperty] public string appliedCustomAviHash;
+    [JsonProperty] public string defaultAviHash;
+    [JsonProperty] public string[] customBlendshapes;
+    [JsonProperty] public Dictionary<string, string> dependencies;
 
     // Implement IEquatable for reliable comparison (e.g., in Linq)
     public bool Equals(UltiPawVersion other)
@@ -50,6 +53,15 @@ public class UltiPawVersion : IEquatable<UltiPawVersion> // Add IEquatable for e
     {
         return Equals(obj as UltiPawVersion);
     }
+}
+
+[JsonConverter(typeof(StringEnumConverter))]
+public enum Scope
+{
+    [EnumMember(Value = "public")]  PUBLIC,
+    [EnumMember(Value = "beta")]    BETA,
+    [EnumMember(Value = "alpha")]   ALPHA,
+    [EnumMember(Value = "unknown")] UNKNOWN
 }
 
 
@@ -318,6 +330,7 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
             if (currentBaseFbxHash != null && currentBaseFbxHash.Equals(version.appliedCustomAviHash, StringComparison.OrdinalIgnoreCase))
             {
                 appliedUltiPawVersion = version; // Update applied version
+                isUltiPaw = true; // Update isUltiPaw state
                 return; // Exit loop on first match
             }
         }
@@ -326,7 +339,7 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
 
 #if UNITY_EDITOR
     // Transform the base FBX using XOR with the selected UltiPaw .bin.
-    public bool TurnItIntoUltiPaw() // Return bool indicating success
+    public bool ApplyUltiPaw() // Return bool indicating success
     {
         string baseFbxPath = GetCurrentBaseFbxPath();
         if (string.IsNullOrEmpty(baseFbxPath) || !File.Exists(baseFbxPath))
@@ -351,7 +364,7 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
 
         // --- Hash Verification ---
         UpdateCurrentBaseFbxHash(); // Ensure hash is current before check
-        string currentBinHash = UltiPawUtils.CalculateFileHash(selectedUltiPawBinPath);
+        //string currentBinHash = UltiPawUtils.CalculateFileHash(selectedUltiPawBinPath);
 
         // Verify current FBX against the *expected default* hash of the version being applied
         bool baseHashMatch = currentBaseFbxHash != null && currentBaseFbxHash.Equals(activeUltiPawVersion.defaultAviHash, StringComparison.OrdinalIgnoreCase);
