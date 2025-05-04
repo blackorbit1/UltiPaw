@@ -8,8 +8,9 @@ using System.Text;
 public static class UltiPawUtils
 {
     public const string SCRIPT_VERSION = "0.1";
-    public const string BASE_FOLDER = "Packages/ultipaw";
-    public const string VERSIONS_FOLDER = BASE_FOLDER + "/versions";
+    public const string PACKAGE_BASE_FOLDER = "Packages/ultipaw";
+    public const string ASSETS_BASE_FOLDER = "Assets/ultipaw";
+    public const string VERSIONS_FOLDER = ASSETS_BASE_FOLDER + "/versions";
     public const string DEFAULT_AVATAR_NAME = "default avatar.asset";
     public const string ULTIPAW_AVATAR_NAME = "ultipaw avatar.asset";
 

@@ -9,7 +9,6 @@ using System.Linq;
 using UnityEngine.Networking;
 using System.IO.Compression;
 using Newtonsoft.Json;
-using UnityEngine.UIElements; // Needed for ZipFile
 
 [CustomEditor(typeof(UltiPaw))]
 public class UltiPawEditor : Editor
@@ -17,9 +16,7 @@ public class UltiPawEditor : Editor
     private Texture2D bannerTexture;
     private SerializedProperty baseFbxFilesProp;
     private SerializedProperty specifyCustomBaseFbxProp;
-    private SerializedProperty blendShapeNamesProp;
     private SerializedProperty blendShapeValuesProp;
-    private SerializedProperty appliedUltiPawVersionProp; // Serialized property for applied version
 
     // Version management state
     private List<UltiPawVersion> serverVersions = new List<UltiPawVersion>();
@@ -33,7 +30,7 @@ public class UltiPawEditor : Editor
     private string fetchError = "";
     private string downloadError = "";
     private string deleteError = ""; // Error specific to deletion
-    private string lastFetchedHash = null;
+    private string hashToFetch = null; // TODO deprecate this, use the ultipaw's hash instead
     private bool versionsFoldout = true; // Default to open
 
     // Server settings
@@ -56,12 +53,10 @@ public class UltiPawEditor : Editor
     
     private void OnEnable()
     {
-        bannerTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(UltiPawUtils.BASE_FOLDER + "/Editor/banner.png");
+        bannerTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(UltiPawUtils.PACKAGE_BASE_FOLDER + "/Editor/banner.png");
         baseFbxFilesProp = serializedObject.FindProperty("baseFbxFiles");
         specifyCustomBaseFbxProp = serializedObject.FindProperty("specifyCustomBaseFbx");
-        blendShapeNamesProp = serializedObject.FindProperty("blendShapeNames");
         blendShapeValuesProp = serializedObject.FindProperty("blendShapeValues");
-        appliedUltiPawVersionProp = serializedObject.FindProperty("appliedUltiPawVersion"); // Get applied version property
 
         UltiPaw ultiPaw = (UltiPaw)target;
 
@@ -85,14 +80,9 @@ public class UltiPawEditor : Editor
         }
         // Fetch if hash is now available AND server versions haven't been loaded
         // Or if the hash changed since last fetch
-        if (!string.IsNullOrEmpty(ultiPaw.currentBaseFbxHash) && (serverVersions.Count == 0 || ultiPaw.currentBaseFbxHash != lastFetchedHash))
+        if (!string.IsNullOrEmpty(ultiPaw.currentBaseFbxHash) && (serverVersions.Count == 0 || ultiPaw.currentBaseFbxHash != hashToFetch))
         {
             StartVersionFetch(ultiPaw);
-        }
-        // Also ensure the isUltiPaw state is correct based on the potentially loaded applied version
-        else if (ultiPaw.UpdateIsUltiPawState()) // Check if state changed
-        {
-             Repaint(); // Repaint if state changed
         }
 
         // Initialize blendshape values (existing logic)
@@ -218,7 +208,13 @@ public class UltiPawEditor : Editor
         if (!string.IsNullOrEmpty(downloadError)) EditorGUILayout.HelpBox("Download Error: " + downloadError, MessageType.Warning);
         if (!string.IsNullOrEmpty(deleteError)) EditorGUILayout.HelpBox("Delete Error: " + deleteError, MessageType.Warning); // Show delete errors
 
-        ultiPaw.UpdateAppliedUltiPawVersion(serverVersions);
+        if (!isFetching && serverVersions != null)
+        {
+            ultiPaw.UpdateAppliedUltiPawVersion(serverVersions);
+        }
+        
+        // Update the component's active version (used for transform/reset actions)
+        ultiPaw.activeUltiPawVersion = selectedVersion;
 
         // Update/Fetch Button
         GUI.enabled = !isFetching && !isDownloading && !isDeleting; // Disable during any operation
@@ -227,12 +223,23 @@ public class UltiPawEditor : Editor
             StartVersionFetch(ultiPaw); // Manually trigger fetch
         }
         GUI.enabled = true;
-        
-        
-        if (selectedVersion == null && !isFetching && serverVersions.Count > 0)
+
+
+        if (
+            selectedVersion == null &&
+            !isFetching &&
+            serverVersions.Count > 0 &&
+            ultiPaw.appliedUltiPawVersion != null &&
+            recommendedVersion != null &&
+            CompareVersions(ultiPaw.appliedUltiPawVersion.version, recommendedVersion.version) < 0)
         {
-             EditorGUILayout.HelpBox("Select a version from the list below to apply or manage.", MessageType.Info);
+            selectedVersion = recommendedVersion;
         }
+        
+        //if (selectedVersion == null && !isFetching && serverVersions.Count > 0)
+        //{
+        //     EditorGUILayout.HelpBox("Select a version from the list below to apply or manage.", MessageType.Info);
+        //}
 
         // Foldout for all available versions
         if (serverVersions.Count > 0 || isFetching) // Show foldout even while fetching
@@ -259,15 +266,15 @@ public class UltiPawEditor : Editor
                  EditorGUILayout.LabelField("Fetching version list...", EditorStyles.centeredGreyMiniLabel);
             }
         }
-        else if (!isFetching && lastFetchedHash != null) // Fetch succeeded, hash known, but no versions returned
+        else if (!isFetching && hashToFetch != null) // Fetch succeeded, hash known, but no versions returned
         {
              EditorGUILayout.HelpBox("No compatible versions found for the detected Base FBX hash.", MessageType.Warning);
         }
-        else if (!isFetching && lastFetchedHash == null && string.IsNullOrEmpty(ultiPaw.currentBaseFbxHash)) // Haven't fetched successfully yet, no FBX
+        else if (!isFetching && hashToFetch == null && string.IsNullOrEmpty(ultiPaw.currentBaseFbxHash)) // Haven't fetched successfully yet, no FBX
         {
              EditorGUILayout.HelpBox("Assign or detect a Base FBX first.", MessageType.Info);
         }
-         else if (!isFetching && lastFetchedHash == null && !string.IsNullOrEmpty(ultiPaw.currentBaseFbxHash)) // Haven't fetched successfully yet, FBX assigned
+         else if (!isFetching && hashToFetch == null && !string.IsNullOrEmpty(ultiPaw.currentBaseFbxHash)) // Haven't fetched successfully yet, FBX assigned
         {
              EditorGUILayout.HelpBox("Click 'Check for Updates'.", MessageType.Info);
         }
@@ -453,7 +460,7 @@ public class UltiPawEditor : Editor
         // --- Column 5: Selection Radio Button (Vertically Centered) ---
         EditorGUILayout.BeginVertical(GUILayout.Width(18)); // Constrain width
         GUILayout.FlexibleSpace();
-        GUI.enabled = canInteract && (isDownloaded || isCurrentlyApplied); // Enable selection if possible
+        GUI.enabled = canInteract; // && (isDownloaded || isCurrentlyApplied); // Enable selection if possible
         EditorGUI.BeginChangeCheck();
         // Use GUILayout.Toggle for better integration
         bool selectionToggle = GUILayout.Toggle(isCurrentlySelected, "", EditorStyles.radioButton);
@@ -599,84 +606,45 @@ public class UltiPawEditor : Editor
         GUI.enabled = true;
     }
 
-
     private void DrawBlendshapeSliders(UltiPaw ultiPaw)
     {
-        // Show sliders if *either* a version is applied OR a version is selected (allowing preview)
-        bool showSliders = ultiPaw.isUltiPaw || selectedVersion != null;
-        var namesToShow = ultiPaw.isUltiPaw ? ultiPaw.blendShapeNames : selectedVersion?.customBlendshapes?.ToList(); // Prioritize applied, fallback to selected
+        if (!ultiPaw.isUltiPaw || ultiPaw.appliedUltiPawVersion == null) return;
 
-        // Ensure the component's list matches the selected version if not applied
-        if (!ultiPaw.isUltiPaw && selectedVersion != null)
+        var namesToShow = ultiPaw.appliedUltiPawVersion?.customBlendshapes;
+        if (namesToShow == null || namesToShow.Length == 0) return;
+
+        var smr = ultiPaw.GetBodySkinnedMeshRenderer();
+        if (smr == null || smr.sharedMesh == null) return;
+
+        EditorGUILayout.Space();
+        EditorGUILayout.LabelField("Blendshapes" + (ultiPaw.isUltiPaw ? "" : " (Preview)"), EditorStyles.boldLabel);
+        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+        foreach (var shapeName in namesToShow)
         {
-             var selectedNames = selectedVersion.customBlendshapes?.ToList() ?? new List<string>();
-             if (!selectedNames.SequenceEqual(ultiPaw.blendShapeNames))
-             {
-                 // Update the component's lists to match the selected version for preview
-                 Undo.RecordObject(ultiPaw, "Update Blendshape List for Preview");
-                 ultiPaw.blendShapeNames = selectedNames;
-                 ultiPaw.SyncBlendshapeLists(); // Resizes value list, resets values to 0
-                 serializedObject.Update(); // Reflect changes in serialized object
-                 // Reset actual model blendshapes for the new preview set
-                 // This might conflict if user had values set before selecting a new version.
-                 // Maybe only reset if the *names* changed significantly?
-                 // For now, reset them to match the slider state (0).
-                 foreach (var name in ultiPaw.blendShapeNames)
-                 {
-                     ultiPaw.UpdateBlendshapeFromSlider(name, 0f);
-                 }
-                 EditorUtility.SetDirty(ultiPaw);
-             }
-             namesToShow = ultiPaw.blendShapeNames; // Use the component's list which now matches selected
-        }
+            int index = smr.sharedMesh.GetBlendShapeIndex(shapeName);
+            if (index < 0) continue; // Shape doesn't exist
 
+            float currentWeight = smr.GetBlendShapeWeight(index);
 
-        if (showSliders && namesToShow != null && namesToShow.Count > 0)
-        {
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Blendshapes" + (ultiPaw.isUltiPaw ? "" : " (Preview)"), EditorStyles.boldLabel);
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-
-            if (blendShapeValuesProp.arraySize != namesToShow.Count)
+            EditorGUI.BeginChangeCheck();
+            float newWeight = EditorGUILayout.Slider(
+                new GUIContent(shapeName),
+                currentWeight,
+                0f, 100f
+            );
+            if (EditorGUI.EndChangeCheck())
             {
-                 serializedObject.ApplyModifiedPropertiesWithoutUndo();
-                 blendShapeValuesProp.arraySize = namesToShow.Count;
-                 // Initialize new values to 0
-                 for(int i = 0; i < blendShapeValuesProp.arraySize; i++) {
-                     if(blendShapeValuesProp.GetArrayElementAtIndex(i).floatValue != 0f) // Avoid unnecessary sets
-                        blendShapeValuesProp.GetArrayElementAtIndex(i).floatValue = 0f;
-                 }
-                 serializedObject.Update();
-            }
-
-            for (int i = 0; i < namesToShow.Count; i++)
-            {
-                if (i >= blendShapeValuesProp.arraySize) break; // Safety check
-
-                SerializedProperty blendValProp = blendShapeValuesProp.GetArrayElementAtIndex(i);
-
-                EditorGUI.BeginChangeCheck();
-                 float newValue = EditorGUILayout.Slider(
-                     new GUIContent(namesToShow[i]),
-                     blendValProp.floatValue,
-                     0f, 100f
-                 );
-
-                if (EditorGUI.EndChangeCheck())
+                if (!Mathf.Approximately(currentWeight, newWeight))
                 {
-                    blendValProp.floatValue = newValue;
-                    // Apply the change to the actual blendshape on the model
-                    // This now correctly uses the component's UpdateBlendshapeFromSlider
-                    // which handles finding the SMR and applying the value.
-                    // It also updates the component's blendShapeValues list internally.
-                    ultiPaw.UpdateBlendshapeFromSlider(namesToShow[i], newValue);
-                    // No need to call ApplyModifiedProperties here, slider does it.
+                    smr.SetBlendShapeWeight(index, newWeight);
+                    EditorUtility.SetDirty(smr);
                 }
             }
-            EditorGUILayout.EndVertical();
         }
-    }
 
+        EditorGUILayout.EndVertical();
+    }
     private void DrawHelpBox()
     {
         // (Existing code - maybe update text slightly)
@@ -709,7 +677,7 @@ public class UltiPawEditor : Editor
                  versionString += ".0";
             }
 
-            if (System.Version.TryParse(versionString, out Version ver))
+            if (Version.TryParse(versionString, out Version ver))
             {
                 return ver;
             }
@@ -744,7 +712,7 @@ public class UltiPawEditor : Editor
     {
         if (isDownloading || isFetching || isDeleting) return;
 
-        if (string.IsNullOrEmpty(versionToDownload?.version) || string.IsNullOrEmpty(versionToDownload?.defaultAviVersion)) {
+        if (string.IsNullOrEmpty(versionToDownload?.version) || string.IsNullOrEmpty(versionToDownload.defaultAviVersion)) {
             downloadError = "Version data is missing required fields. Cannot download.";
             Debug.LogError("[UltiPawEditor] " + downloadError);
             Repaint();
@@ -774,7 +742,7 @@ public class UltiPawEditor : Editor
         deleteError = "";
         isDeleting = true;
         Repaint();
-        EditorCoroutineUtility.StartCoroutineOwnerless(DeleteVersionCoroutine(versionToDelete, ultiPaw, dataPath));
+        EditorCoroutineUtility.StartCoroutineOwnerless(DeleteFolderCoroutine(dataPath));
     }
 
     private IEnumerator FetchVersionsCoroutine(UltiPaw ultiPaw)
@@ -782,7 +750,7 @@ public class UltiPawEditor : Editor
         // Ensure hash is up-to-date *before* fetching
         // This might have already been called, but ensure it's current
         ultiPaw.UpdateCurrentBaseFbxHash();
-        string baseFbxHash = ultiPaw.currentBaseFbxHash;
+        string baseFbxHash = ultiPaw.GetCurrentBaseFbxHash() ?? hashToFetch; // Fallback to current hash if not found
 
         if (string.IsNullOrEmpty(baseFbxHash))
         {
@@ -790,7 +758,7 @@ public class UltiPawEditor : Editor
             serverVersions.Clear();
             recommendedVersion = null;
             recommendedVersionGuid = "";
-            lastFetchedHash = null;
+            hashToFetch = null;
             fetchError = ""; // Clear error, UI shows "Assign FBX"
             isFetching = false;
             Repaint();
@@ -801,7 +769,7 @@ public class UltiPawEditor : Editor
         fetchError = "";
         downloadError = "";
         deleteError = "";
-        lastFetchedHash = baseFbxHash; // Store hash used for this fetch
+        hashToFetch = baseFbxHash; // Store hash used for this fetch
 
         string url = $"{serverBaseUrl}{versionsEndpoint}?s={UltiPaw.SCRIPT_VERSION}&d={baseFbxHash}";
         Debug.Log($"[UltiPawEditor] Fetching versions from: {url}");
@@ -829,6 +797,7 @@ public class UltiPawEditor : Editor
                     if (response != null && response.versions != null)
                     {
                         serverVersions = response.versions ?? new List<UltiPawVersion>(); // Ensure list is not null
+                        ultiPaw.serverVersions = serverVersions; // Update component reference
                         recommendedVersionGuid = response.recommendedVersion; // Store the recommended version string
                         fetchError = ""; // Clear error on success
 
@@ -895,7 +864,7 @@ public class UltiPawEditor : Editor
                         }
                         else if (selectedVersion != null) // No valid version to keep selected, clear previous selection
                         {
-                            ClearSelection(ultiPaw);
+                            ClearSelection(ultiPaw); 
                         }
                         // --- End Smart Selection Logic ---
                     }
@@ -930,10 +899,19 @@ public class UltiPawEditor : Editor
     private IEnumerator DownloadVersionCoroutine(UltiPawVersion versionToDownload, UltiPaw ultiPaw, bool applyAfterDownload)
     {
         // --- 1. Setup ---
-        string baseFbxHashForQuery = lastFetchedHash ?? "unknown"; // Use last fetched hash for consistency
+        string baseFbxHashForQuery = ultiPaw.GetCurrentBaseFbxHash() ?? hashToFetch; // Use last fetched hash for consistency
+        if(baseFbxHashForQuery == null)
+        {
+            Debug.LogError("[UltiPawEditor] Failed to fetch hash for download. Cannot download.");
+            downloadError = "Failed to fetch hash for download. Cannot download.";
+            EditorUtility.DisplayDialog("Error", downloadError, "OK");
+            isDownloading = false;
+            Repaint();
+            yield break;
+        }
         string downloadUrl = $"{serverBaseUrl}{modelEndpoint}?version={UnityWebRequest.EscapeURL(versionToDownload.version)}&d={baseFbxHashForQuery}";
-        string targetExtractFolder = UltiPawUtils.GetVersionDataPath(versionToDownload.version, versionToDownload.defaultAviVersion);
-        string targetZipPath = $"{targetExtractFolder}.zip"; // Temp zip file path
+        string targetExtractFolder = UltiPawUtils.VERSIONS_FOLDER;
+        string targetZipPath = $"{targetExtractFolder}/temp.zip";
 
         // Initial validation and directory setup
         if (string.IsNullOrEmpty(targetExtractFolder))
@@ -946,8 +924,8 @@ public class UltiPawEditor : Editor
         }
         try
         {
-            UltiPawUtils.EnsureDirectoryExists(targetExtractFolder); // Ensure base versions folder exists
-            UltiPawUtils.EnsureDirectoryExists(Path.GetDirectoryName(targetZipPath)); // Ensure folder for zip exists
+            UltiPawUtils.EnsureDirectoryExists(targetExtractFolder);
+            UltiPawUtils.EnsureDirectoryExists(Path.GetDirectoryName(targetZipPath));
         }
         catch (Exception ex)
         {
@@ -1020,22 +998,18 @@ public class UltiPawEditor : Editor
         try // This try/finally ensures cleanup happens AFTER yield is complete
         {
             // Check result *after* yield is done
-            if (req != null) // Check if req is valid (it should be if we got here)
+            if (req.result == UnityWebRequest.Result.Success)
             {
-                if (req.result == UnityWebRequest.Result.Success)
-                {
-                    Debug.Log($"[UltiPawEditor] Successfully downloaded ZIP to: {targetZipPath}");
-                    downloadSucceeded = true;
-                }
-                else
-                {
-                    downloadError = $"Download failed [{req.responseCode} {req.result}]: {req.error}";
-                    Debug.LogError($"[UltiPawEditor] {downloadError}");
-                }
-            } else {
-                 // Should not happen if setupOk was true, but handle defensively
-                 downloadError = "Download request object was unexpectedly null after waiting.";
-                 Debug.LogError("[UltiPawEditor] " + downloadError);
+                Debug.Log($"[UltiPawEditor] Successfully downloaded ZIP to: {targetZipPath}");
+                downloadSucceeded = true;
+            }
+            else
+            {
+                // parse the error into RequestErrorResponse
+                    
+                //RequestErrorResponse errorResponse = JsonConvert.DeserializeObject<RequestErrorResponse>(req.downloadHandler.text);
+                downloadError = $"Download failed : make sure you have a supported winterpaw and a stable connection. Else contact Orbit";
+                Debug.LogError($"[UltiPawEditor] {downloadError}");
             }
 
 
@@ -1048,21 +1022,12 @@ public class UltiPawEditor : Editor
 
                 try // Separate try/catch specifically for extraction errors
                 {
-                    // Ensure target directory exists *before* extraction
-                    UltiPawUtils.EnsureDirectoryExists(targetExtractFolder);
-                    if (Directory.Exists(targetExtractFolder))
-                    {
-                        Directory.Delete(targetExtractFolder, true); // Clear target folder first
-                        Debug.Log($"[UltiPawEditor] Cleared existing directory: {targetExtractFolder}");
-                    }
-                    Directory.CreateDirectory(targetExtractFolder); // Recreate directory
-                    ZipFile.ExtractToDirectory(targetZipPath, targetExtractFolder); // Extract
-
+                    ZipFile.ExtractToDirectory(targetZipPath, targetExtractFolder, true);
                     Debug.Log($"[UltiPawEditor] Successfully extracted files to: {targetExtractFolder}");
                     extractionSucceeded = true;
                     AssetDatabase.Refresh(); // Refresh assets
                 }
-                catch (System.Exception ex)
+                catch (Exception ex)
                 {
                     downloadError = $"Extraction failed: {ex.Message}"; // Set specific error
                     Debug.LogError($"[UltiPawEditor] Failed to extract ZIP file '{targetZipPath}' to '{targetExtractFolder}': {ex}");
@@ -1113,7 +1078,7 @@ public class UltiPawEditor : Editor
             {
                 try { File.Delete(targetZipPath); }
                 catch (IOException ioEx) { Debug.LogWarning($"[UltiPawEditor] Could not delete temp file '{targetZipPath}' (might be locked): {ioEx.Message}"); }
-                catch (System.Exception ex) { Debug.LogWarning($"[UltiPawEditor] Error deleting temp file '{targetZipPath}': {ex.Message}"); }
+                catch (Exception ex) { Debug.LogWarning($"[UltiPawEditor] Error deleting temp file '{targetZipPath}': {ex.Message}"); }
             }
 
             // EditorUtility.ClearProgressBar(); // Ensure progress bar is cleared even on error
@@ -1121,50 +1086,31 @@ public class UltiPawEditor : Editor
         }
     }
     
-    // New Coroutine for Deleting a Version
-    private IEnumerator DeleteVersionCoroutine(UltiPawVersion versionToDelete, UltiPaw ultiPaw, string dataPath)
+    private IEnumerator DeleteFolderCoroutine(string path)
     {
         yield return null; // Wait a frame
 
         try
         {
-            if (Directory.Exists(dataPath))
+            if (Directory.Exists(path))
             {
-                Directory.Delete(dataPath, true); // Recursive delete
-                // Also delete the temp zip file if it somehow exists
-                string zipPath = dataPath + ".zip";
-                if (File.Exists(zipPath)) File.Delete(zipPath);
+                Directory.Delete(path, true); // Recursive delete
+                File.Delete(path + ".meta");
 
-                Debug.Log($"[UltiPawEditor] Successfully deleted version folder: {dataPath}");
+                Debug.Log($"[UltiPawEditor] Successfully deleted folder: {path}");
                 AssetDatabase.Refresh(); // Make Unity forget the files
-
-                // If the deleted version was the selected one, clear selection
-                if (selectedVersion != null && selectedVersion.Equals(versionToDelete))
-                {
-                    ClearSelection(ultiPaw);
-                }
-                // We shouldn't be able to delete the *applied* version due to UI checks,
-                // but add a safety check anyway.
-                if (ultiPaw.appliedUltiPawVersion != null && ultiPaw.appliedUltiPawVersion.Equals(versionToDelete))
-                {
-                     Debug.LogError("[UltiPawEditor] Deleted the currently applied version's files! This may cause issues. Resetting applied state.");
-                     Undo.RecordObject(ultiPaw, "Clear Applied Version After Deletion");
-                     ultiPaw.appliedUltiPawVersion = null;
-                     ultiPaw.UpdateIsUltiPawState(); // Update state
-                     EditorUtility.SetDirty(ultiPaw);
-                }
 
                 deleteError = ""; // Clear error on success
             }
             else
             {
-                 deleteError = $"Directory not found, cannot delete: {dataPath}";
+                 deleteError = $"Directory not found, cannot delete: {path}";
                  Debug.LogWarning("[UltiPawEditor] " + deleteError);
             }
         }
         catch (Exception ex)
         {
-            deleteError = $"Failed to delete directory '{dataPath}': {ex.Message}";
+            deleteError = $"Failed to delete directory '{path}': {ex.Message}";
             Debug.LogError("[UltiPawEditor] " + deleteError);
             AssetDatabase.Refresh(); // Refresh anyway
         }
@@ -1211,32 +1157,31 @@ public class UltiPawEditor : Editor
         // doesn't need to check if it exists as it would just get downloaded
         Undo.RecordObject(ultiPaw, "Select UltiPaw Version");
 
-        // Update the component's active version (used for transform/reset actions)
-        ultiPaw.activeUltiPawVersion = version;
+        
         // Update the bin path only if it's valid, otherwise clear it
         ultiPaw.selectedUltiPawBinPath = !string.IsNullOrEmpty(binPath) ? binPath : null;
 
         // Update blendshapes only if the selected version is different from the applied one
         // Or if nothing is applied yet. This prevents resetting sliders when just re-selecting the applied version.
-        bool needsBlendshapeUpdate = ultiPaw.appliedUltiPawVersion == null || !ultiPaw.appliedUltiPawVersion.Equals(version);
-
-        if (needsBlendshapeUpdate)
-        {
-            var newBlendshapes = version.customBlendshapes ?? new string[0];
-            var currentNames = ultiPaw.blendShapeNames ?? new List<string>();
-
-            if (!currentNames.SequenceEqual(newBlendshapes))
-            {
-                ultiPaw.blendShapeNames = new List<string>(newBlendshapes);
-                ultiPaw.SyncBlendshapeLists(); // Resizes value list, resets values to 0
-
-                // Reset actual model blendshapes for the new set
-                foreach (var name in ultiPaw.blendShapeNames)
-                {
-                    ultiPaw.UpdateBlendshapeFromSlider(name, 0f); // Use the method that finds Body SMR
-                }
-            }
-        }
+        //bool needsBlendshapeUpdate = ultiPaw.appliedUltiPawVersion == null || !ultiPaw.appliedUltiPawVersion.Equals(version);
+//
+        //if (needsBlendshapeUpdate)
+        //{
+        //    var newBlendshapes = version.customBlendshapes ?? new string[0];
+        //    var currentNames = ultiPaw.blendShapeNames ?? new List<string>();
+//
+        //    if (!currentNames.SequenceEqual(newBlendshapes))
+        //    {
+        //        ultiPaw.blendShapeNames = new List<string>(newBlendshapes);
+        //        ultiPaw.SyncBlendshapeLists(); // Resizes value list, resets values to 0
+//
+        //        // Reset actual model blendshapes for the new set
+        //        foreach (var name in ultiPaw.blendShapeNames)
+        //        {
+        //            ultiPaw.UpdateBlendshapeFromSlider(name, 0f); // Use the method that finds Body SMR
+        //        }
+        //    }
+        //}
 
         EditorUtility.SetDirty(ultiPaw);
         serializedObject.Update(); // Update serialized object to reflect component changes
