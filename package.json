@@ -1,8 +1,11 @@
 {
   "name": "ultipaw",
-  "displayName": "ultipaw",
+  "displayName": "UltiPaw",
   "version": "0.0.1",
-  "description": "Describe this Package",
+  "unity" : "2022.3",
+  "description": "Wizard to install the UltiPaw on a winterpaw",
+  "type": "tool",
+  "url":  "https://github.com/blackorbit1/orbiters-vpm/raw/refs/heads/main/ultipaw.0.0.1.zip",
   "dependencies": {},
   "gitDependencies": {},
   "vpmDependencies": {
@@ -14,6 +17,5 @@
     "url": "orbiters.cc"
   },
   "legacyFolders": {},
-  "legacyFiles": {},
-  "localPath": "H:\\metaverse\\unity projects\\UltiPaw\\Packages\\ultipaw"
+  "legacyFiles": {}
 }

@@ -68,7 +68,7 @@ public enum Scope
 public class UltiPaw : MonoBehaviour, IEditorOnly
 {
     // Script version constant (used for server requests)
-    public const string SCRIPT_VERSION = "0.2";
+    public const string SCRIPT_VERSION = "0.0.1";
 
     // If true, user manually assigns the base FBX; otherwise auto-detect.
     public bool specifyCustomBaseFbx = false;
