@@ -703,6 +703,7 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
         return root.GetComponentsInChildren<SkinnedMeshRenderer>(true)
                                      .FirstOrDefault(s => s.gameObject.name.Equals("Body", System.StringComparison.OrdinalIgnoreCase));
 #endif
+        return null;
     }
 }
 
