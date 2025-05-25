@@ -32,11 +32,10 @@ public class UltiPawEditor : Editor
     private string deleteError = ""; // Error specific to deletion
     private string hashToFetch = null; // TODO deprecate this, use the ultipaw's hash instead
     private bool versionsFoldout = true; // Default to open
+    
+    private bool isAuthenticated = false; // Track authentication state
 
     // Server settings
-    private const string serverBaseUrl = "http://orbiters.cc:8080"; // Update with your server URL
-    private const string versionsEndpoint = "/ultipaw/getVersions";
-    private const string modelEndpoint = "/ultipaw/getModel";
 
     private static readonly Color OrangeColor = new Color(1.0f, 0.65f, 0.0f); // For Downgrade button
     private static readonly Color BACKGROUND_COLOR = new Color(0.28f, 0.28f, 0.28f);
@@ -54,6 +53,7 @@ public class UltiPawEditor : Editor
     private void OnEnable()
     {
         bannerTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(UltiPawUtils.PACKAGE_BASE_FOLDER + "/Editor/banner.png");
+        
         baseFbxFilesProp = serializedObject.FindProperty("baseFbxFiles");
         specifyCustomBaseFbxProp = serializedObject.FindProperty("specifyCustomBaseFbx");
         blendShapeValuesProp = serializedObject.FindProperty("blendShapeValues");
@@ -78,9 +78,14 @@ public class UltiPawEditor : Editor
         {
             ultiPaw.UpdateCurrentBaseFbxHash(); // Calculate hash if missing
         }
+
+        if (UltiPawUtils.HasAuth())
+        {
+            isAuthenticated = true;
+        }
         // Fetch if hash is now available AND server versions haven't been loaded
         // Or if the hash changed since last fetch
-        if (!string.IsNullOrEmpty(ultiPaw.currentBaseFbxHash) && (serverVersions.Count == 0 || ultiPaw.currentBaseFbxHash != hashToFetch))
+        if (isAuthenticated && !string.IsNullOrEmpty(ultiPaw.currentBaseFbxHash) && (serverVersions.Count == 0 || ultiPaw.currentBaseFbxHash != hashToFetch))
         {
             StartVersionFetch(ultiPaw);
         }
@@ -98,36 +103,50 @@ public class UltiPawEditor : Editor
         serializedObject.Update(); // Always start with Update
         UltiPaw ultiPaw = (UltiPaw)target;
 
-        // --- Hash Check ---
-        // Check if FBX changed and update hash if necessary. This is less frequent than every frame.
-        bool fbxPathChanged = false;
-        if (ultiPaw.baseFbxFiles != null && ultiPaw.baseFbxFiles.Count > 0 && ultiPaw.baseFbxFiles[0] != null)
+        if (isAuthenticated)
         {
-            string currentPath = AssetDatabase.GetAssetPath(ultiPaw.baseFbxFiles[0]);
-            if (currentPath != ultiPaw.currentBaseFbxPath)
+            // Check if FBX changed and update hash if necessary. This is less frequent than every frame.
+            bool fbxPathChanged = false;
+            if (ultiPaw.baseFbxFiles != null && ultiPaw.baseFbxFiles.Count > 0 && ultiPaw.baseFbxFiles[0] != null)
             {
-                ultiPaw.currentBaseFbxPath = currentPath; // Update cached path
-                fbxPathChanged = true;
+                string currentPath = AssetDatabase.GetAssetPath(ultiPaw.baseFbxFiles[0]);
+                if (currentPath != ultiPaw.currentBaseFbxPath)
+                {
+                    ultiPaw.currentBaseFbxPath = currentPath; // Update cached path
+                    fbxPathChanged = true;
+                }
+            }
+            else if (!string.IsNullOrEmpty(ultiPaw.currentBaseFbxPath)) // FBX was removed
+            {
+                 ultiPaw.currentBaseFbxPath = null;
+                 fbxPathChanged = true;
+            }
+    
+            if (fbxPathChanged)
+            {
+                 if (ultiPaw.UpdateCurrentBaseFbxHash()) // Update hash and state if path changed
+                 {
+                     // Hash changed, trigger fetch
+                     StartVersionFetch(ultiPaw);
+                 }
             }
         }
-        else if (!string.IsNullOrEmpty(ultiPaw.currentBaseFbxPath)) // FBX was removed
-        {
-             ultiPaw.currentBaseFbxPath = null;
-             fbxPathChanged = true;
-        }
 
-        if (fbxPathChanged)
-        {
-             if (ultiPaw.UpdateCurrentBaseFbxHash()) // Update hash and state if path changed
-             {
-                 // Hash changed, trigger fetch
-                 StartVersionFetch(ultiPaw);
-             }
-        }
-        // --- End Hash Check ---
+        
 
 
         DrawBanner();
+        
+        if (!isAuthenticated)
+        {
+            if (!UltiPawUtils.HasAuth())
+            {
+                DrawMagicSyncAuth();
+                return; // Don't show the rest of the UI
+            }
+            isAuthenticated = true;
+        }
+        
         DrawFileConfiguration(ultiPaw); // This might trigger auto-detect, which calls hash update/fetch
 
         DrawVersionManagement(ultiPaw);
@@ -135,11 +154,49 @@ public class UltiPawEditor : Editor
         DrawActionButtons(ultiPaw);
         DrawBlendshapeSliders(ultiPaw);
         DrawHelpBox();
+        DrawLogoutButton();
 
         serializedObject.ApplyModifiedProperties(); // Apply changes at the end
     }
 
     // --- UI Drawing Helper Methods ---
+    
+    void DrawMagicSyncAuth()
+    {
+        EditorGUILayout.Space(10); // Add space before the button section
+    
+        // Center the button with flexible space on both sides
+        EditorGUILayout.BeginHorizontal();
+        GUILayout.FlexibleSpace();
+    
+        // Use a fixed width button with better sizing
+        if (GUILayout.Button("Magic Sync", GUILayout.Width(120f), GUILayout.Height(30f)))
+        {
+            UltiPawUtils.RegisterAuth().ContinueWith(task => {
+                if (task.Result)
+                {
+                    // Force repaint to update the UI after successful authentication
+                    Repaint();
+                    isAuthenticated = true;
+                }
+                else
+                {
+                    EditorUtility.DisplayDialog("Authentication Failed", 
+                        "Please visit the Orbiters website and click 'Magic Sync' first.", "OK");
+                }
+            });
+        }
+    
+        GUILayout.FlexibleSpace();
+        EditorGUILayout.EndHorizontal();
+    
+        EditorGUILayout.Space(10); // Add space after the button
+    
+        // Help box with instructions
+        EditorGUILayout.HelpBox("Use Magic Sync to authenticate this tool. Go to the Orbiters website, click 'Magic Sync' to copy your token, then click the button above.", MessageType.Info);
+    
+        EditorGUILayout.Space(5); // A bit more space at the bottom
+    }
 
     private void DrawBanner()
     {
@@ -658,6 +715,40 @@ public class UltiPawEditor : Editor
             MessageType.Info
         );
     }
+    void DrawLogoutButton()
+    {
+        // Only show logout button if authenticated
+        if (isAuthenticated)
+        {
+            EditorGUILayout.Space(10);
+        
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace();
+        
+            // Use a red-styled button to indicate it's a logout/remove action
+            GUI.backgroundColor = new Color(0.9f, 0.3f, 0.3f); // Red-ish color
+            if (GUILayout.Button("Logout", GUILayout.Width(100f), GUILayout.Height(25f)))
+            {
+                if (EditorUtility.DisplayDialog("Confirm Logout", 
+                        "Are you sure you want to log out? You will need to authenticate again to use this tool.", 
+                        "Logout", "Cancel"))
+                {
+                    if (UltiPawUtils.RemoveAuth())
+                    {
+                        isAuthenticated = false;
+                        // Force repaint to update the UI after logout
+                        Repaint();
+                    }
+                }
+            }
+            GUI.backgroundColor = Color.white; // Reset color
+        
+            GUILayout.FlexibleSpace();
+            EditorGUILayout.EndHorizontal();
+        
+            EditorGUILayout.Space(10);
+        }
+    }
 
     // --- Logic Methods ---
 
@@ -771,7 +862,7 @@ public class UltiPawEditor : Editor
         deleteError = "";
         hashToFetch = baseFbxHash; // Store hash used for this fetch
 
-        string url = $"{serverBaseUrl}{versionsEndpoint}?s={UltiPaw.SCRIPT_VERSION}&d={baseFbxHash}";
+        string url = $"{UltiPawUtils.SERVER_BASE_URL}{UltiPawUtils.VERSION_ENDPOINT}?s={UltiPaw.SCRIPT_VERSION}&d={baseFbxHash}&t={UltiPawUtils.GetAuth().token}";
         Debug.Log($"[UltiPawEditor] Fetching versions from: {url}");
 
         using (UnityWebRequest req = UnityWebRequest.Get(url))
@@ -909,7 +1000,7 @@ public class UltiPawEditor : Editor
             Repaint();
             yield break;
         }
-        string downloadUrl = $"{serverBaseUrl}{modelEndpoint}?version={UnityWebRequest.EscapeURL(versionToDownload.version)}&d={baseFbxHashForQuery}";
+        string downloadUrl = $"{UltiPawUtils.SERVER_BASE_URL}{UltiPawUtils.MODEL_ENDPOINT}?version={UnityWebRequest.EscapeURL(versionToDownload.version)}&d={baseFbxHashForQuery}";
         string targetExtractFolder = UltiPawUtils.VERSIONS_FOLDER;
         string targetZipPath = $"{targetExtractFolder}/temp.zip";
 

@@ -4,6 +4,12 @@ using UnityEngine;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using System.Net;
+using System.Net.Http;
+using System.Threading.Tasks;
+using UnityEditorInternal;
+using System.Text.RegularExpressions;
+using Newtonsoft.Json;
 
 public static class UltiPawUtils
 {
@@ -13,6 +19,14 @@ public static class UltiPawUtils
     public const string VERSIONS_FOLDER = ASSETS_BASE_FOLDER + "/versions";
     public const string DEFAULT_AVATAR_NAME = "default avatar.asset";
     public const string ULTIPAW_AVATAR_NAME = "ultipaw avatar.asset";
+    
+    public const string SERVER_BASE_URL = "http://orbiters.cc:4000/api/unity-wizard"; // Update with your server URL
+    public const string VERSION_ENDPOINT = "/ultipaw/versions";
+    public const string MODEL_ENDPOINT = "/ultipaw/model";
+    private const string TOKEN_ENDPOINT = "/token"; // Replace with your actual API endpoint
+
+    private const string AUTH_FILENAME = "auth.dat";
+    private static HttpClient client = new HttpClient();
 
     // Calculates SHA256 hash of a file
     public static string CalculateFileHash(string filePath)
@@ -37,6 +51,202 @@ public static class UltiPawUtils
                 return builder.ToString();
             }
         }
+    }
+    
+    // Add this class to store authentication data
+    [JsonObject(MemberSerialization.OptIn)]
+    public class AuthData
+    {
+        [JsonProperty] public string token;
+        [JsonProperty] public string user;
+    }
+
+    // Registers authentication token from clipboard
+    public static async Task<bool> RegisterAuth()
+    {
+        try
+        {
+            // Get token from clipboard
+            string clipboardContent = EditorGUIUtility.systemCopyBuffer;
+            string tokenToUse = "notoken";
+            
+            // Check if clipboard content matches the pattern "orbit-\w{8}-\w{8}-\w{8}-\d{2}-\d{2}-\d{4}"
+            Regex tokenPattern = new Regex(@"orbit-\w{8}-\w{8}-\w{8}-\d{2}-\d{2}-\d{4}");
+            if (!string.IsNullOrEmpty(clipboardContent) && tokenPattern.IsMatch(clipboardContent))
+            {
+                tokenToUse = clipboardContent;
+                Debug.Log("[UltiPawUtils] Found valid token pattern in clipboard");
+            }
+            
+            // Try to validate the token with the server, with retry mechanism for error 425
+            AuthData authData = null;
+            bool isValid = false;
+            int retryCount = 0;
+            const int maxRetries = 10;
+            
+            while (retryCount < maxRetries && !isValid)
+            {
+                try
+                {
+                    // Make the request to the server
+                    var response = await client.GetAsync(SERVER_BASE_URL + TOKEN_ENDPOINT + "?token=" + tokenToUse);
+                    
+                    if (response.IsSuccessStatusCode)
+                    {
+                        // Read the JSON response
+                        string jsonResponse = await response.Content.ReadAsStringAsync();
+                        authData = JsonConvert.DeserializeObject<AuthData>(jsonResponse);
+                        isValid = !string.IsNullOrEmpty(authData?.token);
+                        
+                        if (isValid)
+                        {
+                            Debug.Log("[UltiPawUtils] Authentication successful");
+                            break;
+                        }
+                    }
+                    else if ((int)response.StatusCode == 425)
+                    {
+                        // Status code 425 - need to retry
+                        retryCount++;
+                        Debug.Log($"[UltiPawUtils] Server is processing request (Status 425). Retry {retryCount}/{maxRetries}");
+                        await Task.Delay(1000); // Wait 1 second before retrying
+                    }
+                    else
+                    {
+                        // Other error - don't retry
+                        Debug.LogWarning($"[UltiPawUtils] Authentication failed with status code {response.StatusCode}");
+                        return false;
+                    }
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogError($"[UltiPawUtils] Error during authentication attempt {retryCount + 1}: {e.Message}");
+                    retryCount++;
+                    await Task.Delay(1000);
+                }
+            }
+            
+            if (isValid && authData != null)
+            {
+                // Save the auth data
+                string authPath = GetAuthFilePath();
+                EnsureDirectoryExists(authPath);
+                
+                // Serialize the auth data to JSON
+                string authJson = JsonConvert.SerializeObject(authData);
+                
+                // Simple encryption by converting to bytes and XOR with a key
+                byte[] authBytes = Encoding.UTF8.GetBytes(authJson);
+                byte[] encryptedBytes = new byte[authBytes.Length];
+                byte[] key = Encoding.UTF8.GetBytes("UltiPawMagicSync"); // Simple encryption key
+                
+                for (int i = 0; i < authBytes.Length; i++)
+                {
+                    encryptedBytes[i] = (byte)(authBytes[i] ^ key[i % key.Length]);
+                }
+                
+                File.WriteAllBytes(authPath, encryptedBytes);
+                Debug.Log("[UltiPawUtils] Authentication data stored successfully");
+                return true;
+            }
+            else
+            {
+                Debug.LogWarning("[UltiPawUtils] Authentication failed after maximum retries");
+                return false;
+            }
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"[UltiPawUtils] Error registering authentication: {e.Message}");
+            return false;
+        }
+    }
+
+    // Gets the current authentication data
+    public static AuthData GetAuth()
+    {
+        try
+        {
+            string authPath = GetAuthFilePath();
+            
+            if (!File.Exists(authPath))
+            {
+                return null;
+            }
+            
+            byte[] encryptedBytes = File.ReadAllBytes(authPath);
+            byte[] key = Encoding.UTF8.GetBytes("UltiPawMagicSync");
+            byte[] authBytes = new byte[encryptedBytes.Length];
+            
+            // Decrypt the data
+            for (int i = 0; i < encryptedBytes.Length; i++)
+            {
+                authBytes[i] = (byte)(encryptedBytes[i] ^ key[i % key.Length]);
+            }
+            
+            string authJson = Encoding.UTF8.GetString(authBytes);
+            return JsonConvert.DeserializeObject<AuthData>(authJson);
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"[UltiPawUtils] Error retrieving authentication: {e.Message}");
+            return null;
+        }
+    }
+
+    // Checks if the user has valid authentication
+    public static bool HasAuth()
+    {
+        AuthData auth = GetAuth();
+        return auth != null && !string.IsNullOrEmpty(auth.token);
+    }
+
+    // Validates the token with the server
+    private static async Task<bool> ValidateTokenWithServer(string token)
+    {
+        try
+        {
+            var response = await client.GetAsync(SERVER_BASE_URL + TOKEN_ENDPOINT + token);
+            return response.IsSuccessStatusCode;
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"[UltiPawUtils] Error validating token with server: {e.Message}");
+            return false;
+        }
+    }
+    
+    // Removes the authentication data file
+    public static bool RemoveAuth()
+    {
+        try
+        {
+            string authPath = GetAuthFilePath();
+        
+            if (File.Exists(authPath))
+            {
+                File.Delete(authPath);
+                Debug.Log("[UltiPawUtils] Authentication data removed successfully");
+                return true;
+            }
+            else
+            {
+                Debug.Log("[UltiPawUtils] No authentication data found to remove");
+                return false;
+            }
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"[UltiPawUtils] Error removing authentication data: {e.Message}");
+            return false;
+        }
+    }
+
+    // Gets the path to the authentication file
+    private static string GetAuthFilePath()
+    {
+        string authFolder = Path.Combine(InternalEditorUtility.unityPreferencesFolder, "UltiPaw");
+        return Path.Combine(authFolder, AUTH_FILENAME);
     }
 
     // Generates the path for a specific version's data folder
