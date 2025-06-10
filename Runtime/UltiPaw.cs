@@ -368,12 +368,12 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
     }
     
     // update appliedUltiPawVersion with a list serverVersions
-    public void UpdateAppliedUltiPawVersion(List<UltiPawVersion> serverVersions)
+    public bool UpdateAppliedUltiPawVersion(List<UltiPawVersion> serverVersions)
     {
         if (serverVersions == null || serverVersions.Count == 0)
         {
             Debug.LogWarning("[UltiPaw] No server versions available to update applied version.");
-            return;
+            return false; // need to get versions from the server
         }
 
         // Check if the current hash matches any version's customAviHash
@@ -383,10 +383,11 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
             {
                 appliedUltiPawVersion = version; // Update applied version
                 isUltiPaw = true; // Update isUltiPaw state
-                return; // Exit loop on first match
+                return true; // Exit loop on first match
             }
         }
         if(isUltiPaw) Debug.LogWarning("[UltiPaw] No matching version found for current hash. Current hash: " + currentBaseFbxHash);
+        return true;
     }
 
 #if UNITY_EDITOR

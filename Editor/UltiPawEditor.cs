@@ -119,6 +119,7 @@ public class UltiPawEditor : Editor
             else if (!string.IsNullOrEmpty(ultiPaw.currentBaseFbxPath)) // FBX was removed
             {
                  ultiPaw.currentBaseFbxPath = null;
+                 ultiPaw.currentBaseFbxPath = null;
                  fbxPathChanged = true;
             }
     
@@ -267,7 +268,11 @@ public class UltiPawEditor : Editor
 
         if (!isFetching && serverVersions != null)
         {
-            ultiPaw.UpdateAppliedUltiPawVersion(serverVersions);
+            if (!ultiPaw.UpdateAppliedUltiPawVersion(serverVersions))
+            {
+                StartVersionFetch(ultiPaw); // Re-fetch if applied version is not found in the list
+            }
+            
         }
         
         // Update the component's active version (used for transform/reset actions)
@@ -1000,7 +1005,7 @@ public class UltiPawEditor : Editor
             Repaint();
             yield break;
         }
-        string downloadUrl = $"{UltiPawUtils.SERVER_BASE_URL}{UltiPawUtils.MODEL_ENDPOINT}?version={UnityWebRequest.EscapeURL(versionToDownload.version)}&d={baseFbxHashForQuery}";
+        string downloadUrl = $"{UltiPawUtils.SERVER_BASE_URL}{UltiPawUtils.MODEL_ENDPOINT}?version={UnityWebRequest.EscapeURL(versionToDownload.version)}&d={baseFbxHashForQuery}&t={UltiPawUtils.GetAuth().token}";
         string targetExtractFolder = UltiPawUtils.VERSIONS_FOLDER;
         string targetZipPath = $"{targetExtractFolder}/temp.zip";
 
