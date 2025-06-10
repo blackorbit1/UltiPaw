@@ -14,8 +14,8 @@ using Newtonsoft.Json;
 public static class UltiPawUtils
 {
     public const string SCRIPT_VERSION = "0.1";
-    public const string PACKAGE_BASE_FOLDER = "Packages/ultipaw";
-    public const string ASSETS_BASE_FOLDER = "Assets/ultipaw";
+    public const string PACKAGE_BASE_FOLDER = "Packages/UltiPaw";
+    public const string ASSETS_BASE_FOLDER = "Assets/UltiPaw";
     public const string VERSIONS_FOLDER = ASSETS_BASE_FOLDER + "/versions";
     public const string DEFAULT_AVATAR_NAME = "default avatar.asset";
     public const string ULTIPAW_AVATAR_NAME = "ultipaw avatar.asset";
@@ -25,6 +25,9 @@ public static class UltiPawUtils
     public const string MODEL_ENDPOINT = "/ultipaw/model";
     private const string TOKEN_ENDPOINT = "/token"; // Replace with your actual API endpoint
 
+    public const string NEW_VERSION_ENDPOINT = "/ultipaw/newVersion"; 
+    public static readonly string PACKAGE_BASE_FOLDER_FULL_PATH = Path.Combine(Application.dataPath, "UltiPaw"); 
+    
     private const string AUTH_FILENAME = "auth.dat";
     private static HttpClient client = new HttpClient();
 
@@ -283,27 +286,87 @@ public static class UltiPawUtils
     }
 
 
+    
     // Ensures the directory exists
-    public static void EnsureDirectoryExists(string directoryPath) // Renamed parameter for clarity
+    public static void EnsureDirectoryExists(string directoryPath, bool canBeFilePath = true)
     {
         // Check if the path is actually a directory path, not a file path
         string directory = directoryPath;
-        if (!string.IsNullOrEmpty(Path.GetExtension(directoryPath))) // If it has an extension, likely a file path
+        
+        if (canBeFilePath && !string.IsNullOrEmpty(Path.GetExtension(directoryPath))) 
         {
+            // If it has an extension and canBeFilePath is true, treat it as a file path
             directory = Path.GetDirectoryName(directoryPath);
         }
+        // If canBeFilePath is false, treat the entire path as a directory path regardless of extension
 
-        if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+        if (!string.IsNullOrEmpty(directory))
         {
-            try
+            // Convert Unity relative path to absolute system path
+            string absoluteDirectory;
+            if (directory.StartsWith("Assets/") || directory.StartsWith("Assets\\"))
             {
-                Directory.CreateDirectory(directory);
-                AssetDatabase.Refresh(); // Make Unity aware of the new folder
+                // Convert Unity Assets path to absolute path
+                // Remove "Assets/" and combine with Application.dataPath
+                string relativePath = directory.Substring("Assets/".Length).Replace('/', Path.DirectorySeparatorChar);
+                absoluteDirectory = Path.Combine(Application.dataPath, relativePath);
             }
-            catch (System.Exception e)
+            else if (directory.StartsWith("Packages/") || directory.StartsWith("Packages\\"))
             {
-                 Debug.LogError($"[UltiPawUtils] Failed to create directory '{directory}': {e.Message}");
+                // Handle Packages path - go one level up from dataPath then into Packages
+                string relativePath = directory.Substring("Packages/".Length).Replace('/', Path.DirectorySeparatorChar);
+                absoluteDirectory = Path.Combine(Path.GetDirectoryName(Application.dataPath), "Packages", relativePath);
             }
+            else if (Path.IsPathRooted(directory))
+            {
+                // Already absolute path
+                absoluteDirectory = directory;
+            }
+            else
+            {
+                // Relative path, make it relative to Application.dataPath
+                absoluteDirectory = Path.Combine(Application.dataPath, directory);
+            }
+
+            // Normalize the path
+            absoluteDirectory = Path.GetFullPath(absoluteDirectory);
+
+            Debug.Log($"[UltiPawUtils] EnsureDirectoryExists - Input: '{directoryPath}' (canBeFilePath: {canBeFilePath}) -> Directory: '{directory}' -> Absolute: '{absoluteDirectory}'");
+            Debug.Log($"[UltiPawUtils] Directory exists check: {Directory.Exists(absoluteDirectory)}");
+
+            if (!Directory.Exists(absoluteDirectory))
+            {
+                try
+                {
+                    Debug.Log($"[UltiPawUtils] Creating directory: {absoluteDirectory}");
+                    Directory.CreateDirectory(absoluteDirectory);
+                    
+                    // Verify creation
+                    if (Directory.Exists(absoluteDirectory))
+                    {
+                        Debug.Log($"[UltiPawUtils] Successfully created directory: {absoluteDirectory}");
+                        AssetDatabase.Refresh(); // Make Unity aware of the new folder
+                    }
+                    else
+                    {
+                        Debug.LogError($"[UltiPawUtils] Directory creation appeared to succeed but directory still doesn't exist: {absoluteDirectory}");
+                    }
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogError($"[UltiPawUtils] Failed to create directory '{absoluteDirectory}': {e.Message}");
+                    Debug.LogError($"[UltiPawUtils] Exception details: {e}");
+                    throw; // Re-throw to let caller handle if needed
+                }
+            }
+            else
+            {
+                Debug.Log($"[UltiPawUtils] Directory already exists: {absoluteDirectory}");
+            }
+        }
+        else
+        {
+            Debug.LogWarning($"[UltiPawUtils] EnsureDirectoryExists called with empty or invalid directory path: '{directoryPath}' (canBeFilePath: {canBeFilePath})");
         }
     }
 }

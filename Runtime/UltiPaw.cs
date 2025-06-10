@@ -98,7 +98,12 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
     [HideInInspector] public string currentOriginalBaseFbxHash = null; // Cache the hash
     [HideInInspector] public List<UltiPawVersion> serverVersions = new List<UltiPawVersion>();
 
-    public const string ORIGINAL_SUFFIX = ".old"; // Suffix for backup files
+    
+    [HideInInspector] public bool isCreatorMode = false; 
+    [HideInInspector] public GameObject customFbxForCreator; // Make sure this is a GameObject type for FBX
+    [HideInInspector] public Avatar ultipawAvatarForCreatorProp; // Path to the custom FBX for creator mode
+    [HideInInspector] public GameObject avatarLogicPrefab;    // Make sure this is a GameObject type for Prefab
+    [HideInInspector] public const string ORIGINAL_SUFFIX = ".old"; // Suffix for backup files
 
     // Called when script is loaded or a value changes in the Inspector
     private void OnValidate()
