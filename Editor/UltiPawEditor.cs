@@ -100,7 +100,7 @@ public class UltiPawEditor : Editor
 
     public override void OnInspectorGUI()
     {
-        serializedObject.Update(); // Always start with Update
+        serializedObject.Update();
         UltiPaw ultiPaw = (UltiPaw)target;
 
         if (isAuthenticated)
@@ -112,7 +112,7 @@ public class UltiPawEditor : Editor
                 string currentPath = AssetDatabase.GetAssetPath(ultiPaw.baseFbxFiles[0]);
                 if (currentPath != ultiPaw.currentBaseFbxPath)
                 {
-                    ultiPaw.currentBaseFbxPath = currentPath; // Update cached path
+                    ultiPaw.currentBaseFbxPath = currentPath;
                     fbxPathChanged = true;
                 }
             }
@@ -132,9 +132,7 @@ public class UltiPawEditor : Editor
                  }
             }
         }
-
         
-
 
         DrawBanner();
         
@@ -151,20 +149,20 @@ public class UltiPawEditor : Editor
         DrawFileConfiguration(ultiPaw); // This might trigger auto-detect, which calls hash update/fetch
 
         DrawVersionManagement(ultiPaw);
-        DrawUpdateNotification(ultiPaw); // Draw notification between sections
+        DrawUpdateNotification(ultiPaw);
         DrawActionButtons(ultiPaw);
         DrawBlendshapeSliders(ultiPaw);
         DrawHelpBox();
         DrawLogoutButton();
 
-        serializedObject.ApplyModifiedProperties(); // Apply changes at the end
+        serializedObject.ApplyModifiedProperties(); 
     }
 
     // --- UI Drawing Helper Methods ---
     
     void DrawMagicSyncAuth()
     {
-        EditorGUILayout.Space(10); // Add space before the button section
+        EditorGUILayout.Space(10);
     
         // Center the button with flexible space on both sides
         EditorGUILayout.BeginHorizontal();
@@ -201,7 +199,6 @@ public class UltiPawEditor : Editor
 
     private void DrawBanner()
     {
-        // (Existing code - no changes needed)
         if (bannerTexture != null)
         {
             float aspect = (float)bannerTexture.width / bannerTexture.height;
@@ -215,7 +212,6 @@ public class UltiPawEditor : Editor
 
     private void DrawFileConfiguration(UltiPaw ultiPaw)
     {
-        // (Existing code - slight modification to trigger hash update on change)
         EditorGUILayout.LabelField("Configuration", EditorStyles.boldLabel);
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
 
@@ -232,7 +228,7 @@ public class UltiPawEditor : Editor
         }
         else // Auto-detect mode
         {
-            if (fbxSpecChanged) // Just switched to auto-detect
+            if (fbxSpecChanged) 
             {
                 EditorApplication.delayCall += ultiPaw.AutoDetectBaseFbxViaHierarchy; // Schedule detection
             }
@@ -249,7 +245,7 @@ public class UltiPawEditor : Editor
             {
                  StartVersionFetch(ultiPaw); // Fetch if hash changed
             }
-            Repaint(); // Ensure UI reflects potential state changes
+            Repaint();
         }
 
         EditorGUILayout.EndVertical();
@@ -258,7 +254,6 @@ public class UltiPawEditor : Editor
 
     private void DrawVersionManagement(UltiPaw ultiPaw)
     {
-        //EditorGUILayout.LabelField("UltiPaw Version Manager", EditorStyles.boldLabel);
         EditorGUILayout.BeginVertical();
 
         // Display Errors First
@@ -282,7 +277,7 @@ public class UltiPawEditor : Editor
         GUI.enabled = !isFetching && !isDownloading && !isDeleting; // Disable during any operation
         if (GUILayout.Button(isFetching ? "Fetching..." : "Check for Updates"))
         {
-            StartVersionFetch(ultiPaw); // Manually trigger fetch
+            StartVersionFetch(ultiPaw);
         }
         GUI.enabled = true;
 
@@ -297,11 +292,6 @@ public class UltiPawEditor : Editor
         {
             selectedVersion = recommendedVersion;
         }
-        
-        //if (selectedVersion == null && !isFetching && serverVersions.Count > 0)
-        //{
-        //     EditorGUILayout.HelpBox("Select a version from the list below to apply or manage.", MessageType.Info);
-        //}
 
         // Foldout for all available versions
         if (serverVersions.Count > 0 || isFetching) // Show foldout even while fetching
@@ -309,7 +299,6 @@ public class UltiPawEditor : Editor
             versionsFoldout = EditorGUILayout.Foldout(versionsFoldout, "All UltiPaw Versions", true, EditorStyles.foldoutHeader); // Use header style
             if (versionsFoldout && !isFetching) // Only draw list content if not fetching
             {
-                //EditorGUI.indentLevel++;
                 // Sort versions (newest first) - requires System.Version parsing
                 var sortedVersions = serverVersions
                     .Where(v => v != null && !string.IsNullOrEmpty(v.version)) // Filter out invalid entries
@@ -318,10 +307,9 @@ public class UltiPawEditor : Editor
 
                 foreach (var ver in sortedVersions)
                 {
-                    DrawVersionListItemWithSplitButtons(ver, ultiPaw); // Use the new drawing method
-                    EditorGUILayout.Space(2); // Add a little space between items
+                    DrawVersionListItemWithSplitButtons(ver, ultiPaw); 
+                    EditorGUILayout.Space(2);
                 }
-                //EditorGUI.indentLevel--;
             }
             else if (versionsFoldout && isFetching)
             {
@@ -395,21 +383,13 @@ public class UltiPawEditor : Editor
     {
         List<Vector3> verts = new List<Vector3>();
 
-        // Top Left Arc
         AddArc(verts, new Vector2(rect.xMin + radius, rect.yMin + radius), radius, 180f, 270f);
-        // Top Line
         verts.Add(new Vector2(rect.xMax - radius, rect.yMin));
-        // Top Right Arc
         AddArc(verts, new Vector2(rect.xMax - radius, rect.yMin + radius), radius, 270f, 360f);
-        // Right Line
         verts.Add(new Vector2(rect.xMax, rect.yMax - radius));
-        // Bottom Right Arc
         AddArc(verts, new Vector2(rect.xMax - radius, rect.yMax - radius), radius, 0f, 90f);
-        // Bottom Line
         verts.Add(new Vector2(rect.xMin + radius, rect.yMax));
-        // Bottom Left Arc
         AddArc(verts, new Vector2(rect.xMin + radius, rect.yMax - radius), radius, 90f, 180f);
-        // Left Line
         verts.Add(new Vector2(rect.xMin, rect.yMin + radius));
 
         Handles.DrawAAConvexPolygon(verts.ToArray());
@@ -428,10 +408,6 @@ public class UltiPawEditor : Editor
         }
     }
 
-
-
-
-    // Draws a single version item in the list
     private void DrawVersionListItemWithSplitButtons(UltiPawVersion ver, UltiPaw ultiPaw)
     {
         if (ver == null) return;
@@ -449,7 +425,6 @@ public class UltiPawEditor : Editor
         bool isCurrentlyApplied = ultiPaw.appliedUltiPawVersion != null && ultiPaw.appliedUltiPawVersion.Equals(ver);
         bool canInteract = !isFetching && !isDownloading && !isDeleting;
 
-        // Prepare Icons
         GUIContent downloadIcon = EditorGUIUtility.IconContent("Download-Available", "|Download this version");
         GUIContent deleteIcon = EditorGUIUtility.IconContent("TreeEditor.Trash", "|Delete downloaded files for this version");
         if (downloadIcon.image == null) downloadIcon = new GUIContent("↓", "|Download this version");
@@ -466,7 +441,6 @@ public class UltiPawEditor : Editor
         GUILayout.FlexibleSpace(); // Push label up (centers it)
         EditorGUILayout.EndVertical();
 
-        // --- Spacer ---
         GUILayout.FlexibleSpace(); // Pushes all subsequent elements to the right
 
         // --- Column 2: Applied Chip (Vertically Centered) ---
@@ -517,14 +491,13 @@ public class UltiPawEditor : Editor
         GUI.enabled = true; // Reset base enabled state
         GUILayout.FlexibleSpace();
         EditorGUILayout.EndVertical();
-        GUILayout.Space(5); // Space before radio button
+        GUILayout.Space(5); 
 
         // --- Column 5: Selection Radio Button (Vertically Centered) ---
         EditorGUILayout.BeginVertical(GUILayout.Width(18)); // Constrain width
         GUILayout.FlexibleSpace();
         GUI.enabled = canInteract; // && (isDownloaded || isCurrentlyApplied); // Enable selection if possible
         EditorGUI.BeginChangeCheck();
-        // Use GUILayout.Toggle for better integration
         bool selectionToggle = GUILayout.Toggle(isCurrentlySelected, "", EditorStyles.radioButton);
         if (EditorGUI.EndChangeCheck() && selectionToggle)
         {
@@ -537,7 +510,6 @@ public class UltiPawEditor : Editor
         // End the main horizontal row
         EditorGUILayout.EndHorizontal();
         EditorGUILayout.Space(2);
-        //EditorGUILayout.BeginHorizontal();
         
         if (!string.IsNullOrEmpty(ver.changelog))
         {
@@ -546,7 +518,6 @@ public class UltiPawEditor : Editor
         }
         GUILayout.Space(5); // Add space after details
         
-        //EditorGUILayout.EndHorizontal();
         EditorGUILayout.EndVertical();
     }
     
@@ -554,7 +525,6 @@ public class UltiPawEditor : Editor
     // Helper to draw the scope label with color
     private void DrawScopeLabel(Scope scope)
     {
-        // (Existing code - no changes needed)
         Color originalColor = GUI.contentColor;
         DrawChipLabel(
             text: scope.ToString().ToLower(), 
@@ -569,7 +539,6 @@ public class UltiPawEditor : Editor
             }, 
             BORDER_COLOR
             );
-        //GUILayout.Label($"[{scope ?? "N/A"}]", EditorStyles.boldLabel, GUILayout.Width(60));
         GUI.contentColor = originalColor;
     }
 
@@ -661,7 +630,7 @@ public class UltiPawEditor : Editor
                 if (ultiPaw.ResetIntoWinterPaw()) // Check success
                 {
                     // Success handled inside ResetIntoWinterPaw (clears applied version, etc.)
-                    Repaint(); // Force repaint
+                    Repaint();
                 }
             }
         }
@@ -974,7 +943,7 @@ public class UltiPawEditor : Editor
                         ClearSelection(ultiPaw);
                     }
                 }
-                catch (System.Exception e)
+                catch (Exception e)
                 {
                     fetchError = $"Exception parsing server response: {e.Message}";
                     Debug.LogError($"[UltiPawEditor] Exception: {e}");
@@ -986,7 +955,7 @@ public class UltiPawEditor : Editor
             }
         } // Dispose UnityWebRequest
 
-        Repaint(); // Update UI with results
+        Repaint();
     }
 
     // Modified Download Coroutine to optionally apply after download
@@ -1073,27 +1042,15 @@ public class UltiPawEditor : Editor
             op = req.SendWebRequest();
             while (!op.isDone)
             {
-                // Optional: Update progress here if needed
-                // EditorUtility.DisplayProgressBar("Downloading...", $"Downloading {versionToDownload.version}", op.progress);
                 yield return null; // Wait for download
             }
-            // EditorUtility.ClearProgressBar(); // Clear progress bar after loop
         }
-        else if (!setupOk) // If setup failed earlier, we already logged and exited
-        {
-             // This case should technically not be reached due to yield break above, but safety first.
-             isDownloading = false;
-             Repaint();
-             yield break;
-        }
-
 
         // --- 4. Process Result, Extract, and Cleanup (Uses try/finally) ---
         bool downloadSucceeded = false;
         bool extractionSucceeded = false;
-        try // This try/finally ensures cleanup happens AFTER yield is complete
+        try
         {
-            // Check result *after* yield is done
             if (req.result == UnityWebRequest.Result.Success)
             {
                 Debug.Log($"[UltiPawEditor] Successfully downloaded ZIP to: {targetZipPath}");
@@ -1101,9 +1058,6 @@ public class UltiPawEditor : Editor
             }
             else
             {
-                // parse the error into RequestErrorResponse
-                    
-                //RequestErrorResponse errorResponse = JsonConvert.DeserializeObject<RequestErrorResponse>(req.downloadHandler.text);
                 downloadError = $"Download failed : make sure you have a supported winterpaw and a stable connection. Else contact Orbit";
                 Debug.LogError($"[UltiPawEditor] {downloadError}");
             }
@@ -1127,7 +1081,7 @@ public class UltiPawEditor : Editor
                 {
                     downloadError = $"Extraction failed: {ex.Message}"; // Set specific error
                     Debug.LogError($"[UltiPawEditor] Failed to extract ZIP file '{targetZipPath}' to '{targetExtractFolder}': {ex}");
-                    AssetDatabase.Refresh(); // Refresh anyway
+                    AssetDatabase.Refresh();
                 }
             }
 
@@ -1177,8 +1131,7 @@ public class UltiPawEditor : Editor
                 catch (Exception ex) { Debug.LogWarning($"[UltiPawEditor] Error deleting temp file '{targetZipPath}': {ex.Message}"); }
             }
 
-            // EditorUtility.ClearProgressBar(); // Ensure progress bar is cleared even on error
-            Repaint(); // Update UI after everything
+            Repaint();
         }
     }
     
@@ -1212,8 +1165,8 @@ public class UltiPawEditor : Editor
         }
         finally
         {
-            isDeleting = false; // Mark process finished
-            Repaint(); // Update UI
+            isDeleting = false; 
+            Repaint();
         }
     }
 
@@ -1242,42 +1195,13 @@ public class UltiPawEditor : Editor
     private void SelectVersion(UltiPawVersion version, UltiPaw ultiPaw, string binPath)
     {
         if (version == null || ultiPaw == null) return;
-
-        // Check if already selected
         if (selectedVersion != null && selectedVersion.Equals(version)) return;
-
-        // Update UI selection state
+        
         selectedVersion = version;
-
-        // Record Undo for changes to the UltiPaw component
-        // doesn't need to check if it exists as it would just get downloaded
         Undo.RecordObject(ultiPaw, "Select UltiPaw Version");
-
         
         // Update the bin path only if it's valid, otherwise clear it
         ultiPaw.selectedUltiPawBinPath = !string.IsNullOrEmpty(binPath) ? binPath : null;
-
-        // Update blendshapes only if the selected version is different from the applied one
-        // Or if nothing is applied yet. This prevents resetting sliders when just re-selecting the applied version.
-        //bool needsBlendshapeUpdate = ultiPaw.appliedUltiPawVersion == null || !ultiPaw.appliedUltiPawVersion.Equals(version);
-//
-        //if (needsBlendshapeUpdate)
-        //{
-        //    var newBlendshapes = version.customBlendshapes ?? new string[0];
-        //    var currentNames = ultiPaw.blendShapeNames ?? new List<string>();
-//
-        //    if (!currentNames.SequenceEqual(newBlendshapes))
-        //    {
-        //        ultiPaw.blendShapeNames = new List<string>(newBlendshapes);
-        //        ultiPaw.SyncBlendshapeLists(); // Resizes value list, resets values to 0
-//
-        //        // Reset actual model blendshapes for the new set
-        //        foreach (var name in ultiPaw.blendShapeNames)
-        //        {
-        //            ultiPaw.UpdateBlendshapeFromSlider(name, 0f); // Use the method that finds Body SMR
-        //        }
-        //    }
-        //}
 
         EditorUtility.SetDirty(ultiPaw);
         serializedObject.Update(); // Update serialized object to reflect component changes
@@ -1285,12 +1209,10 @@ public class UltiPawEditor : Editor
         Repaint();
     }
 
-    // Clears the UI selection
     private void ClearSelection(UltiPaw ultiPaw) {
-        if (selectedVersion == null) return; // Nothing to clear in UI
-
-        selectedVersion = null; // Clear UI selection state
-
+        if (selectedVersion == null) return; 
+        selectedVersion = null; 
+        
         // Clear component's active version and path if it matches the cleared UI selection
         if (ultiPaw != null && ultiPaw.activeUltiPawVersion != null && ultiPaw.activeUltiPawVersion.Equals(selectedVersion)) // Check equality properly
         {
@@ -1304,8 +1226,6 @@ public class UltiPawEditor : Editor
             if (ultiPaw.appliedUltiPawVersion == null && ultiPaw.blendShapeNames.Count > 0) {
                  ultiPaw.blendShapeNames.Clear();
                  ultiPaw.blendShapeValues.Clear();
-                 // Maybe reset blendshapes on model too?
-                 // foreach(...) ultiPaw.UpdateBlendshapeFromSlider(name, 0f);
             }
 
             EditorUtility.SetDirty(ultiPaw);
@@ -1319,7 +1239,6 @@ public class UltiPawEditor : Editor
     {
         if (version == null || ultiPaw == null) return;
 
-        // Select the version first (updates UI, component state, blendshapes if needed)
         SelectVersion(version, ultiPaw, binPath);
 
         // Ensure selection was successful and bin path is valid before attempting transform
@@ -1334,14 +1253,13 @@ public class UltiPawEditor : Editor
             else
             {
                  Debug.LogError($"[UltiPawEditor] Failed to apply version {version.version} after selecting it.");
-                 // Error message shown by TurnItIntoUltiPaw
             }
         }
         else
         {
              Debug.LogError($"[UltiPawEditor] Cannot apply version {version.version}. Selection failed or bin path is invalid.");
         }
-        Repaint(); // Update UI after attempt
+        Repaint(); 
     }
 
 
