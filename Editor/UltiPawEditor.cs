@@ -1563,7 +1563,7 @@ public class UltiPawEditor : Editor
         bool fileCreationSucceeded = false;
         try
         {
-            UltiPawUtils.EnsureDirectoryExists(newVersionDataFullPath, canBeFilePath: false);
+            UltiPawUtils.EnsureDirectoryExists(newVersionDataPath, canBeFilePath: false);
 
             // Copy the transformed avatar asset provided by the user
             string ultipawAvatarSourcePath = AssetDatabase.GetAssetPath(ultipawAvatarForCreatorProp.objectReferenceValue);
@@ -1588,17 +1588,20 @@ public class UltiPawEditor : Editor
             {
                 encryptedData[i] = (byte)(targetData[i] ^ keyData[i % keyData.Length]);
             }
-            // create file first
-            
             File.WriteAllBytes(Path.Combine(newVersionDataPath, "ultipaw.bin"), encryptedData);
             Debug.Log($"[UltiPaw-Creator] Encrypted FBX and saved as ultipaw.bin");
+            
+            // ** NEW ** Copy the logic prefab itself into the version folder
+            string prefabSourcePath = AssetDatabase.GetAssetPath(avatarLogicPrefabProp.objectReferenceValue);
+            string prefabDestPath = Path.Combine(newVersionDataPath, "ultipaw logic.prefab");
+            AssetDatabase.CopyAsset(prefabSourcePath, prefabDestPath);
+            Debug.Log($"[UltiPaw-Creator] Copied logic prefab to {prefabDestPath}");
 
-            // Create .unitypackage
-            string prefabPath = AssetDatabase.GetAssetPath(avatarLogicPrefabProp.objectReferenceValue);
-            string[] dependencies = AssetDatabase.GetDependencies(prefabPath, true);
+            // Create .unitypackage containing the prefab and its dependencies
+            string[] dependencies = AssetDatabase.GetDependencies(prefabSourcePath, true);
             string packagePath = Path.Combine(newVersionDataPath, "ultipaw logic.unitypackage");
             AssetDatabase.ExportPackage(dependencies, packagePath, ExportPackageOptions.Recurse | ExportPackageOptions.IncludeDependencies);
-            Debug.Log($"[UltiPaw-Creator] Exported logic prefab to {packagePath}");
+            Debug.Log($"[UltiPaw-Creator] Exported logic prefab package to {packagePath}");
 
             fileCreationSucceeded = true;
         }
@@ -1651,7 +1654,7 @@ public class UltiPawEditor : Editor
 
         try
         {
-            string uploadUrl = $"{UltiPawUtils.SERVER_BASE_URL}{UltiPawUtils.NEW_VERSION_ENDPOINT}?t={UltiPawUtils.GetAuth().token}";
+            string uploadUrl = $"{UltiPawUtils.SERVER_BASE_URL}{UltiPawUtils.NEW_VERSION_ENDPOINT}";
             byte[] fileBytes = File.ReadAllBytes(tempZipPath);
             string zipFileName = Path.GetFileName(newVersionDataFullPath) + ".zip"; // e.g., u0.3d1.5.zip
 

@@ -399,6 +399,16 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
     // Transform the base FBX using XOR with the selected UltiPaw .bin.
     public bool ApplyUltiPaw() // Return bool indicating success
     {
+        // --- PRE-TRANSFORMATION ---
+        // ** NEW ** Remove existing logic prefab before applying a new one
+        Transform root = transform.root;
+        Transform existingLogic = root.Find("ultipaw logic");
+        if (existingLogic != null)
+        {
+            Undo.DestroyObjectImmediate(existingLogic.gameObject);
+            Debug.Log("[UltiPaw] Removed existing 'ultipaw logic' GameObject.");
+        }
+
         string baseFbxPath = GetCurrentOriginalBaseFbxPath();
         if (string.IsNullOrEmpty(baseFbxPath) || !File.Exists(baseFbxPath))
         {
@@ -420,30 +430,13 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
              return false; // Indicate failure
         }
 
-        // --- Hash Verification ---
+        // --- HASH VERIFICATION ---
         UpdateCurrentBaseFbxHash(); // Ensure hash is current before check
-        //string currentBinHash = UltiPawUtils.CalculateFileHash(selectedUltiPawBinPath);
-
-
-        // Verify current FBX against the *expected default* hash of the version being applied
         bool baseHashMatch = activeUltiPawVersion.defaultAviHash.Any(v => v != null && (
             v.Equals(currentBaseFbxHash, StringComparison.OrdinalIgnoreCase) ||
             v.Equals(currentOriginalBaseFbxHash, StringComparison.OrdinalIgnoreCase)
         ));
-
-        // Verify the bin file against the *expected custom* hash of the version being applied (this hash check seems reversed in original code, correcting it)
-        // The BIN file itself doesn't have a hash stored *in* the version data usually.
-        // Let's assume the check was meant to ensure the BIN file *corresponds* to the version somehow.
-        // We'll keep the original logic for now, but it might need review based on server implementation.
-        // A better check might be hashing the BIN and comparing to a hash provided *for the bin* by the server, if available.
-        // For now, let's assume activeUltiPawVersion.customAviHash is the *expected hash of the resulting FBX*, not the bin.
-        // And activeUltiPawVersion.defaultAviHash is the *expected hash of the input FBX*.
-
-        // Let's re-evaluate the hash check logic based on variable names:
-        // defaultAviHash = hash of the original FBX this version applies to.
-        // customAviHash = hash of the FBX *after* this version is applied.
-        // So, we check if currentBaseFbxHash == defaultAviHash.
-
+        
         if (!baseHashMatch)
         {
             string message = $"Hash mismatch detected for applying version '{activeUltiPawVersion.version}':\n\n";
@@ -461,7 +454,7 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
              Debug.Log("[UltiPaw] Base FBX hash verified successfully.");
         }
 
-        // --- Transformation ---
+        // --- FBX TRANSFORMATION ---
         try
         {
             byte[] baseData = File.ReadAllBytes(baseFbxPath);
@@ -505,20 +498,48 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
                 Debug.LogWarning($"[UltiPaw] UltiPaw avatar file not found or path not set in version details. Path checked: {ultiAvatarFullPath}");
             }
 
+            // --- ** NEW ** Install Avatar Logic ---
+            string packagePath = Path.Combine(versionDataPath, "ultipaw logic.unitypackage").Replace("\\", "/");
+            if (File.Exists(packagePath))
+            {
+                Debug.Log($"[UltiPaw] Found logic package. Importing from: {packagePath}");
+                AssetDatabase.ImportPackage(packagePath, false); // Import silently
+
+                // After import, the prefab should be available at its source path within the version folder
+                string prefabPath = Path.Combine(versionDataPath, "ultipaw logic.prefab").Replace("\\", "/");
+                if(File.Exists(prefabPath))
+                {
+                    GameObject logicPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+                    if(logicPrefab != null)
+                    {
+                        GameObject newLogicInstance = (GameObject)PrefabUtility.InstantiatePrefab(logicPrefab, root);
+                        newLogicInstance.name = "ultipaw logic"; // Standardize name for future removal
+                        Undo.RegisterCreatedObjectUndo(newLogicInstance, "Install UltiPaw Logic");
+                        Debug.Log($"[UltiPaw] Instantiated 'ultipaw logic' as a child of '{root.name}'.");
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"[UltiPaw] Imported package but could not load 'ultipaw logic.prefab' from '{prefabPath}'.");
+                    }
+                }
+                else
+                {
+                    Debug.LogWarning($"[UltiPaw] Logic package '{packagePath}' exists, but the expected 'ultipaw logic.prefab' was not found inside the version folder after import.");
+                }
+            }
+            else
+            {
+                Debug.Log("[UltiPaw] No 'ultipaw logic.unitypackage' found for this version. Skipping logic installation.");
+            }
+
+
             // --- Success State Update ---
-            // Record Undo for the component state change
             Undo.RecordObject(this, "Apply UltiPaw Version");
-
-            // Update applied version *only on success*
             appliedUltiPawVersion = activeUltiPawVersion;
-
-            // Recalculate hash of the *newly written* file
             UpdateCurrentBaseFbxHash();
-            // Update the state based on the new hash and the now set applied version
             UpdateIsUltiPawState();
-
-            EditorUtility.SetDirty(this); // Mark component dirty
-            AssetDatabase.Refresh(); // Refresh after all changes
+            EditorUtility.SetDirty(this);
+            AssetDatabase.Refresh();
             Debug.Log($"[UltiPaw] Transformation to version {activeUltiPawVersion.version} complete.");
             return true; // Indicate success
 
@@ -541,14 +562,9 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
                  }
              }
 
-             // Record Undo for the component state change (even on failure, to revert potential partial changes)
              Undo.RecordObject(this, "Apply UltiPaw Version Failed");
-
-             // Ensure state reflects failure
-             // appliedUltiPawVersion remains unchanged or null
-             UpdateCurrentBaseFbxHash(); // Re-hash the restored (or original) file
-             UpdateIsUltiPawState(); // Update state based on hash and potentially null applied version
-
+             UpdateCurrentBaseFbxHash();
+             UpdateIsUltiPawState();
              EditorUtility.SetDirty(this);
              AssetDatabase.Refresh();
              return false; // Indicate failure
@@ -558,6 +574,15 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
     // Reset by restoring the backup and applying the default avatar.
     public bool ResetIntoWinterPaw() // Return bool indicating success
     {
+        // ** NEW ** Remove existing logic prefab before resetting
+        Transform root = transform.root;
+        Transform existingLogic = root.Find("ultipaw logic");
+        if (existingLogic != null)
+        {
+            Undo.DestroyObjectImmediate(existingLogic.gameObject);
+            Debug.Log("[UltiPaw] Removed existing 'ultipaw logic' GameObject during reset.");
+        }
+
         string baseFbxPath = GetCurrentBaseFbxPath();
         if (string.IsNullOrEmpty(baseFbxPath))
         {
@@ -582,21 +607,17 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
             {
                  Debug.LogError($"[UltiPaw] Failed to restore {baseFbxPath} from backup: {e.Message}");
                  EditorUtility.DisplayDialog("Restore Error", $"Failed to restore {Path.GetFileName(baseFbxPath)}.\n{e.Message}\n\nYou may need to do it manually.", "OK");
-                 // Continue to try and apply default avatar if possible
             }
         }
         else
         {
             Debug.LogWarning("[UltiPaw] No backup file found to restore. Attempting to apply default avatar to current FBX.");
-            // If no backup, we assume the current FBX is the one we want to reset the avatar on
             restored = true; // Treat as "restored" for the purpose of applying default avatar
         }
 
-        // Only proceed if restore was successful or no backup existed (meaning we operate on current file)
         if (restored)
         {
-            // Apply default avatar rig using the default avatar from the *previously applied* version if available
-            UltiPawVersion versionForDefault = appliedUltiPawVersion ?? activeUltiPawVersion; // Prefer applied, fallback to selected
+            UltiPawVersion versionForDefault = appliedUltiPawVersion ?? activeUltiPawVersion;
 
             if (versionForDefault != null)
             {
@@ -612,47 +633,31 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
                     else
                     {
                         Debug.LogError("[UltiPaw] Failed to apply default avatar during reset.");
-                        // Don't clear applied version if avatar application failed
                     }
                 }
                 else
                 {
                     Debug.LogWarning($"[UltiPaw] Default avatar file not found for version {versionForDefault.version}. Path checked: {defaultAvatarFullPath}");
-                    // Attempt to apply Unity's default humanoid rig as a fallback?
-                    // if (UltiPawAvatarUtility.ApplyInternalHumanoidRig(baseFbxFiles[0])) {
-                    //     SetRootAnimatorAvatar(null); // Clear root animator avatar
-                    // }
                 }
             }
             else
             {
                 Debug.LogWarning("[UltiPaw] No version details available to find the default avatar path for reset.");
-                // Fallback? Apply Unity's default humanoid rig?
-                // if (UltiPawAvatarUtility.ApplyInternalHumanoidRig(baseFbxFiles[0])) {
-                //     SetRootAnimatorAvatar(null);
-                // }
             }
 
-            // Record Undo for component state changes
             Undo.RecordObject(this, "Reset UltiPaw");
-
-            // Clear the applied version state
             appliedUltiPawVersion = null;
-            // Recalculate hash of the restored/original file
             UpdateCurrentBaseFbxHash();
-            // Update the state based on the new hash and null applied version
             UpdateIsUltiPawState();
-
             EditorUtility.SetDirty(this);
             AssetDatabase.Refresh();
             Debug.Log("[UltiPaw] Reset process finished.");
-            return true; // Indicate success
+            return true;
         }
         else
         {
-            // Restore failed, don't change component state
-            AssetDatabase.Refresh(); // Refresh just in case
-            return false; // Indicate failure
+            AssetDatabase.Refresh();
+            return false;
         }
     }
 #endif
@@ -669,12 +674,6 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
         Animator animator = rootObject.GetComponent<Animator>();
         if (animator == null)
         {
-            // Gemini's proposition which looks like garbage:
-            // Don't add animator automatically here, assume it exists if needed.
-            // Let the avatar application handle importer settings.
-            // Debug.LogWarning($"[UltiPaw] Animator component not found on root object '{rootObject.name}'. Cannot set avatar.");
-            //return;
-            
             Undo.RecordObject(rootObject, "Add Animator Component");
             animator = rootObject.AddComponent<Animator>();
             EditorUtility.SetDirty(rootObject);
