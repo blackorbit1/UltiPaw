@@ -103,6 +103,8 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
     [HideInInspector] public GameObject customFbxForCreator; // Make sure this is a GameObject type for FBX
     [HideInInspector] public Avatar ultipawAvatarForCreatorProp; // Path to the custom FBX for creator mode
     [HideInInspector] public GameObject avatarLogicPrefab;    // Make sure this is a GameObject type for Prefab
+    // ** NEW ** Field to store custom blendshapes in creator mode
+    [HideInInspector] public List<string> customBlendshapesForCreator = new List<string>();
     [HideInInspector] public const string ORIGINAL_SUFFIX = ".old"; // Suffix for backup files
 
     // Called when script is loaded or a value changes in the Inspector
