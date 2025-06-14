@@ -1541,9 +1541,14 @@ public class UltiPawEditor : Editor
         string newVersionString = $"{newVersionMajor}.{newVersionMinor}.{newVersionPatch}";
         string binFilePath = "";
         string customFbxPath = "";
-
-        // --- 1. Validation ---
         string originalFbxForXorPath = ultiPaw.GetCurrentOriginalBaseFbxPath();
+        string newVersionDataPath = null;
+        string newVersionDataFullPath = null;
+        string tempZipPath = null;
+        bool fileCreationSucceeded = false;
+        bool zipCreationSucceeded = false;
+
+        // --- 1. Validation (No yield or try/catch needed) ---
         if (string.IsNullOrEmpty(originalFbxForXorPath) || !originalFbxForXorPath.EndsWith(UltiPaw.ORIGINAL_SUFFIX))
         {
             submitError = "An original FBX backup (.fbx.old) must exist to create a new version. Please apply an existing UltiPaw version first.";
@@ -1552,8 +1557,7 @@ public class UltiPawEditor : Editor
 
         if (customFbxForCreatorProp.objectReferenceValue == null 
             || ultipawAvatarForCreatorProp.objectReferenceValue == null 
-            || avatarLogicPrefabProp.objectReferenceValue == null
-            )
+            || avatarLogicPrefabProp.objectReferenceValue == null)
         {
             submitError = "All creator mode fields must be assigned.";
             isSubmitting = false; Repaint(); yield break;
@@ -1564,7 +1568,7 @@ public class UltiPawEditor : Editor
             submitError = "An existing UltiPaw version must be applied to determine the base FBX version for the new folder name.";
             isSubmitting = false; Repaint(); yield break;
         }
-        
+
         string baseFbxVersion = ultiPaw.appliedUltiPawVersion.defaultAviVersion;
         if(string.IsNullOrEmpty(baseFbxVersion))
         {
@@ -1573,21 +1577,18 @@ public class UltiPawEditor : Editor
         }
 
         // --- 2. Setup Paths ---
-        string newVersionDataPath = UltiPawUtils.GetVersionDataPath(newVersionString, baseFbxVersion);
-        string newVersionDataFullPath = Path.GetFullPath(newVersionDataPath);
-        string tempZipPath = Path.Combine(Path.GetTempPath(), $"ultipaw_upload_{Guid.NewGuid()}.zip");
+        newVersionDataPath = UltiPawUtils.GetVersionDataPath(newVersionString, baseFbxVersion);
+        newVersionDataFullPath = Path.GetFullPath(newVersionDataPath);
+        tempZipPath = Path.Combine(Path.GetTempPath(), $"ultipaw_upload_{Guid.NewGuid()}.zip");
 
-        // --- 3. Create Local Version Folder and Files (Setup Phase) ---
-        bool fileCreationSucceeded = false;
+        // --- 3. Create Local Version Folder and Files (All inside try/catch, no yield) ---
         try
         {
             UltiPawUtils.EnsureDirectoryExists(newVersionDataPath, canBeFilePath: false);
 
-            // Copy the transformed avatar asset provided by the user
             string ultipawAvatarSourcePath = AssetDatabase.GetAssetPath(ultipawAvatarForCreatorProp.objectReferenceValue);
             AssetDatabase.CopyAsset(ultipawAvatarSourcePath, Path.Combine(newVersionDataPath, UltiPawUtils.ULTIPAW_AVATAR_NAME));
 
-            // Copy the DEFAULT avatar from the PARENT version, which is the currently applied one.
             var parentVersion = ultiPaw.appliedUltiPawVersion;
             string defaultAvatarSourcePath = UltiPawUtils.GetVersionAvatarPath(parentVersion.version, parentVersion.defaultAviVersion, UltiPawUtils.DEFAULT_AVATAR_NAME);
             if (string.IsNullOrEmpty(defaultAvatarSourcePath) || !File.Exists(defaultAvatarSourcePath))
@@ -1610,7 +1611,7 @@ public class UltiPawEditor : Editor
             File.WriteAllBytes(binFilePath, encryptedData);
             Debug.Log($"[UltiPaw-Creator] Encrypted FBX and saved as ultipaw.bin");
             
-            // Copy the logic prefab itself into the version folder
+            // Copy the logic prefab
             string prefabSourcePath = AssetDatabase.GetAssetPath(avatarLogicPrefabProp.objectReferenceValue);
             string prefabDestPath = Path.Combine(newVersionDataPath, "ultipaw logic.prefab");
             AssetDatabase.CopyAsset(prefabSourcePath, prefabDestPath);
@@ -1633,14 +1634,16 @@ public class UltiPawEditor : Editor
             yield break;
         }
 
-        // --- 4. Asset Processing Phase ---
+        // --- 4. Asset Processing Phase (now we can yield) ---
         if (fileCreationSucceeded)
         {
             AssetDatabase.Refresh();
             yield return null; // Wait for asset processing
+        }
 
-            // Create ZIP file
-            bool zipCreationSucceeded = false;
+        // --- 5. Create ZIP (try/catch, no yield) ---
+        if (fileCreationSucceeded)
+        {
             try
             {
                 if (File.Exists(tempZipPath)) File.Delete(tempZipPath);
@@ -1653,26 +1656,24 @@ public class UltiPawEditor : Editor
                 submitError = $"Failed to create ZIP file: {ex.Message}";
                 isSubmitting = false; Repaint(); yield break;
             }
-
             if (!zipCreationSucceeded || !File.Exists(tempZipPath))
             {
                 submitError = "Failed to create ZIP file for upload.";
                 isSubmitting = false; Repaint(); yield break;
             }
         }
-        
-        // --- 5. Metadata Assembly and Upload ---
+
+        // --- 6. Upload (No try/catch around yield) ---
         UnityWebRequest req = null;
-        try
+        if (zipCreationSucceeded)
         {
-            string uploadUrl = $"{UltiPawUtils.SERVER_BASE_URL}{UltiPawUtils.NEW_VERSION_ENDPOINT}";
+            string uploadUrl = $"{UltiPawUtils.SERVER_BASE_URL}{UltiPawUtils.NEW_VERSION_ENDPOINT}?t={UltiPawUtils.GetAuth().token}";
             byte[] fileBytes = File.ReadAllBytes(tempZipPath);
             string zipFileName = Path.GetFileName(newVersionDataFullPath) + ".zip";
-
             WWWForm form = new WWWForm();
             form.AddBinaryData("packageFile", fileBytes, zipFileName, "application/zip");
-            
-            // ** NEW ** Assemble all metadata fields
+
+            // Metadata as before
             var metadata = new {
                 baseFbxHash = ultiPaw.currentOriginalBaseFbxHash,
                 version = newVersionString,
@@ -1685,7 +1686,6 @@ public class UltiPawEditor : Editor
                 customBlendshapes = ultiPaw.customBlendshapesForCreator.ToArray(),
                 dependencies = FindPrefabDependencies(avatarLogicPrefabProp.objectReferenceValue as GameObject)
             };
-            
             string metadataJson = JsonConvert.SerializeObject(metadata, new StringEnumConverter());
             form.AddField("metadata", metadataJson);
             Debug.Log($"[UltiPaw-Creator] Uploading metadata: {metadataJson}");
@@ -1715,18 +1715,12 @@ public class UltiPawEditor : Editor
                 Debug.LogError($"[UltiPaw-Creator] {submitError}");
             }
         }
-        catch (Exception ex)
-        {
-            submitError = $"An exception occurred during upload processing: {ex.Message}";
-            Debug.LogError($"[UltiPaw-Creator] {submitError}");
-        }
-        finally
-        {
-            isSubmitting = false;
-            req?.Dispose();
-            CleanupTempZip(tempZipPath);
-            Repaint();
-        }
+
+        // --- 7. Cleanup ---
+        isSubmitting = false;
+        req?.Dispose();
+        CleanupTempZip(tempZipPath);
+        Repaint();
     }
 
     private Dictionary<string, string> FindPrefabDependencies(GameObject prefab)
