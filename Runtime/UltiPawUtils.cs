@@ -19,6 +19,7 @@ public static class UltiPawUtils
     public const string VERSIONS_FOLDER = ASSETS_BASE_FOLDER + "/versions";
     public const string DEFAULT_AVATAR_NAME = "default avatar.asset";
     public const string ULTIPAW_AVATAR_NAME = "ultipaw avatar.asset";
+    public const string CUSTOM_LOGIC_NAME = "ultipaw logic.asset";
 
     public const string SERVER_BASE_URL = "http://orbiters.cc:4000/api/unity-wizard"; // Update with your server URL
     public const string VERSION_ENDPOINT = "/ultipaw/versions";

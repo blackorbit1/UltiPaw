@@ -1,0 +1,73 @@
+﻿using System.Collections.Generic;
+using UnityEditor;
+using UnityEngine;
+
+// A collection of static helper methods for drawing custom UI elements in the editor.
+#if UNITY_EDITOR
+public static class EditorUIUtils
+{
+    public static readonly Color OrangeColor = new Color(1.0f, 0.65f, 0.0f);
+    private static readonly Color BackgroundColor = new Color(0.28f, 0.28f, 0.28f);
+    private static readonly Color BorderColor = new Color(0.46f, 0.46f, 0.46f);
+
+    public static void DrawChipLabel(string text, Color backgroundColor, Color textColor, Color? borderColor = null,
+        int width = 65, int height = 18, float cornerRadius = 8f, float borderWidth = 1f)
+    {
+        Rect rect = GUILayoutUtility.GetRect(width, height);
+        Handles.BeginGUI();
+        Color oldColor = Handles.color;
+
+        if (borderColor.HasValue)
+        {
+            Handles.color = borderColor.Value;
+            DrawRoundedRect(rect, cornerRadius);
+            Rect innerRect = new Rect(rect.x + borderWidth, rect.y + borderWidth, rect.width - borderWidth * 2f, rect.height - borderWidth * 2f);
+            float innerRadius = Mathf.Max(0, cornerRadius - borderWidth * 0.5f);
+            Handles.color = backgroundColor;
+            DrawRoundedRect(innerRect, innerRadius);
+        }
+        else
+        {
+            Handles.color = backgroundColor;
+            DrawRoundedRect(rect, cornerRadius);
+        }
+
+        Handles.color = oldColor;
+        Handles.EndGUI();
+
+        var labelStyle = new GUIStyle(EditorStyles.label)
+        {
+            alignment = TextAnchor.MiddleCenter,
+            fontSize = 11,
+            fontStyle = FontStyle.Bold,
+            normal = { textColor = textColor },
+            padding = new RectOffset(4, 4, 1, 1)
+        };
+        GUI.Label(rect, text, labelStyle);
+    }
+
+    private static void DrawRoundedRect(Rect rect, float radius)
+    {
+        List<Vector3> verts = new List<Vector3>();
+        AddArc(verts, new Vector2(rect.xMin + radius, rect.yMin + radius), radius, 180f, 270f);
+        verts.Add(new Vector2(rect.xMax - radius, rect.yMin));
+        AddArc(verts, new Vector2(rect.xMax - radius, rect.yMin + radius), radius, 270f, 360f);
+        verts.Add(new Vector2(rect.xMax, rect.yMax - radius));
+        AddArc(verts, new Vector2(rect.xMax - radius, rect.yMax - radius), radius, 0f, 90f);
+        verts.Add(new Vector2(rect.xMin + radius, rect.yMax));
+        AddArc(verts, new Vector2(rect.xMin + radius, rect.yMax - radius), radius, 90f, 180f);
+        verts.Add(new Vector2(rect.xMin, rect.yMin + radius));
+        Handles.DrawAAConvexPolygon(verts.ToArray());
+    }
+
+    private static void AddArc(List<Vector3> verts, Vector2 center, float radius, float startAngle, float endAngle, int segments = 8)
+    {
+        float angleStep = (endAngle - startAngle) / segments;
+        for (int i = 0; i <= segments; i++)
+        {
+            float angle = (startAngle + i * angleStep) * Mathf.Deg2Rad;
+            verts.Add(new Vector2(center.x + Mathf.Cos(angle) * radius, center.y + Mathf.Sin(angle) * radius));
+        }
+    }
+}
+#endif

@@ -1,3 +1,4 @@
+
 #if UNITY_EDITOR
 using UnityEditor;
 using UnityEngine;
@@ -70,12 +71,56 @@ public static class EditorCoroutineUtility
                 return true; // Need to process the nested one first
             }
 
+            // Handle WaitWhile - check if condition is still true
+            if (yielded is WaitWhile waitWhile)
+            {
+                // Use reflection to get the predicate from WaitWhile
+                var predicateField = typeof(WaitWhile).GetField("m_Predicate", BindingFlags.NonPublic | BindingFlags.Instance);
+                if (predicateField != null)
+                {
+                    var predicate = predicateField.GetValue(waitWhile) as System.Func<bool>;
+                    if (predicate != null && predicate())
+                    {
+                        // Condition is still true, keep waiting
+                        return true;
+                    }
+                }
+                // Condition is false or we couldn't get it, move to next
+                return coroutine.MoveNext();
+            }
+
+            // Handle WaitUntil - check if condition is now true
+            if (yielded is WaitUntil waitUntil)
+            {
+                // Use reflection to get the predicate from WaitUntil
+                var predicateField = typeof(WaitUntil).GetField("m_Predicate", BindingFlags.NonPublic | BindingFlags.Instance);
+                if (predicateField != null)
+                {
+                    var predicate = predicateField.GetValue(waitUntil) as System.Func<bool>;
+                    if (predicate != null && !predicate())
+                    {
+                        // Condition is still false, keep waiting
+                        return true;
+                    }
+                }
+                // Condition is true or we couldn't get it, move to next
+                return coroutine.MoveNext();
+            }
+
+            // Handle WaitForSeconds (though less useful in editor)
+            if (yielded is WaitForSeconds waitForSeconds)
+            {
+                // For editor, we could implement a simple time-based wait
+                // But it's generally better to use yield return null in editor
+                Debug.LogWarning("WaitForSeconds is not reliably supported in editor coroutines. Consider using yield return null instead.");
+                return coroutine.MoveNext();
+            }
+
             if (yielded is not Coroutine) return coroutine.MoveNext();
             Debug.LogWarning(
                 "EditorCoroutineUtility: Yielding on 'UnityEngine.Coroutine' is not supported in the editor. Use 'yield return null' or another IEnumerator.");
             // Treat it like yield return null for basic cases
             return coroutine.MoveNext();
-
         }
     }
 
