@@ -14,41 +14,41 @@ public static class EditorCoroutineUtility
 {
     private class EditorCoroutineRunner
     {
-        private Stack<IEnumerator> coroutineStack;
-        private EditorApplication.CallbackFunction updateDelegate;
+        private readonly Stack<IEnumerator> _coroutineStack;
+        private readonly EditorApplication.CallbackFunction _updateDelegate;
 
         public EditorCoroutineRunner(IEnumerator coroutine)
         {
-            coroutineStack = new Stack<IEnumerator>();
-            coroutineStack.Push(coroutine);
-            updateDelegate = Update;
+            _coroutineStack = new Stack<IEnumerator>();
+            _coroutineStack.Push(coroutine);
+            _updateDelegate = Update;
         }
 
         public void Start()
         {
-            EditorApplication.update += updateDelegate;
+            EditorApplication.update += _updateDelegate;
         }
 
         public void Stop()
         {
-            EditorApplication.update -= updateDelegate;
+            EditorApplication.update -= _updateDelegate;
         }
 
         private void Update()
         {
-            if (coroutineStack.Count == 0)
+            if (_coroutineStack.Count == 0)
             {
                 Stop();
                 return;
             }
 
-            IEnumerator currentCoroutine = coroutineStack.Peek();
+            IEnumerator currentCoroutine = _coroutineStack.Peek();
 
             try
             {
                 if (!MoveNext(currentCoroutine))
                 {
-                    coroutineStack.Pop();
+                    _coroutineStack.Pop();
                 }
             }
             catch (Exception ex)
@@ -62,40 +62,21 @@ public static class EditorCoroutineUtility
 
         private bool MoveNext(IEnumerator coroutine)
         {
-            object yielded = coroutine.Current;
+            var yielded = coroutine.Current;
 
             if (yielded is IEnumerator nestedCoroutine)
             {
-                coroutineStack.Push(nestedCoroutine);
+                _coroutineStack.Push(nestedCoroutine);
                 return true; // Need to process the nested one first
             }
 
-            if (yielded is Coroutine)
-            {
-                Debug.LogWarning("EditorCoroutineUtility: Yielding on 'UnityEngine.Coroutine' is not supported in the editor. Use 'yield return null' or another IEnumerator.");
-                // Treat it like yield return null for basic cases
-                return coroutine.MoveNext();
-            }
-
-             if (yielded is CustomYieldInstruction customYield)
-             {
-                 if (!customYield.keepWaiting)
-                 {
-                     return coroutine.MoveNext();
-                 }
-                 return true; // Keep waiting on this coroutine
-             }
-
-            // For other yield types (like null, WaitForSeconds in editor doesn't work well), just move next
+            if (yielded is not Coroutine) return coroutine.MoveNext();
+            Debug.LogWarning(
+                "EditorCoroutineUtility: Yielding on 'UnityEngine.Coroutine' is not supported in the editor. Use 'yield return null' or another IEnumerator.");
+            // Treat it like yield return null for basic cases
             return coroutine.MoveNext();
-        }
 
-        // Optional: Helper to log stack trace if you have complex nested coroutines
-        // private void LogCoroutineStackTrace(IEnumerator coroutine)
-        // {
-        //     // Implementation would involve reflection to inspect the coroutine's state machine fields
-        //     // This is complex and often not necessary for basic usage.
-        // }
+        }
     }
 
     public static void StartCoroutineOwnerless(IEnumerator coroutine)
@@ -105,6 +86,7 @@ public static class EditorCoroutineUtility
             Debug.LogError("Coroutine cannot be null.");
             return;
         }
+
         EditorCoroutineRunner runner = new EditorCoroutineRunner(coroutine);
         runner.Start();
     }

@@ -10,14 +10,15 @@ public static class UltiPawAvatarUtility
     {
         if (fbx == null)
         {
-             Debug.LogError("[UltiPaw] ApplyExternalAvatar: FBX GameObject is null.");
-             return false;
+            Debug.LogError("[UltiPaw] ApplyExternalAvatar: FBX GameObject is null.");
+            return false;
         }
+
         string fbxPath = AssetDatabase.GetAssetPath(fbx);
         if (string.IsNullOrEmpty(fbxPath))
         {
-             Debug.LogError($"[UltiPaw] ApplyExternalAvatar: Could not get asset path for FBX '{fbx.name}'.");
-             return false;
+            Debug.LogError($"[UltiPaw] ApplyExternalAvatar: Could not get asset path for FBX '{fbx.name}'.");
+            return false;
         }
 
         var importer = AssetImporter.GetAtPath(fbxPath) as ModelImporter;
@@ -54,11 +55,13 @@ public static class UltiPawAvatarUtility
             importer.animationType = ModelImporterAnimationType.Human;
             needsReimport = true;
         }
+
         if (importer.avatarSetup != ModelImporterAvatarSetup.CopyFromOther)
         {
-             importer.avatarSetup = ModelImporterAvatarSetup.CopyFromOther;
-             needsReimport = true;
+            importer.avatarSetup = ModelImporterAvatarSetup.CopyFromOther;
+            needsReimport = true;
         }
+
         if (importer.sourceAvatar != avatar)
         {
             importer.sourceAvatar = avatar;
@@ -78,14 +81,14 @@ public static class UltiPawAvatarUtility
             }
             catch (System.Exception ex)
             {
-                 Debug.LogError($"[UltiPaw] Failed during SaveAndReimport for avatar '{avatar.name}': {ex.Message}");
-                 return false; // Indicate failure
+                Debug.LogError($"[UltiPaw] Failed during SaveAndReimport for avatar '{avatar.name}': {ex.Message}");
+                return false; // Indicate failure
             }
         }
         else
         {
-             Debug.Log($"[UltiPaw] Avatar '{avatar.name}' already applied. No reimport needed.");
-             return true; // Indicate success (already correct)
+            Debug.Log($"[UltiPaw] Avatar '{avatar.name}' already applied. No reimport needed.");
+            return true; // Indicate success (already correct)
         }
     }
 

@@ -19,15 +19,15 @@ public static class UltiPawUtils
     public const string VERSIONS_FOLDER = ASSETS_BASE_FOLDER + "/versions";
     public const string DEFAULT_AVATAR_NAME = "default avatar.asset";
     public const string ULTIPAW_AVATAR_NAME = "ultipaw avatar.asset";
-    
+
     public const string SERVER_BASE_URL = "http://orbiters.cc:4000/api/unity-wizard"; // Update with your server URL
     public const string VERSION_ENDPOINT = "/ultipaw/versions";
     public const string MODEL_ENDPOINT = "/ultipaw/model";
     private const string TOKEN_ENDPOINT = "/token"; // Replace with your actual API endpoint
 
-    public const string NEW_VERSION_ENDPOINT = "/ultipaw/newVersion"; 
-    public static readonly string PACKAGE_BASE_FOLDER_FULL_PATH = Path.Combine(Application.dataPath, "UltiPaw"); 
-    
+    public const string NEW_VERSION_ENDPOINT = "/ultipaw/newVersion";
+    public static readonly string PACKAGE_BASE_FOLDER_FULL_PATH = Path.Combine(Application.dataPath, "UltiPaw");
+
     private const string AUTH_FILENAME = "auth.dat";
     private static HttpClient client = new HttpClient();
 
@@ -51,11 +51,12 @@ public static class UltiPawUtils
                 {
                     builder.Append(b.ToString("x2"));
                 }
+
                 return builder.ToString();
             }
         }
     }
-    
+
     // Add this class to store authentication data
     [JsonObject(MemberSerialization.OptIn)]
     public class AuthData
@@ -72,7 +73,7 @@ public static class UltiPawUtils
             // Get token from clipboard
             string clipboardContent = EditorGUIUtility.systemCopyBuffer;
             string tokenToUse = "notoken";
-            
+
             // Check if clipboard content matches the pattern "orbit-\w{8}-\w{8}-\w{8}-\d{2}-\d{2}-\d{4}"
             Regex tokenPattern = new Regex(@"orbit-\w{8}-\w{8}-\w{8}-\d{2}-\d{2}-\d{4}");
             if (!string.IsNullOrEmpty(clipboardContent) && tokenPattern.IsMatch(clipboardContent))
@@ -80,27 +81,27 @@ public static class UltiPawUtils
                 tokenToUse = clipboardContent;
                 Debug.Log("[UltiPawUtils] Found valid token pattern in clipboard");
             }
-            
+
             // Try to validate the token with the server, with retry mechanism for error 425
             AuthData authData = null;
             bool isValid = false;
             int retryCount = 0;
             const int maxRetries = 10;
-            
+
             while (retryCount < maxRetries && !isValid)
             {
                 try
                 {
                     // Make the request to the server
                     var response = await client.GetAsync(SERVER_BASE_URL + TOKEN_ENDPOINT + "?token=" + tokenToUse);
-                    
+
                     if (response.IsSuccessStatusCode)
                     {
                         // Read the JSON response
                         string jsonResponse = await response.Content.ReadAsStringAsync();
                         authData = JsonConvert.DeserializeObject<AuthData>(jsonResponse);
                         isValid = !string.IsNullOrEmpty(authData?.token);
-                        
+
                         if (isValid)
                         {
                             Debug.Log("[UltiPawUtils] Authentication successful");
@@ -111,13 +112,15 @@ public static class UltiPawUtils
                     {
                         // Status code 425 - need to retry
                         retryCount++;
-                        Debug.Log($"[UltiPawUtils] Server is processing request (Status 425). Retry {retryCount}/{maxRetries}");
+                        Debug.Log(
+                            $"[UltiPawUtils] Server is processing request (Status 425). Retry {retryCount}/{maxRetries}");
                         await Task.Delay(1000); // Wait 1 second before retrying
                     }
                     else
                     {
                         // Other error - don't retry
-                        Debug.LogWarning($"[UltiPawUtils] Authentication failed with status code {response.StatusCode}");
+                        Debug.LogWarning(
+                            $"[UltiPawUtils] Authentication failed with status code {response.StatusCode}");
                         return false;
                     }
                 }
@@ -128,26 +131,26 @@ public static class UltiPawUtils
                     await Task.Delay(1000);
                 }
             }
-            
+
             if (isValid && authData != null)
             {
                 // Save the auth data
                 string authPath = GetAuthFilePath();
                 EnsureDirectoryExists(authPath);
-                
+
                 // Serialize the auth data to JSON
                 string authJson = JsonConvert.SerializeObject(authData);
-                
+
                 // Simple encryption by converting to bytes and XOR with a key
                 byte[] authBytes = Encoding.UTF8.GetBytes(authJson);
                 byte[] encryptedBytes = new byte[authBytes.Length];
                 byte[] key = Encoding.UTF8.GetBytes("UltiPawMagicSync"); // Simple encryption key
-                
+
                 for (int i = 0; i < authBytes.Length; i++)
                 {
                     encryptedBytes[i] = (byte)(authBytes[i] ^ key[i % key.Length]);
                 }
-                
+
                 File.WriteAllBytes(authPath, encryptedBytes);
                 Debug.Log("[UltiPawUtils] Authentication data stored successfully");
                 return true;
@@ -171,22 +174,22 @@ public static class UltiPawUtils
         try
         {
             string authPath = GetAuthFilePath();
-            
+
             if (!File.Exists(authPath))
             {
                 return null;
             }
-            
+
             byte[] encryptedBytes = File.ReadAllBytes(authPath);
             byte[] key = Encoding.UTF8.GetBytes("UltiPawMagicSync");
             byte[] authBytes = new byte[encryptedBytes.Length];
-            
+
             // Decrypt the data
             for (int i = 0; i < encryptedBytes.Length; i++)
             {
                 authBytes[i] = (byte)(encryptedBytes[i] ^ key[i % key.Length]);
             }
-            
+
             string authJson = Encoding.UTF8.GetString(authBytes);
             return JsonConvert.DeserializeObject<AuthData>(authJson);
         }
@@ -218,14 +221,14 @@ public static class UltiPawUtils
             return false;
         }
     }
-    
+
     // Removes the authentication data file
     public static bool RemoveAuth()
     {
         try
         {
             string authPath = GetAuthFilePath();
-        
+
             if (File.Exists(authPath))
             {
                 File.Delete(authPath);
@@ -263,6 +266,7 @@ public static class UltiPawUtils
             // Debug.LogWarning("[UltiPawUtils] Cannot generate version path with null/empty version strings.");
             return null; // Indicate failure clearly
         }
+
         return $"{VERSIONS_FOLDER}/u{ultiPawVersion}d{defaultFbxVersion}";
     }
 
@@ -276,7 +280,8 @@ public static class UltiPawUtils
     }
 
     // Generates the full path to an avatar file within a version folder
-    public static string GetVersionAvatarPath(string ultiPawVersion, string defaultFbxVersion, string relativeAvatarPath)
+    public static string GetVersionAvatarPath(string ultiPawVersion, string defaultFbxVersion,
+        string relativeAvatarPath)
     {
         if (string.IsNullOrEmpty(relativeAvatarPath)) return null;
         string dataPath = GetVersionDataPath(ultiPawVersion, defaultFbxVersion);
@@ -286,14 +291,13 @@ public static class UltiPawUtils
     }
 
 
-    
     // Ensures the directory exists
     public static void EnsureDirectoryExists(string directoryPath, bool canBeFilePath = true)
     {
         // Check if the path is actually a directory path, not a file path
         string directory = directoryPath;
-        
-        if (canBeFilePath && !string.IsNullOrEmpty(Path.GetExtension(directoryPath))) 
+
+        if (canBeFilePath && !string.IsNullOrEmpty(Path.GetExtension(directoryPath)))
         {
             // If it has an extension and canBeFilePath is true, treat it as a file path
             directory = Path.GetDirectoryName(directoryPath);
@@ -331,7 +335,8 @@ public static class UltiPawUtils
             // Normalize the path
             absoluteDirectory = Path.GetFullPath(absoluteDirectory);
 
-            Debug.Log($"[UltiPawUtils] EnsureDirectoryExists - Input: '{directoryPath}' (canBeFilePath: {canBeFilePath}) -> Directory: '{directory}' -> Absolute: '{absoluteDirectory}'");
+            Debug.Log(
+                $"[UltiPawUtils] EnsureDirectoryExists - Input: '{directoryPath}' (canBeFilePath: {canBeFilePath}) -> Directory: '{directory}' -> Absolute: '{absoluteDirectory}'");
             Debug.Log($"[UltiPawUtils] Directory exists check: {Directory.Exists(absoluteDirectory)}");
 
             if (!Directory.Exists(absoluteDirectory))
@@ -340,7 +345,7 @@ public static class UltiPawUtils
                 {
                     Debug.Log($"[UltiPawUtils] Creating directory: {absoluteDirectory}");
                     Directory.CreateDirectory(absoluteDirectory);
-                    
+
                     // Verify creation
                     if (Directory.Exists(absoluteDirectory))
                     {
@@ -349,7 +354,8 @@ public static class UltiPawUtils
                     }
                     else
                     {
-                        Debug.LogError($"[UltiPawUtils] Directory creation appeared to succeed but directory still doesn't exist: {absoluteDirectory}");
+                        Debug.LogError(
+                            $"[UltiPawUtils] Directory creation appeared to succeed but directory still doesn't exist: {absoluteDirectory}");
                     }
                 }
                 catch (System.Exception e)
@@ -366,7 +372,8 @@ public static class UltiPawUtils
         }
         else
         {
-            Debug.LogWarning($"[UltiPawUtils] EnsureDirectoryExists called with empty or invalid directory path: '{directoryPath}' (canBeFilePath: {canBeFilePath})");
+            Debug.LogWarning(
+                $"[UltiPawUtils] EnsureDirectoryExists called with empty or invalid directory path: '{directoryPath}' (canBeFilePath: {canBeFilePath})");
         }
     }
 }

@@ -58,9 +58,9 @@ public class UltiPawVersion : IEquatable<UltiPawVersion> // Add IEquatable for e
 [JsonConverter(typeof(StringEnumConverter))]
 public enum Scope
 {
-    [EnumMember(Value = "public")]  PUBLIC,
-    [EnumMember(Value = "beta")]    BETA,
-    [EnumMember(Value = "alpha")]   ALPHA,
+    [EnumMember(Value = "public")] PUBLIC,
+    [EnumMember(Value = "beta")] BETA,
+    [EnumMember(Value = "alpha")] ALPHA,
     [EnumMember(Value = "unknown")] UNKNOWN
 }
 
@@ -84,7 +84,7 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
 
     // The active version details (selected via the integrated version manager UI).
     [HideInInspector] public UltiPawVersion activeUltiPawVersion = null; // This is the one SELECTED in the UI
-    [HideInInspector] public UltiPawVersion appliedUltiPawVersion = null;
+    [HideInInspector] public UltiPawVersion appliedUltiPawVersion = null; // This is the one APPLIED to the FBX
 
     [HideInInspector] public bool isUltiPaw = false; // Reflects if FBX matches appliedUltiPawVersion.customAviHash
 
@@ -98,11 +98,11 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
     [HideInInspector] public string currentOriginalBaseFbxHash = null; // Cache the hash
     [HideInInspector] public List<UltiPawVersion> serverVersions = new List<UltiPawVersion>();
 
-    
-    [HideInInspector] public bool isCreatorMode = false; 
+
+    [HideInInspector] public bool isCreatorMode = false;
     [HideInInspector] public GameObject customFbxForCreator; // Make sure this is a GameObject type for FBX
     [HideInInspector] public Avatar ultipawAvatarForCreatorProp; // Path to the custom FBX for creator mode
-    [HideInInspector] public GameObject avatarLogicPrefab;    // Make sure this is a GameObject type for Prefab
+    [HideInInspector] public GameObject avatarLogicPrefab; // Make sure this is a GameObject type for Prefab
     [HideInInspector] public List<string> customBlendshapesForCreator = new List<string>();
     [HideInInspector] public const string ORIGINAL_SUFFIX = ".old"; // Suffix for backup files
 
@@ -114,7 +114,7 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
         if (!specifyCustomBaseFbx && (baseFbxFiles == null || baseFbxFiles.Count == 0 || baseFbxFiles[0] == null))
         {
             // Delay auto-detection slightly if called too early during scene load/prefab instantiation
-             EditorApplication.delayCall += AutoDetectBaseFbxViaHierarchy;
+            EditorApplication.delayCall += AutoDetectBaseFbxViaHierarchy;
         }
         else if (baseFbxFiles.Count > 0 && baseFbxFiles[0] != null)
         {
@@ -144,7 +144,7 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
         // Ensure detection runs when component becomes active in editor
         if (!specifyCustomBaseFbx && (baseFbxFiles == null || baseFbxFiles.Count == 0 || baseFbxFiles[0] == null))
         {
-             EditorApplication.delayCall += AutoDetectBaseFbxViaHierarchy;
+            EditorApplication.delayCall += AutoDetectBaseFbxViaHierarchy;
         }
         else if (baseFbxFiles.Count > 0 && baseFbxFiles[0] != null)
         {
@@ -184,7 +184,7 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
 
         // Find SkinnedMeshRenderer named "Body" (case-insensitive search recommended)
         SkinnedMeshRenderer bodySmr = root.GetComponentsInChildren<SkinnedMeshRenderer>(true) // Include inactive
-                                          .FirstOrDefault(smr => smr.gameObject.name.Equals("Body", System.StringComparison.OrdinalIgnoreCase));
+            .FirstOrDefault(smr => smr.gameObject.name.Equals("Body", System.StringComparison.OrdinalIgnoreCase));
 
         if (bodySmr == null || bodySmr.sharedMesh == null)
         {
@@ -220,7 +220,8 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
                 Debug.Log($"[UltiPaw] Auto-detected base FBX via hierarchy: {meshPath}");
                 EditorUtility.SetDirty(this); // Mark component dirty as we changed baseFbxFiles
                 // Trigger hash update and state check after delay to ensure editor is ready
-                EditorApplication.delayCall += () => {
+                EditorApplication.delayCall += () =>
+                {
                     UpdateCurrentBaseFbxHash();
                     UpdateIsUltiPawState();
                 };
@@ -237,11 +238,14 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
         {
             // Ensure cached path is up-to-date
             string path = AssetDatabase.GetAssetPath(baseFbxFiles[0]);
-            if(path != currentBaseFbxPath) {
+            if (path != currentBaseFbxPath)
+            {
                 currentBaseFbxPath = path;
             }
+
             return currentBaseFbxPath;
         }
+
         // Return cached path even if object is null temporarily, auto-detect might fix it
         return currentBaseFbxPath;
 #else
@@ -256,22 +260,27 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
         {
             return currentPath + ORIGINAL_SUFFIX;
         }
+
         isUltiPaw = false; // If no backup exists, we assume it's not in the transformed state
         return currentPath;
     }
 
     public bool UpdateIsUltiPawState(string baseFbxHash = null)
     {
-        if (appliedUltiPawVersion == null) 
+        if (appliedUltiPawVersion == null)
             // throw new CantDetermineUltiPawStateException("appliedUltiPawVersion is null. Cannot determine if the FBX is in the transformed state.");
             return false; // Not in an UltiPaw state if no version is considered "applied"
-        
+
         bool previousState = isUltiPaw;
-        if (appliedUltiPawVersion != null && !string.IsNullOrEmpty(appliedUltiPawVersion.customAviHash) && !string.IsNullOrEmpty(currentBaseFbxHash))
+        if (appliedUltiPawVersion != null && !string.IsNullOrEmpty(appliedUltiPawVersion.customAviHash) &&
+            !string.IsNullOrEmpty(currentBaseFbxHash))
         {
             // *** FIX: Add a null check on v.appliedCustomAviHash before calling .Equals on it ***
-            isUltiPaw = serverVersions.Any(v => v.appliedCustomAviHash != null && v.appliedCustomAviHash.Equals(currentBaseFbxHash, StringComparison.OrdinalIgnoreCase))
-                || (baseFbxHash ?? currentBaseFbxHash).Equals(appliedUltiPawVersion.customAviHash, StringComparison.OrdinalIgnoreCase);
+            isUltiPaw = serverVersions.Any(v =>
+                            v.appliedCustomAviHash != null && v.appliedCustomAviHash.Equals(currentBaseFbxHash,
+                                StringComparison.OrdinalIgnoreCase))
+                        || (baseFbxHash ?? currentBaseFbxHash).Equals(appliedUltiPawVersion.customAviHash,
+                            StringComparison.OrdinalIgnoreCase);
         }
         else
         {
@@ -282,23 +291,23 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
     }
 
 
-
     public string GetCurrentBaseFbxHash()
     {
-        string res = string.IsNullOrEmpty(currentOriginalBaseFbxHash) ?
-            currentBaseFbxHash
+        string res = string.IsNullOrEmpty(currentOriginalBaseFbxHash)
+            ? currentBaseFbxHash
             : currentOriginalBaseFbxHash;
         if (string.IsNullOrEmpty(res))
             return null;
         return res;
     }
+
     // Calculates and updates the hash for the current base FBX
     public bool UpdateCurrentBaseFbxHash()
     {
 #if UNITY_EDITOR
         string path = GetCurrentBaseFbxPath();
         string pathOld = GetCurrentOriginalBaseFbxPath();
-        
+
         string oldHash = currentBaseFbxHash; // Store old hash
 
         if (!string.IsNullOrEmpty(path) && File.Exists(path))
@@ -314,15 +323,18 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
                 UpdateIsUltiPawState();
                 if (!isUltiPaw)
                 {
-                    Debug.LogWarning($"[UltiPaw] Base FBX file may have been replaced by another one. Please re-fetch UltiPaw versions for this FBX if you encounter issues.");
+                    Debug.LogWarning(
+                        $"[UltiPaw] Base FBX file may have been replaced by another one. Please re-fetch UltiPaw versions for this FBX if you encounter issues.");
                 }
             }
             catch (CantDetermineUltiPawStateException e)
             {
                 // nothing particular to do yet
                 Debug.LogWarning(e.Message);
-            };
-            
+            }
+
+            ;
+
             if (!string.IsNullOrEmpty(currentBaseFbxHash))
             {
                 winterpawFbxHashes[path] = currentBaseFbxHash;
@@ -340,12 +352,13 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
         {
             UpdateIsUltiPawState();
         }
+
         return hashChanged; // Return whether the hash value changed
 #else
         return false;
 #endif
     }
-    
+
     // update appliedUltiPawVersion with a list serverVersions
     public bool UpdateAppliedUltiPawVersion(List<UltiPawVersion> serverVersions)
     {
@@ -358,13 +371,15 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
                 isUltiPaw = false;
                 appliedUltiPawVersion = null;
             }
+
             return true;
         }
 
         // Check if the current hash matches any version's customAviHash
         foreach (var version in serverVersions)
         {
-            if (currentBaseFbxHash != null && version.appliedCustomAviHash != null && currentBaseFbxHash.Equals(version.appliedCustomAviHash, StringComparison.OrdinalIgnoreCase))
+            if (currentBaseFbxHash != null && version.appliedCustomAviHash != null &&
+                currentBaseFbxHash.Equals(version.appliedCustomAviHash, StringComparison.OrdinalIgnoreCase))
             {
                 appliedUltiPawVersion = version; // Update applied version
                 isUltiPaw = true; // Update isUltiPaw state
@@ -398,17 +413,22 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
             Debug.LogError("[UltiPaw] No valid base FBX file available for transformation.");
             return false; // Indicate failure
         }
+
         if (string.IsNullOrEmpty(selectedUltiPawBinPath) || !File.Exists(selectedUltiPawBinPath))
         {
-            EditorUtility.DisplayDialog("UltiPaw Error", "Selected UltiPaw version (.bin file) is missing.\nPlease select and potentially re-download the version.", "OK");
+            EditorUtility.DisplayDialog("UltiPaw Error",
+                "Selected UltiPaw version (.bin file) is missing.\nPlease select and potentially re-download the version.",
+                "OK");
             Debug.LogError("[UltiPaw] Selected UltiPaw bin file is missing.");
             return false; // Indicate failure
         }
+
         if (activeUltiPawVersion == null)
         {
-             EditorUtility.DisplayDialog("UltiPaw Error", "No UltiPaw version selected in the UI. Please select a version.", "OK");
-             Debug.LogError("[UltiPaw] Active (selected) UltiPaw version details are null.");
-             return false; // Indicate failure
+            EditorUtility.DisplayDialog("UltiPaw Error",
+                "No UltiPaw version selected in the UI. Please select a version.", "OK");
+            Debug.LogError("[UltiPaw] Active (selected) UltiPaw version details are null.");
+            return false; // Indicate failure
         }
 
         // --- HASH VERIFICATION ---
@@ -417,22 +437,26 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
             v.Equals(currentBaseFbxHash, StringComparison.OrdinalIgnoreCase) ||
             v.Equals(currentOriginalBaseFbxHash, StringComparison.OrdinalIgnoreCase)
         ));
-        
+
         if (!baseHashMatch)
         {
             string message = $"Hash mismatch detected for applying version '{activeUltiPawVersion.version}':\n\n";
-            message += $"Base FBX Hash: MISMATCH\n Neither of :\n- {currentBaseFbxHash ?? "N/A"}\n- {currentOriginalBaseFbxHash ?? "N/A"}\n\nMatches with : \n{string.Join("\n", activeUltiPawVersion.defaultAviHash.Select(hash => $"- {hash}"))}";
-            message += "\n\nFirst, how did you arrived here without doing crazy weird stuff ?? And then, if you continue anyway the resulting file will be corrupted for sure. Do it only if you're the orb";
+            message +=
+                $"Base FBX Hash: MISMATCH\n Neither of :\n- {currentBaseFbxHash ?? "N/A"}\n- {currentOriginalBaseFbxHash ?? "N/A"}\n\nMatches with : \n{string.Join("\n", activeUltiPawVersion.defaultAviHash.Select(hash => $"- {hash}"))}";
+            message +=
+                "\n\nFirst, how did you arrived here without doing crazy weird stuff ?? And then, if you continue anyway the resulting file will be corrupted for sure. Do it only if you're the orb";
 
             if (!EditorUtility.DisplayDialog("UltiPaw - Hash Mismatch", message, "Continue Anyway", "Cancel"))
             {
                 Debug.LogWarning("[UltiPaw] Transformation cancelled due to hash mismatch.");
                 return false; // Indicate failure
             }
+
             Debug.LogWarning("[UltiPaw] Proceeding with transformation despite hash mismatch.");
         }
-        else {
-             Debug.Log("[UltiPaw] Base FBX hash verified successfully.");
+        else
+        {
+            Debug.Log("[UltiPaw] Base FBX hash verified successfully.");
         }
 
         // --- FBX TRANSFORMATION ---
@@ -441,12 +465,12 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
             byte[] baseData = File.ReadAllBytes(baseFbxPath);
             byte[] binData = File.ReadAllBytes(selectedUltiPawBinPath);
 
-            byte[] transformedData = new byte[binData.Length]; 
+            byte[] transformedData = new byte[binData.Length];
             for (int i = 0; i < binData.Length; i++)
             {
                 transformedData[i] = (byte)(binData[i] ^ baseData[i % baseData.Length]);
             }
-            
+
             bool shouldCreateBackup = !baseFbxPath.EndsWith(ORIGINAL_SUFFIX, StringComparison.OrdinalIgnoreCase);
             if (shouldCreateBackup)
             {
@@ -457,12 +481,15 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
             }
 
 
-            string fbxPathToOverride = shouldCreateBackup ? baseFbxPath : baseFbxPath.Remove(baseFbxPath.IndexOf(ORIGINAL_SUFFIX));
+            string fbxPathToOverride =
+                shouldCreateBackup ? baseFbxPath : baseFbxPath.Remove(baseFbxPath.IndexOf(ORIGINAL_SUFFIX));
             File.WriteAllBytes(fbxPathToOverride, transformedData);
             Debug.Log($"[UltiPaw] Wrote transformed data to: {fbxPathToOverride}");
 
-            string versionDataPath = UltiPawUtils.GetVersionDataPath(activeUltiPawVersion.version, activeUltiPawVersion.defaultAviVersion);
-            string ultiAvatarFullPath = Path.Combine(versionDataPath, UltiPawUtils.ULTIPAW_AVATAR_NAME).Replace("\\", "/");
+            string versionDataPath =
+                UltiPawUtils.GetVersionDataPath(activeUltiPawVersion.version, activeUltiPawVersion.defaultAviVersion);
+            string ultiAvatarFullPath =
+                Path.Combine(versionDataPath, UltiPawUtils.ULTIPAW_AVATAR_NAME).Replace("\\", "/");
 
             if (File.Exists(ultiAvatarFullPath))
             {
@@ -485,10 +512,10 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
 
                 // After import, the prefab should be available at its source path within the version folder
                 string prefabPath = Path.Combine(versionDataPath, "ultipaw logic.prefab").Replace("\\", "/");
-                if(File.Exists(prefabPath))
+                if (File.Exists(prefabPath))
                 {
                     GameObject logicPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
-                    if(logicPrefab != null)
+                    if (logicPrefab != null)
                     {
                         GameObject newLogicInstance = (GameObject)PrefabUtility.InstantiatePrefab(logicPrefab, root);
                         newLogicInstance.name = "ultipaw logic"; // Standardize name for future removal
@@ -497,17 +524,20 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
                     }
                     else
                     {
-                        Debug.LogWarning($"[UltiPaw] Imported package but could not load 'ultipaw logic.prefab' from '{prefabPath}'.");
+                        Debug.LogWarning(
+                            $"[UltiPaw] Imported package but could not load 'ultipaw logic.prefab' from '{prefabPath}'.");
                     }
                 }
                 else
                 {
-                    Debug.LogWarning($"[UltiPaw] Logic package '{packagePath}' exists, but the expected 'ultipaw logic.prefab' was not found inside the version folder after import.");
+                    Debug.LogWarning(
+                        $"[UltiPaw] Logic package '{packagePath}' exists, but the expected 'ultipaw logic.prefab' was not found inside the version folder after import.");
                 }
             }
             else
             {
-                Debug.Log("[UltiPaw] No 'ultipaw logic.unitypackage' found for this version. Skipping logic installation.");
+                Debug.Log(
+                    "[UltiPaw] No 'ultipaw logic.unitypackage' found for this version. Skipping logic installation.");
             }
 
 
@@ -519,33 +549,37 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
             EditorUtility.SetDirty(this);
             AssetDatabase.Refresh();
             Debug.Log($"[UltiPaw] Transformation to version {activeUltiPawVersion.version} complete.");
-            return true; 
-
+            return true;
         }
         catch (System.Exception e)
         {
             Debug.LogError($"[UltiPaw] Transformation failed: {e}");
-            EditorUtility.DisplayDialog("UltiPaw Error", $"An error occurred during transformation:\n{e.Message}\n\nCheck the console. Attempting to restore backup.", "OK");
+            EditorUtility.DisplayDialog("UltiPaw Error",
+                $"An error occurred during transformation:\n{e.Message}\n\nCheck the console. Attempting to restore backup.",
+                "OK");
             // Attempt restore on failure
             string backupPath = baseFbxPath + ".old";
-             if (File.Exists(backupPath))
-             {
-                 try {
-                     if (File.Exists(baseFbxPath)) File.Delete(baseFbxPath);
-                     File.Move(backupPath, baseFbxPath);
-                     AssetDatabase.ImportAsset(baseFbxPath, ImportAssetOptions.ForceUpdate);
-                     Debug.LogWarning($"[UltiPaw] Restored backup due to error: {baseFbxPath}");
-                 } catch (System.Exception restoreEx) {
-                     Debug.LogError($"[UltiPaw] Failed to restore backup after error: {restoreEx.Message}");
-                 }
-             }
+            if (File.Exists(backupPath))
+            {
+                try
+                {
+                    if (File.Exists(baseFbxPath)) File.Delete(baseFbxPath);
+                    File.Move(backupPath, baseFbxPath);
+                    AssetDatabase.ImportAsset(baseFbxPath, ImportAssetOptions.ForceUpdate);
+                    Debug.LogWarning($"[UltiPaw] Restored backup due to error: {baseFbxPath}");
+                }
+                catch (System.Exception restoreEx)
+                {
+                    Debug.LogError($"[UltiPaw] Failed to restore backup after error: {restoreEx.Message}");
+                }
+            }
 
-             Undo.RecordObject(this, "Apply UltiPaw Version Failed");
-             UpdateCurrentBaseFbxHash();
-             UpdateIsUltiPawState();
-             EditorUtility.SetDirty(this);
-             AssetDatabase.Refresh();
-             return false;
+            Undo.RecordObject(this, "Apply UltiPaw Version Failed");
+            UpdateCurrentBaseFbxHash();
+            UpdateIsUltiPawState();
+            EditorUtility.SetDirty(this);
+            AssetDatabase.Refresh();
+            return false;
         }
     }
 
@@ -564,8 +598,8 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
         string baseFbxPath = GetCurrentBaseFbxPath();
         if (string.IsNullOrEmpty(baseFbxPath))
         {
-             Debug.LogError("[UltiPaw] No base FBX file available for reset.");
-             return false;
+            Debug.LogError("[UltiPaw] No base FBX file available for reset.");
+            return false;
         }
 
         string backupPath = baseFbxPath + ORIGINAL_SUFFIX;
@@ -583,13 +617,16 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
             }
             catch (System.Exception e)
             {
-                 Debug.LogError($"[UltiPaw] Failed to restore {baseFbxPath} from backup: {e.Message}");
-                 EditorUtility.DisplayDialog("Restore Error", $"Failed to restore {Path.GetFileName(baseFbxPath)}.\n{e.Message}\n\nYou may need to do it manually.", "OK");
+                Debug.LogError($"[UltiPaw] Failed to restore {baseFbxPath} from backup: {e.Message}");
+                EditorUtility.DisplayDialog("Restore Error",
+                    $"Failed to restore {Path.GetFileName(baseFbxPath)}.\n{e.Message}\n\nYou may need to do it manually.",
+                    "OK");
             }
         }
         else
         {
-            Debug.LogWarning("[UltiPaw] No backup file found to restore. Attempting to apply default avatar to current FBX.");
+            Debug.LogWarning(
+                "[UltiPaw] No backup file found to restore. Attempting to apply default avatar to current FBX.");
             restored = true;
         }
 
@@ -599,8 +636,10 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
 
             if (versionForDefault != null)
             {
-                string versionDataPath = UltiPawUtils.GetVersionDataPath(versionForDefault.version, versionForDefault.defaultAviVersion);
-                string defaultAvatarFullPath = Path.Combine(versionDataPath, UltiPawUtils.DEFAULT_AVATAR_NAME).Replace("\\", "/");
+                string versionDataPath =
+                    UltiPawUtils.GetVersionDataPath(versionForDefault.version, versionForDefault.defaultAviVersion);
+                string defaultAvatarFullPath =
+                    Path.Combine(versionDataPath, UltiPawUtils.DEFAULT_AVATAR_NAME).Replace("\\", "/");
 
                 if (File.Exists(defaultAvatarFullPath))
                 {
@@ -615,7 +654,8 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
                 }
                 else
                 {
-                    Debug.LogWarning($"[UltiPaw] Default avatar file not found for version {versionForDefault.version}. Path checked: {defaultAvatarFullPath}");
+                    Debug.LogWarning(
+                        $"[UltiPaw] Default avatar file not found for version {versionForDefault.version}. Path checked: {defaultAvatarFullPath}");
                 }
             }
             else
@@ -682,7 +722,7 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
         if (root == null) return null;
 
         return root.GetComponentsInChildren<SkinnedMeshRenderer>(true)
-                                     .FirstOrDefault(s => s.gameObject.name.Equals("Body", System.StringComparison.OrdinalIgnoreCase));
+            .FirstOrDefault(s => s.gameObject.name.Equals("Body", System.StringComparison.OrdinalIgnoreCase));
 #endif
         return null;
     }
@@ -690,5 +730,7 @@ public class UltiPaw : MonoBehaviour, IEditorOnly
 
 public class CantDetermineUltiPawStateException : Exception
 {
-    public CantDetermineUltiPawStateException(string message) : base(message) { }
+    public CantDetermineUltiPawStateException(string message) : base(message)
+    {
+    }
 }
