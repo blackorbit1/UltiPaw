@@ -114,6 +114,53 @@ public class UltiPawEditor : Editor
             rect.y += 2;
             EditorGUI.PropertyField(new Rect(rect.x, rect.y, rect.width, EditorGUIUtility.singleLineHeight), element, GUIContent.none);
         };
+        // ** NEW ** Add a dropdown for adding blendshapes
+        blendshapeList.onAddDropdownCallback = (Rect buttonRect, ReorderableList l) => {
+            var menu = new GenericMenu();
+            var fbxObject = customFbxForCreatorProp.objectReferenceValue as GameObject;
+            if (fbxObject == null)
+            {
+                menu.AddDisabledItem(new GUIContent("Assign a Custom FBX first"));
+                menu.ShowAsContext();
+                return;
+            }
+
+            var smr = fbxObject.GetComponentInChildren<SkinnedMeshRenderer>();
+            if (smr == null || smr.sharedMesh == null)
+            {
+                menu.AddDisabledItem(new GUIContent("FBX has no SkinnedMeshRenderer/Mesh"));
+                menu.ShowAsContext();
+                return;
+            }
+
+            var allBlendshapes = Enumerable.Range(0, smr.sharedMesh.blendShapeCount)
+                                           .Select(i => smr.sharedMesh.GetBlendShapeName(i))
+                                           .ToList();
+
+            var existingBlendshapes = new List<string>();
+            for (int i = 0; i < l.serializedProperty.arraySize; i++)
+            {
+                existingBlendshapes.Add(l.serializedProperty.GetArrayElementAtIndex(i).stringValue);
+            }
+
+            var availableBlendshapes = allBlendshapes.Except(existingBlendshapes).OrderBy(s => s).ToList();
+
+            if (availableBlendshapes.Count == 0)
+            {
+                menu.AddDisabledItem(new GUIContent("No more blendshapes to add"));
+            }
+
+            foreach (var shapeName in availableBlendshapes)
+            {
+                menu.AddItem(new GUIContent(shapeName), false, () => {
+                    var index = l.serializedProperty.arraySize;
+                    l.serializedProperty.arraySize++;
+                    l.serializedProperty.GetArrayElementAtIndex(index).stringValue = shapeName;
+                    serializedObject.ApplyModifiedProperties();
+                });
+            }
+            menu.ShowAsContext();
+        };
         // --- End Creator Mode Initialization ---
 
         // Restore selected version state from the component if possible
@@ -821,13 +868,13 @@ public class UltiPawEditor : Editor
                 else
                 {
                     Version baseVersion = ParseVersion(currentVersionStr);
-                    if (baseVersion.Build >= 0 && baseVersion.Build == -1) 
+                    if (baseVersion.Build is > 0 or -1) 
                     {
                         newVersionMajor = baseVersion.Major;
                         newVersionMinor = baseVersion.Minor;
                         newVersionPatch = baseVersion.Build + 1;
                     }
-                    else if (baseVersion.Minor >= 0)
+                    else if (baseVersion.Minor > 0)
                     {
                         newVersionMajor = baseVersion.Major;
                         newVersionMinor = baseVersion.Minor + 1;
@@ -1211,181 +1258,162 @@ public class UltiPawEditor : Editor
         Repaint();
     }
 
-    // Modified Download Coroutine to optionally apply after download
+    // ** NEW ** Modified Download Coroutine to handle nested ZIP folders
     private IEnumerator DownloadVersionCoroutine(UltiPawVersion versionToDownload, bool applyAfterDownload)
     {
-        // --- 1. Setup ---
-        string baseFbxHashForQuery = ultiPaw.GetCurrentBaseFbxHash() ?? hashToFetch; // Use last fetched hash for consistency
-        if(baseFbxHashForQuery == null)
+        string baseFbxHashForQuery = ultiPaw.GetCurrentBaseFbxHash() ?? hashToFetch;
+        if (string.IsNullOrEmpty(baseFbxHashForQuery))
         {
-            Debug.LogError("[UltiPawEditor] Failed to fetch hash for download. Cannot download.");
-            downloadError = "Failed to fetch hash for download. Cannot download.";
-            EditorUtility.DisplayDialog("Error", downloadError, "OK");
-            isDownloading = false;
-            Repaint();
-            yield break;
+            downloadError = "Failed to get base FBX hash for download.";
+            isDownloading = false; Repaint(); yield break;
         }
-        string downloadUrl = $"{UltiPawUtils.SERVER_BASE_URL}{UltiPawUtils.MODEL_ENDPOINT}?version={UnityWebRequest.EscapeURL(versionToDownload.version)}&d={baseFbxHashForQuery}&t={UltiPawUtils.GetAuth().token}";
-        string targetExtractFolder = UltiPawUtils.VERSIONS_FOLDER;
-        string targetZipPath = $"{targetExtractFolder}/temp.zip";
 
-        // Initial validation and directory setup
-        if (string.IsNullOrEmpty(targetExtractFolder))
-        {
-            downloadError = "Could not determine target folder path. Version data might be invalid.";
-            Debug.LogError("[UltiPawEditor] " + downloadError);
-            isDownloading = false; // Ensure flag is reset on early exit
-            Repaint();
-            yield break; // Exit coroutine
-        }
+        // --- 1. Use Asset-local temp folder to guarantee same volume ---
+        string assetTempRoot = Path.Combine(Application.dataPath, "UltiPawTemp");
+        string tempGuid = Guid.NewGuid().ToString("N");
+        string tempZipPath = Path.Combine(assetTempRoot, $"ultipaw_dl_{tempGuid}.zip");
+        string tempExtractPath = Path.Combine(assetTempRoot, $"ultipaw_extract_{tempGuid}");
+
+        // Ensure temp folder exists
         try
         {
-            UltiPawUtils.EnsureDirectoryExists(targetExtractFolder);
-            UltiPawUtils.EnsureDirectoryExists(Path.GetDirectoryName(targetZipPath));
+            if (!Directory.Exists(assetTempRoot))
+                Directory.CreateDirectory(assetTempRoot);
         }
         catch (Exception ex)
         {
-            downloadError = $"Directory setup failed: {ex.Message}";
-            Debug.LogError("[UltiPawEditor] " + downloadError);
-            isDownloading = false; // Ensure flag is reset on early exit
-            Repaint();
-            yield break; // Exit coroutine
+            downloadError = $"Failed to create temp folder in Assets: {ex.Message}";
+            isDownloading = false; Repaint(); yield break;
         }
 
-
-        Debug.Log($"[UltiPawEditor] Starting download for version {versionToDownload.version} (Base: {versionToDownload.defaultAviVersion})");
-        Debug.Log($"[UltiPawEditor] Download URL: {downloadUrl}");
-        Debug.Log($"[UltiPawEditor] Target Extract Folder: {targetExtractFolder}");
-
-        downloadError = ""; // Clear previous errors
-        isDownloading = true; // Flag is already set by caller, but ensure it's true
+        downloadError = "";
+        isDownloading = true;
         Repaint();
 
-        // --- 2. Create Request Objects ---
         UnityWebRequest req = null;
         DownloadHandlerFile downloadHandler = null;
-        UnityWebRequestAsyncOperation op = null;
-        bool setupOk = false;
+        bool downloadSucceeded = false;
 
-        try // Minimal try block JUST for setup that might fail before yield
+        // --- 2. Download File (setup and start the request) ---
+        try
         {
-            if (File.Exists(targetZipPath)) File.Delete(targetZipPath);
-            downloadHandler = new DownloadHandlerFile(targetZipPath);
-            req = new UnityWebRequest(downloadUrl, UnityWebRequest.kHttpVerbGET, downloadHandler, null);
-            setupOk = true;
+            downloadHandler = new DownloadHandlerFile(tempZipPath);
+            req = new UnityWebRequest(
+                $"{UltiPawUtils.SERVER_BASE_URL}{UltiPawUtils.MODEL_ENDPOINT}?version={UnityWebRequest.EscapeURL(versionToDownload.version)}&d={baseFbxHashForQuery}&t={UltiPawUtils.GetAuth().token}",
+                UnityWebRequest.kHttpVerbGET,
+                downloadHandler, null);
         }
         catch (Exception ex)
         {
             downloadError = $"Download setup failed: {ex.Message}";
-            Debug.LogError($"[UltiPawEditor] {downloadError}");
-            // Cleanup partially created objects if setup fails
-            downloadHandler?.Dispose();
-            req?.Dispose(); // Dispose req if created before exception
-            isDownloading = false; // Reset flag
-            Repaint();
-            yield break; // Exit coroutine
+            isDownloading = false; Repaint(); yield break;
         }
 
-        // --- 3. Send Request and Yield (Only if setup succeeded) ---
-        // This section is NOT inside a try block with a 'finally' that disposes req/handler
-        if (setupOk && req != null)
+        var op = req.SendWebRequest();
+        while (!op.isDone) { yield return null; }
+
+        if (req.result != UnityWebRequest.Result.Success)
         {
-            op = req.SendWebRequest();
-            while (!op.isDone)
-            {
-                yield return null; // Wait for download
-            }
+            downloadError = $"Download failed: {req.error}";
+            isDownloading = false;
+            downloadHandler?.Dispose(); req?.Dispose();
+            Repaint(); yield break;
         }
+        downloadSucceeded = true;
+        downloadHandler?.Dispose(); req?.Dispose();
 
-        // --- 4. Process Result, Extract, and Cleanup (Uses try/finally) ---
-        bool downloadSucceeded = false;
+        // --- 3. Extraction and Safe Folder Copy ---
         bool extractionSucceeded = false;
         try
         {
-            if (req.result == UnityWebRequest.Result.Success)
+            if (Directory.Exists(tempExtractPath)) Directory.Delete(tempExtractPath, true);
+            Directory.CreateDirectory(tempExtractPath);
+
+            ZipFile.ExtractToDirectory(tempZipPath, tempExtractPath);
+
+            // Get versioned target under project
+            string targetVersionFolderName = $"u{versionToDownload.version}d{versionToDownload.defaultAviVersion}";
+            string finalDestinationPath = Path.Combine(UltiPawUtils.VERSIONS_FOLDER, targetVersionFolderName);
+
+            if (Directory.Exists(finalDestinationPath)) Directory.Delete(finalDestinationPath, true);
+
+            // Check for nested zip root
+            string contentSourcePath = tempExtractPath;
+            var rootDirs = Directory.GetDirectories(tempExtractPath);
+            var rootFiles = Directory.GetFiles(tempExtractPath);
+
+            if (rootDirs.Length == 1 && rootFiles.Length == 0)
+                contentSourcePath = rootDirs[0];
+
+            // Robust folder copy: cross-volume safe, atomic, recursive
+            CopyDirectory(contentSourcePath, finalDestinationPath);
+
+            Debug.Log($"[UltiPawEditor] Extracted and copied content to: {finalDestinationPath}");
+
+            extractionSucceeded = true;
+            AssetDatabase.Refresh();
+        }
+        catch (Exception ex)
+        {
+            downloadError = $"Extraction failed: {ex.Message}";
+            Debug.LogError($"[UltiPawEditor] {downloadError}");
+        }
+        finally
+        {
+            // Clean temp artifacts
+            TryDeleteDirectory(tempExtractPath);
+            TryDeleteFile(tempZipPath);
+            // Optional: Clean empty temp root
+            if (Directory.Exists(assetTempRoot) && Directory.GetDirectories(assetTempRoot).Length == 0 && Directory.GetFiles(assetTempRoot).Length == 0)
+                TryDeleteDirectory(assetTempRoot);
+        }
+
+        if (extractionSucceeded)
+        {
+            string expectedBinPath = UltiPawUtils.GetVersionBinPath(versionToDownload.version, versionToDownload.defaultAviVersion);
+            if (!string.IsNullOrEmpty(expectedBinPath) && File.Exists(expectedBinPath))
             {
-                Debug.Log($"[UltiPawEditor] Successfully downloaded ZIP to: {targetZipPath}");
-                downloadSucceeded = true;
+                if (applyAfterDownload)
+                    SelectAndApplyVersion(versionToDownload, expectedBinPath);
+                else
+                    SelectVersion(versionToDownload, expectedBinPath);
             }
             else
             {
-                downloadError = $"Download failed : make sure you have a supported winterpaw and a stable connection. Else contact Orbit";
-                Debug.LogError($"[UltiPawEditor] {downloadError}");
-            }
-
-
-            // --- 5. Extraction (Only if download succeeded) ---
-            if (downloadSucceeded)
-            {
-                // Dispose handler *before* extraction, but keep req alive for now
-                downloadHandler?.Dispose();
-                downloadHandler = null; // Prevent double disposal in finally
-
-                try // Separate try/catch specifically for extraction errors
-                {
-                    ZipFile.ExtractToDirectory(targetZipPath, targetExtractFolder, true);
-                    Debug.Log($"[UltiPawEditor] Successfully extracted files to: {targetExtractFolder}");
-                    extractionSucceeded = true;
-                    AssetDatabase.Refresh(); // Refresh assets
-                }
-                catch (Exception ex)
-                {
-                    downloadError = $"Extraction failed: {ex.Message}"; // Set specific error
-                    Debug.LogError($"[UltiPawEditor] Failed to extract ZIP file '{targetZipPath}' to '{targetExtractFolder}': {ex}");
-                    AssetDatabase.Refresh();
-                }
-            }
-
-            // --- 6. Post-Download Actions (Select / Apply) ---
-            if (extractionSucceeded) // Only proceed if extraction was also successful
-            {
-                string expectedBinPath = UltiPawUtils.GetVersionBinPath(versionToDownload.version, versionToDownload.defaultAviVersion);
-                if (!string.IsNullOrEmpty(expectedBinPath) && File.Exists(expectedBinPath))
-                {
-                    if (applyAfterDownload)
-                    {
-                        SelectVersion(versionToDownload, expectedBinPath);
-                        if (ultiPaw.ApplyUltiPaw())
-                        {
-                            Debug.Log($"[UltiPawEditor] Successfully applied version {versionToDownload.version} after download.");
-                        }
-                        else
-                        {
-                            downloadError = $"Downloaded version {versionToDownload.version}, but failed to apply it. Check console.";
-                        }
-                    }
-                    else
-                    {
-                        SelectVersion(versionToDownload, expectedBinPath);
-                    }
-                }
-                else
-                {
-                    downloadError = "Extraction seemed successful, but failed to find required file (ultipaw.bin) for selection.";
-                    Debug.LogError("[UltiPawEditor] " + downloadError);
-                }
+                downloadError = "Extraction succeeded, but 'ultipaw.bin' was not found in the expected location.";
+                Debug.LogError($"[UltiPawEditor] {downloadError} Checked path: {expectedBinPath}");
             }
         }
-        finally // This block ensures final disposal and cleanup happens
-        {
-            isDownloading = false; // Mark process finished *reliably*
 
-            // Dispose remaining resources
-            downloadHandler?.Dispose(); // Dispose if extraction failed before it could be disposed
-            req?.Dispose();
-
-            // Clean up temp zip file
-            if (File.Exists(targetZipPath))
-            {
-                try { File.Delete(targetZipPath); }
-                catch (IOException ioEx) { Debug.LogWarning($"[UltiPawEditor] Could not delete temp file '{targetZipPath}' (might be locked): {ioEx.Message}"); }
-                catch (Exception ex) { Debug.LogWarning($"[UltiPawEditor] Error deleting temp file '{targetZipPath}': {ex.Message}"); }
-            }
-
-            Repaint();
-        }
+        isDownloading = false;
+        Repaint();
     }
-    
+
+// ---- Utility: Safe directory copy ----
+private static void CopyDirectory(string sourceDir, string destDir)
+{
+    Directory.CreateDirectory(destDir);
+    foreach (var file in Directory.GetFiles(sourceDir))
+    {
+        File.Copy(file, Path.Combine(destDir, Path.GetFileName(file)), true);
+    }
+    foreach (var dir in Directory.GetDirectories(sourceDir))
+    {
+        CopyDirectory(dir, Path.Combine(destDir, Path.GetFileName(dir)));
+    }
+}
+
+private static void TryDeleteDirectory(string path)
+{
+    try { if (Directory.Exists(path)) Directory.Delete(path, true); }
+    catch { }
+}
+private static void TryDeleteFile(string path)
+{
+    try { if (File.Exists(path)) File.Delete(path); }
+    catch { }
+}
+
     private IEnumerator DeleteFolderCoroutine(string path)
     {
         yield return null; // Wait a frame
@@ -1584,7 +1612,7 @@ public class UltiPawEditor : Editor
         // --- 3. Create Local Version Folder and Files (All inside try/catch, no yield) ---
         try
         {
-            UltiPawUtils.EnsureDirectoryExists(newVersionDataPath, canBeFilePath: false);
+            UltiPawUtils.EnsureDirectoryExists(newVersionDataPath);
 
             string ultipawAvatarSourcePath = AssetDatabase.GetAssetPath(ultipawAvatarForCreatorProp.objectReferenceValue);
             AssetDatabase.CopyAsset(ultipawAvatarSourcePath, Path.Combine(newVersionDataPath, UltiPawUtils.ULTIPAW_AVATAR_NAME));
@@ -1674,20 +1702,19 @@ public class UltiPawEditor : Editor
         UnityWebRequest req = null;
         if (zipCreationSucceeded)
         {
-            string uploadUrl = $"{UltiPawUtils.SERVER_BASE_URL}{UltiPawUtils.NEW_VERSION_ENDPOINT}?t={UltiPawUtils.GetAuth().token}";
+            string uploadUrl = $"{UltiPawUtils.SERVER_BASE_URL}{UltiPawUtils.NEW_VERSION_ENDPOINT}";
             byte[] fileBytes = File.ReadAllBytes(tempZipPath);
             string zipFileName = Path.GetFileName(newVersionDataFullPath) + ".zip";
             WWWForm form = new WWWForm();
             form.AddBinaryData("packageFile", fileBytes, zipFileName, "application/zip");
 
-            // Metadata as before
             var metadata = new {
                 baseFbxHash = ultiPaw.currentOriginalBaseFbxHash,
                 version = newVersionString,
                 scope = newVersionScope,
                 changelog = newChangelog,
                 defaultAviVersion = baseFbxVersion,
-                parentVersion = selectedParentVersionObject?.version, // Will be null if not selected
+                parentVersion = selectedParentVersionObject?.version,
                 customAviHash = UltiPawUtils.CalculateFileHash(customFbxPath),
                 appliedCustomAviHash = UltiPawUtils.CalculateFileHash(binFilePath),
                 customBlendshapes = ultiPaw.customBlendshapesForCreator.ToArray(),
@@ -1701,7 +1728,6 @@ public class UltiPawEditor : Editor
             req.SetRequestHeader("Authorization", $"Bearer {UltiPawUtils.GetAuth().token}");
             req.timeout = 300;
 
-            // Send request and wait
             var op = req.SendWebRequest();
             while (!op.isDone)
             {
@@ -1799,33 +1825,6 @@ public class UltiPawEditor : Editor
             try { File.Delete(tempZipPath); }
             catch (IOException ioEx) { Debug.LogWarning($"[UltiPaw-Creator] Could not delete temp zip file '{tempZipPath}' (might be locked): {ioEx.Message}"); }
             catch (Exception ex) { Debug.LogWarning($"[UltiPaw-Creator] Error deleting temp zip file '{tempZipPath}': {ex.Message}"); }
-        }
-    }
-
-    // Helper to calculate MD5 hash of a file
-    private string CalculateMD5(string filePath)
-    {
-        if (!File.Exists(filePath))
-        {
-            Debug.LogError($"[UltiPawEditor-Creator] File not found for MD5 hash: {filePath}");
-            return null;
-        }
-
-        try
-        {
-            using (var md5 = MD5.Create())
-            {
-                using (var stream = File.OpenRead(filePath))
-                {
-                    byte[] hash = md5.ComputeHash(stream);
-                    return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Debug.LogError($"[UltiPawEditor-Creator] Error calculating MD5 for {filePath}: {ex.Message}");
-            return null;
         }
     }
 }
