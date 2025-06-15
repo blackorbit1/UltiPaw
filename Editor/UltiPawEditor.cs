@@ -65,7 +65,7 @@ public class UltiPawEditor : Editor
     private SerializedProperty customBlendshapesForCreatorProp; // ** NEW ** For blendshapes list
     private ReorderableList blendshapeList; // ** NEW ** UI for blendshapes
 
-    private bool creatorModeFoldout = false; // State for the foldout
+    private bool creatorModeFoldout = true; // State for the foldout
     private int newVersionMajor = 0;
     private int newVersionMinor = 0;
     private int newVersionPatch = 0;
@@ -821,7 +821,7 @@ public class UltiPawEditor : Editor
                 else
                 {
                     Version baseVersion = ParseVersion(currentVersionStr);
-                    if (baseVersion.Build >= 0 && baseVersion.Revision == -1) 
+                    if (baseVersion.Build >= 0 && baseVersion.Build == -1) 
                     {
                         newVersionMajor = baseVersion.Major;
                         newVersionMinor = baseVersion.Minor;
@@ -1653,7 +1653,14 @@ public class UltiPawEditor : Editor
             }
             catch (Exception ex)
             {
-                submitError = $"Failed to create ZIP file: {ex.Message}";
+                if (ex.Message.Contains("Win32 IO returned 112"))
+                {
+                    submitError = "No disk space left !";
+                }
+                else
+                {
+                    submitError = $"Failed to create ZIP file: {ex.Message}";
+                }
                 isSubmitting = false; Repaint(); yield break;
             }
             if (!zipCreationSucceeded || !File.Exists(tempZipPath))
