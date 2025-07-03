@@ -6,7 +6,7 @@ public class VersionManagementModule
 {
     private readonly UltiPawEditor editor;
     private readonly VersionActions actions;
-    private readonly FileConfigurationDrawer fileConfigDrawer;
+    public readonly FileConfigurationDrawer fileConfigDrawer;
     private readonly VersionListDrawer versionListDrawer;
     private readonly BlendshapeDrawer blendshapeDrawer;
     private readonly FileManagerService fileManagerService;
@@ -38,7 +38,7 @@ public class VersionManagementModule
 
     public void Draw()
     {
-        fileConfigDrawer.Draw();
+        // TODO fileConfigDrawer.Draw();
         DrawFetchUpdatesButton();
         versionsFoldout = EditorGUILayout.Foldout(versionsFoldout, "All UltiPaw Versions", true, EditorStyles.foldoutHeader);
         actions.DisplayErrors();
@@ -68,23 +68,41 @@ public class VersionManagementModule
     private void DrawActionButtons()
     {
         bool canInteract = !editor.isFetching && !editor.isDownloading && !editor.isDeleting;
-        bool selectionIsValid = editor.selectedVersionForAction != null;
+        var selectedVersion = editor.selectedVersionForAction;
+
+        if (selectedVersion == null) // If no version is selected, select the recommended version
+        {
+            selectedVersion = editor.recommendedVersion;
+            editor.selectedVersionForAction = selectedVersion;
+        }
+        
+        string binPath = UltiPawUtils.GetVersionBinPath(selectedVersion.version, selectedVersion.defaultAviVersion);
+        bool isDownloaded = !string.IsNullOrEmpty(binPath) && System.IO.File.Exists(binPath);
+        
+        bool selectionIsValid = selectedVersion != null;
         
         using (new EditorGUI.DisabledScope(!canInteract))
         {
             // Main Apply/Update/Downgrade Button
-            using (new EditorGUI.DisabledScope(!selectionIsValid || editor.selectedVersionForAction.Equals(editor.ultiPawTarget.appliedUltiPawVersion)))
+            using (new EditorGUI.DisabledScope(!selectionIsValid || selectedVersion.Equals(editor.ultiPawTarget.appliedUltiPawVersion)))
             {
                 var action = GetActionType();
-                string buttonText = GetActionButtonText(action);
+                string buttonText = GetActionButtonText(action, isDownloaded);
                 
                 GUI.backgroundColor = action == ActionType.DOWNGRADE ? EditorUIUtils.OrangeColor : Color.green;
 
                 if (GUILayout.Button(buttonText, GUILayout.Height(40)))
                 {
-                    if (EditorUtility.DisplayDialog("Confirm Transformation", $"This will modify your base FBX file using UltiPaw version '{editor.selectedVersionForAction.version}'.\nA backup will be created.", "Proceed", "Cancel"))
+                    if (EditorUtility.DisplayDialog("Confirm Transformation", $"This will modify your base FBX file using UltiPaw version '{selectedVersion.version}'.\nA backup will be created.", "Proceed", "Cancel"))
                     {
-                        actions.StartApplyVersion();
+                        if (isDownloaded)
+                        {
+                            actions.StartApplyVersion();
+                        }
+                        else
+                        {
+                            actions.StartVersionDownload(selectedVersion, true);
+                        }
                     }
                 }
                 GUI.backgroundColor = Color.white;
@@ -117,12 +135,10 @@ public class VersionManagementModule
         return ActionType.UNAVAILABLE;
     }
 
-    private string GetActionButtonText(ActionType action)
+    private string GetActionButtonText(ActionType action, bool isDownloaded)
     {
         if (editor.selectedVersionForAction == null) return "Select a Version";
         
-        string binPath = UltiPawUtils.GetVersionBinPath(editor.selectedVersionForAction.version, editor.selectedVersionForAction.defaultAviVersion);
-        bool isDownloaded = !string.IsNullOrEmpty(binPath) && System.IO.File.Exists(binPath);
         string downloadPrefix = isDownloaded ? "" : "Download and ";
 
         return action switch

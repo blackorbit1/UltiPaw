@@ -7,7 +7,7 @@ using UnityEditor;
 using UnityEngine;
 
 [CustomEditor(typeof(UltiPaw))]
-public class UltiPawEditor : Editor
+public class UltiPawEditor : UnityEditor.Editor
 {
     // --- Target & Serialized Object ---
     public UltiPaw ultiPawTarget;
@@ -21,8 +21,9 @@ public class UltiPawEditor : Editor
     // --- Services and Modules ---
     private NetworkService networkService;
     private AuthenticationModule authModule;
-    private VersionManagementModule versionModule;
+    public VersionManagementModule versionModule;
     private CreatorModeModule creatorModule;
+    private AdvancedModeModule advancedModule;
     
     // --- SHARED EDITOR STATE ---
     public bool isAuthenticated;
@@ -50,6 +51,7 @@ public class UltiPawEditor : Editor
         authModule = new AuthenticationModule(this);
         versionModule = new VersionManagementModule(this, networkService, fileManagerService);
         creatorModule = new CreatorModeModule(this);
+        advancedModule = new AdvancedModeModule(this);
         
         creatorModule.Initialize();
         CheckAuthentication();
@@ -70,18 +72,22 @@ public class UltiPawEditor : Editor
         // If not authenticated, the auth module will draw the login prompt and we stop here.
         if (isAuthenticated)
         {
+          
+            // The CreatorModeModule handles its own section, including the foldout.
+            creatorModule.Draw();
+            
             // The VersionManagementModule now handles the file config, version list,
             // action buttons, and blendshape sliders internally.
             versionModule.Draw();
-
-            // The CreatorModeModule handles its own section, including the foldout.
-            creatorModule.Draw();
 
             // The generic help box at the end.
             DrawHelpBox();
             
             authModule.DrawLogoutButton();
         }
+        
+        // Advanced Mode positioned under the help box
+        advancedModule.Draw();
 
         serializedObject.ApplyModifiedProperties();
     }

@@ -303,7 +303,7 @@ public class CreatorModeModule
             string metadataJson = JsonConvert.SerializeObject(metadata, new StringEnumConverter());
             
             EditorUtility.DisplayProgressBar("Uploading", "Sending package to server...", 0.8f);
-            string uploadUrl = $"{UltiPawUtils.SERVER_BASE_URL}{UltiPawUtils.NEW_VERSION_ENDPOINT}";
+            string uploadUrl = $"{UltiPawUtils.getServerUrl()}{UltiPawUtils.NEW_VERSION_ENDPOINT}?t={editor.authToken}";
             uploadTask = networkService.SubmitNewVersionAsync(uploadUrl, editor.authToken, tempZipPath, metadataJson);
         }
         catch (Exception ex)

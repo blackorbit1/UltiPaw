@@ -225,7 +225,7 @@ public class FileManagerService
 
         try
         {
-            UltiPawUtils.EnsureDirectoryExists(newVersionDataPath);
+            UltiPawUtils.EnsureDirectoryExists(newVersionDataPath, canBeFilePath: false);
             
             // 1. Copy Avatars
             string ultipawAvatarSourcePath = AssetDatabase.GetAssetPath(ultipawAvatar);

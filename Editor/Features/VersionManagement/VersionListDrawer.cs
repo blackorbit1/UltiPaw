@@ -57,7 +57,11 @@ public class VersionListDrawer
         
         GUILayout.Label($"UltiPaw {ver.version}", GUILayout.Width(100));
         GUILayout.FlexibleSpace();
-        if (isApplied) DrawScopeLabel("Installed", new Color(0.33f, 0.79f, 0f));
+        if (isApplied)
+        {
+            DrawScopeLabel("Installed", new Color(0.33f, 0.79f, 0f));
+            GUILayout.Space(5); // Space after chip
+        }
         DrawScopeLabel(ver.scope.ToString(), GetColorForScope(ver.scope));
         GUILayout.Space(10);
         
