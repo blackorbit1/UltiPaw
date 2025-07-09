@@ -6,7 +6,10 @@
   "description": "Wizard to install the UltiPaw on a winterpaw",
   "type": "tool",
   "url":  "https://github.com/blackorbit1/orbiters-vpm/raw/refs/heads/main/ultipaw.0.0.1.zip",
-  "dependencies": {},
+  "dependencies": {
+    "express": "^4.18.2",
+    "fs-extra": "^11.1.1"
+  },
   "gitDependencies": {},
   "vpmDependencies": {
     "com.vrchat.avatars": "3.8.0"
@@ -17,5 +20,7 @@
     "url": "orbiters.cc"
   },
   "legacyFolders": {},
-  "legacyFiles": {}
-}
+  "legacyFiles": {},
+  "scripts": {
+    "start": "node server.js"
+  }}
