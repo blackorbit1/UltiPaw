@@ -179,10 +179,9 @@ public class VersionActions
         editor.Repaint();
     }
 
-    private IEnumerator ApplyOrResetCoroutine(UltiPawVersion version, bool isReset)
+    internal IEnumerator ApplyOrResetCoroutine(UltiPawVersion version, bool isReset)
     {
         var root = editor.ultiPawTarget.transform.root;
-        // FIX: Ensure logic is removed at the very start. This logic is correct and should now work reliably.
         fileManagerService.RemoveExistingLogic(root);
 
         string fbxPath = GetCurrentFBXPath();
@@ -200,12 +199,11 @@ public class VersionActions
                 if (version == null) throw new ArgumentNullException(nameof(version), "A version must be provided to apply.");
                 
                 string binPath = UltiPawUtils.GetVersionBinPath(version.version, version.defaultAviVersion);
-                if (!File.Exists(binPath)) throw new FileNotFoundException("Apply failed: .bin file not found. Please download it first.");
+                if (!File.Exists(binPath)) throw new FileNotFoundException("Apply failed: .bin file not found. Please download or build it first.");
 
                 string originalFbxPath = fbxPath.EndsWith(FileManagerService.OriginalSuffix) ? fbxPath : fbxPath + FileManagerService.OriginalSuffix;
                 if (!File.Exists(originalFbxPath))
                 {
-                    // If no backup, create one from the current file before transforming.
                     fileManagerService.CreateBackup(fbxPath);
                     originalFbxPath = fbxPath + FileManagerService.OriginalSuffix;
                 }
@@ -224,33 +222,30 @@ public class VersionActions
             if(!isReset && fileManagerService.BackupExists(fbxPath)) fileManagerService.RestoreBackup(fbxPath);
         }
         
-        // This block now runs after the file modification is complete.
         if (success)
         {
-            // We must force Unity to re-import the changed asset. This is a critical step.
-            // TODO AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
+            // --- CRITICAL FIX FOR RE-IMPORT ---
+            // Force Unity to re-import the specific FBX we just changed.
+            AssetDatabase.ImportAsset(fbxPath, ImportAssetOptions.ForceUpdate);
             
             // Wait until Unity has finished re-importing and compiling.
+            // This is essential to prevent race conditions.
             while (EditorApplication.isCompiling || EditorApplication.isUpdating)
             {
                 yield return null;
             }
-
+            // --- END CRITICAL FIX ---
             
-            // IMPROVEMENT: Use selected version as a fallback for reset if applied is null, making reset more robust.
-            // This also fixes the "wrong asset" bug by using the correct version object.
             var versionForAssets = isReset ? (editor.ultiPawTarget.appliedUltiPawVersion ?? editor.selectedVersionForAction) : version;
             if (versionForAssets != null)
             {
                 string dataPath = UltiPawUtils.GetVersionDataPath(versionForAssets.version, versionForAssets.defaultAviVersion);
-                // When resetting, we apply the 'default avatar'. When installing, we apply the 'ultipaw avatar'.
                 string avatarName = isReset ? UltiPawUtils.DEFAULT_AVATAR_NAME : UltiPawUtils.ULTIPAW_AVATAR_NAME;
                 string avatarPath = Path.Combine(dataPath, avatarName);
                 
                 var fbxGameObject = editor.baseFbxFilesProp.arraySize > 0 ? editor.baseFbxFilesProp.GetArrayElementAtIndex(0).objectReferenceValue as GameObject : null;
                 fileManagerService.ApplyAvatarToModel(root, fbxGameObject, avatarPath);
 
-                // Only instantiate the logic prefab when applying a new version, not when resetting.
                 if (!isReset)
                 {
                     string packagePath = Path.Combine(dataPath, "ultipaw logic.unitypackage");
@@ -258,9 +253,7 @@ public class VersionActions
                 }
             }
             
-            // get custom logic path using UltiPawUtils.CUSTOM_LOGIC_NAME
             string customLogicPath = Path.Combine(UltiPawUtils.GetVersionDataPath(versionForAssets.version, versionForAssets.defaultAviVersion), UltiPawUtils.CUSTOM_LOGIC_NAME);
-            // If the custom logic prefab exists, instantiate it.
             if (File.Exists(customLogicPath))
             {
                 GameObject customLogicPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(customLogicPath);
@@ -279,15 +272,7 @@ public class VersionActions
             editor.ultiPawTarget.appliedUltiPawVersion = version;
         }
         
-        // FIX: DO NOT manually assign the applied version. It creates state conflicts.
-        // The state will be determined by the hash check below, which is the single source of truth.
-        // Undo.RecordObject(editor.ultiPawTarget, isReset ? "Reset UltiPaw" : "Apply UltiPaw");
-        // editor.ultiPawTarget.appliedUltiPawVersion = isReset ? null : version; // <-- THIS IS THE OLD, BUGGY WAY
-        
-        // FIX: Re-evaluate the entire state from the ground up AFTER the operation. This is the new source of truth.
         UpdateCurrentBaseFbxHash(); 
-        // UpdateAppliedVersionAndState() is called by the above method, so this is sufficient.
-
 
         EditorUtility.SetDirty(editor.ultiPawTarget);
         editor.Repaint();

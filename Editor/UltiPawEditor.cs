@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
+using Newtonsoft.Json;
 
 [CustomEditor(typeof(UltiPaw))]
 public class UltiPawEditor : UnityEditor.Editor
@@ -13,7 +14,7 @@ public class UltiPawEditor : UnityEditor.Editor
     public UltiPaw ultiPawTarget;
     public new SerializedObject serializedObject;
     private Texture2D bannerTexture;
-    
+
     // --- Serialized Properties ---
     public SerializedProperty specifyCustomBaseFbxProp, baseFbxFilesProp, blendShapeValuesProp, isCreatorModeProp,
                               customFbxForCreatorProp, ultipawAvatarForCreatorProp, avatarLogicPrefabProp, customBlendshapesForCreatorProp;
@@ -34,6 +35,7 @@ public class UltiPawEditor : UnityEditor.Editor
     public string currentBaseFbxHash;
     public bool isUltiPaw;
     public List<UltiPawVersion> serverVersions = new List<UltiPawVersion>();
+    public List<UltiPawVersion> unsubmittedVersions = new List<UltiPawVersion>();
     public UltiPawVersion recommendedVersion, selectedVersionForAction;
     
     private void OnEnable()
@@ -41,7 +43,6 @@ public class UltiPawEditor : UnityEditor.Editor
         ultiPawTarget = (UltiPaw)target;
         serializedObject = new SerializedObject(ultiPawTarget);
         
-        // This path should point to your banner inside your UPM package or Assets folder.
         bannerTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(Path.Combine(UltiPawUtils.PACKAGE_BASE_FOLDER, "Editor/banner.png")); 
         FindSerializedProperties();
         
@@ -53,6 +54,7 @@ public class UltiPawEditor : UnityEditor.Editor
         creatorModule = new CreatorModeModule(this);
         advancedModule = new AdvancedModeModule(this);
         
+        LoadUnsubmittedVersions(); // Load local versions first
         creatorModule.Initialize();
         CheckAuthentication();
         versionModule.OnEnable();
@@ -69,24 +71,14 @@ public class UltiPawEditor : UnityEditor.Editor
             authModule.DrawMagicSyncAuth();
         }
         
-        // If not authenticated, the auth module will draw the login prompt and we stop here.
         if (isAuthenticated)
         {
-          
-            // The CreatorModeModule handles its own section, including the foldout.
             creatorModule.Draw();
-            
-            // The VersionManagementModule now handles the file config, version list,
-            // action buttons, and blendshape sliders internally.
             versionModule.Draw();
-
-            // The generic help box at the end.
             DrawHelpBox();
-            
             authModule.DrawLogoutButton();
         }
         
-        // Advanced Mode positioned under the help box
         advancedModule.Draw();
 
         serializedObject.ApplyModifiedProperties();
@@ -114,7 +106,7 @@ public class UltiPawEditor : UnityEditor.Editor
     
     public void CheckAuthentication()
     {
-        authToken = UltiPawUtils.GetAuth().token;
+        authToken = UltiPawUtils.GetAuth()?.token;
         isAuthenticated = !string.IsNullOrEmpty(authToken);
     }
 
@@ -129,8 +121,42 @@ public class UltiPawEditor : UnityEditor.Editor
         avatarLogicPrefabProp = serializedObject.FindProperty("avatarLogicPrefab");
         customBlendshapesForCreatorProp = serializedObject.FindProperty("customBlendshapesForCreator");
     }
+
+    public void LoadUnsubmittedVersions()
+    {
+        unsubmittedVersions.Clear();
+        string path = UltiPawUtils.UNSUBMITTED_VERSIONS_FILE;
+        if (File.Exists(path))
+        {
+            try
+            {
+                string json = File.ReadAllText(path);
+                var loaded = JsonConvert.DeserializeObject<List<UltiPawVersion>>(json);
+                if (loaded != null)
+                {
+                    foreach (var v in loaded)
+                    {
+                        v.isUnsubmitted = true; // Set runtime flag
+                        unsubmittedVersions.Add(v);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[UltiPaw] Failed to load unsubmitted versions from {path}: {ex.Message}");
+            }
+        }
+    }
+
+    public List<UltiPawVersion> GetAllVersions()
+    {
+        // Combine server versions with unsubmitted ones, preventing duplicates
+        var allVersions = new List<UltiPawVersion>(serverVersions);
+        var unsubmittedToAdd = unsubmittedVersions.Where(uv => !allVersions.Any(sv => sv.Equals(uv)));
+        allVersions.AddRange(unsubmittedToAdd);
+        return allVersions.OrderByDescending(v => ParseVersion(v.version)).ToList();
+    }
     
-    // Helper methods for version parsing, accessible by all modules.
     public Version ParseVersion(string v)
     {
         if (string.IsNullOrEmpty(v)) return new Version(0,0);

@@ -17,12 +17,22 @@ public class FileConfigurationDrawer
 
     public void OnEnable()
     {
+        // If we are already in the middle of a build/submit or another fetch, do NOT start a new one.
+        // This prevents the re-import loop.
+        if (editor.isSubmitting || editor.isFetching)
+        {
+            actions.UpdateCurrentBaseFbxHash(); // Still useful to update the hash state
+            return;
+        }
+
         if (!editor.specifyCustomBaseFbxProp.boolValue)
         {
             AutoDetectBaseFbxViaHierarchy();
         }
         actions.UpdateCurrentBaseFbxHash();
-        if(!string.IsNullOrEmpty(editor.currentBaseFbxHash))
+        
+        // Only fetch if we have a hash and haven't tried yet.
+        if(!string.IsNullOrEmpty(editor.currentBaseFbxHash) && !editor.fetchAttempted)
         {
             actions.StartVersionFetch();
         }

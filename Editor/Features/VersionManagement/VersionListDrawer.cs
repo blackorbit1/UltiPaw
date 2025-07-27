@@ -17,14 +17,13 @@ public class VersionListDrawer
 
     public void Draw()
     {
+        var allVersions = editor.GetAllVersions();
         
-
-        if (editor.serverVersions.Any() || editor.isFetching)
+        if (allVersions.Any() || editor.isFetching)
         {
             if (!editor.isFetching)
             {
-                var sorted = editor.serverVersions.OrderByDescending(v => editor.ParseVersion(v.version)).ToList();
-                foreach (var ver in sorted)
+                foreach (var ver in allVersions)
                 {
                     DrawVersionListItem(ver);
                 }
@@ -57,10 +56,16 @@ public class VersionListDrawer
         
         GUILayout.Label($"UltiPaw {ver.version}", GUILayout.Width(100));
         GUILayout.FlexibleSpace();
+        
+        if (ver.isUnsubmitted)
+        {
+            DrawScopeLabel("Unsubmitted", Color.gray);
+            GUILayout.Space(5);
+        }
         if (isApplied)
         {
             DrawScopeLabel("Installed", new Color(0.33f, 0.79f, 0f));
-            GUILayout.Space(5); // Space after chip
+            GUILayout.Space(5);
         }
         DrawScopeLabel(ver.scope.ToString(), GetColorForScope(ver.scope));
         GUILayout.Space(10);

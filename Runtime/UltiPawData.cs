@@ -24,7 +24,6 @@ public class UltiPawVersion : IEquatable<UltiPawVersion>
 public class UltiPawVersion
 #endif
 {
-
     [JsonProperty] public string version;
     [JsonProperty] public string defaultAviVersion;
     [JsonProperty] public Scope scope;
@@ -35,10 +34,20 @@ public class UltiPawVersion
     [JsonProperty] public string[] defaultAviHash;
     [JsonProperty] public string[] customBlendshapes;
     [JsonProperty] public Dictionary<string, string> dependencies;
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)] public string parentVersion;
+    
+    // --- Fields for local unsubmitted versions ---
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)] public string baseFbxHash;
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)] public string customFbxPath;
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)] public string ultipawAvatarPath;
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)] public string logicPrefabPath;
+
+    [JsonIgnore] public bool isUnsubmitted; // Runtime flag, not saved to JSON
 
     public bool Equals(UltiPawVersion other)
     {
         if (other == null) return false;
+        // Two versions are the same if their version string and base FBX version match.
         return version == other.version && defaultAviVersion == other.defaultAviVersion;
     }
 
@@ -51,7 +60,6 @@ public class UltiPawVersion
     {
         return Equals(obj as UltiPawVersion);
     }
-
 }
 
 // Defines the release scope of a version (e.g., public, beta).
@@ -65,4 +73,3 @@ public enum Scope
     [EnumMember(Value = "unknown")] UNKNOWN
 #endif
 }
-

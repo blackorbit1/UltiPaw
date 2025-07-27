@@ -17,6 +17,7 @@ public static class UltiPawUtils
     public const string PACKAGE_BASE_FOLDER = "Packages/UltiPaw";
     public const string ASSETS_BASE_FOLDER = "Assets/UltiPaw";
     public const string VERSIONS_FOLDER = ASSETS_BASE_FOLDER + "/versions";
+    public const string UNSUBMITTED_VERSIONS_FILE = ASSETS_BASE_FOLDER + "/unsubmittedVersions.json";
     public const string DEFAULT_AVATAR_NAME = "default avatar.asset";
     public const string ULTIPAW_AVATAR_NAME = "ultipaw avatar.asset";
     public const string CUSTOM_LOGIC_NAME = "ultipaw logic.asset";
@@ -35,7 +36,6 @@ public static class UltiPawUtils
     
     public static string getServerUrl()
     {
-        //return "https://" + (isDevEnvironment ? "dev." : "") + SERVER_BASE_URL;
         if (isDevEnvironment)
         {
             return "http://localhost:4100/unity-wizard";
@@ -60,19 +60,16 @@ public static class UltiPawUtils
             using (var stream = File.OpenRead(filePath))
             {
                 byte[] hashBytes = sha256.ComputeHash(stream);
-                // Convert byte array to a lowercase hex string
                 StringBuilder builder = new StringBuilder();
                 foreach (byte b in hashBytes)
                 {
                     builder.Append(b.ToString("x2"));
                 }
-
                 return builder.ToString();
             }
         }
     }
 
-    // Add this class to store authentication data
     [JsonObject(MemberSerialization.OptIn)]
     public class AuthData
     {
@@ -80,16 +77,13 @@ public static class UltiPawUtils
         [JsonProperty] public string user;
     }
 
-    // Registers authentication token from clipboard
     public static async Task<bool> RegisterAuth()
     {
         try
         {
-            // Get token from clipboard
             string clipboardContent = EditorGUIUtility.systemCopyBuffer;
             string tokenToUse = "notoken";
 
-            // Check if clipboard content matches the pattern "orbit-\w{8}-\w{8}-\w{8}-\d{2}-\d{2}-\d{4}"
             Regex tokenPattern = new Regex(@"orbit-\w{8}-\w{8}-\w{8}-\d{2}-\d{2}-\d{4}");
             if (!string.IsNullOrEmpty(clipboardContent) && tokenPattern.IsMatch(clipboardContent))
             {
@@ -97,7 +91,6 @@ public static class UltiPawUtils
                 Debug.Log("[UltiPawUtils] Found valid token pattern in clipboard");
             }
 
-            // Try to validate the token with the server, with retry mechanism for error 425
             AuthData authData = null;
             bool isValid = false;
             int retryCount = 0;
@@ -107,35 +100,24 @@ public static class UltiPawUtils
             {
                 try
                 {
-                    // Make the request to the server
                     var response = await client.GetAsync(getServerUrl() + TOKEN_ENDPOINT + "?token=" + tokenToUse);
 
                     if (response.IsSuccessStatusCode)
                     {
-                        // Read the JSON response
                         string jsonResponse = await response.Content.ReadAsStringAsync();
                         authData = JsonConvert.DeserializeObject<AuthData>(jsonResponse);
                         isValid = !string.IsNullOrEmpty(authData?.token);
-
-                        if (isValid)
-                        {
-                            Debug.Log("[UltiPawUtils] Authentication successful");
-                            break;
-                        }
+                        if (isValid) break;
                     }
                     else if ((int)response.StatusCode == 425)
                     {
-                        // Status code 425 - need to retry
                         retryCount++;
-                        Debug.Log(
-                            $"[UltiPawUtils] Server is processing request (Status 425). Retry {retryCount}/{maxRetries}");
-                        await Task.Delay(1000); // Wait 1 second before retrying
+                        Debug.Log($"[UltiPawUtils] Server is processing request (Status 425). Retry {retryCount}/{maxRetries}");
+                        await Task.Delay(1000);
                     }
                     else
                     {
-                        // Other error - don't retry
-                        Debug.LogWarning(
-                            $"[UltiPawUtils] Authentication failed with status code {response.StatusCode}");
+                        Debug.LogWarning($"[UltiPawUtils] Authentication failed with status code {response.StatusCode}");
                         return false;
                     }
                 }
@@ -149,17 +131,12 @@ public static class UltiPawUtils
 
             if (isValid && authData != null)
             {
-                // Save the auth data
                 string authPath = GetAuthFilePath();
                 EnsureDirectoryExists(authPath);
-
-                // Serialize the auth data to JSON
                 string authJson = JsonConvert.SerializeObject(authData);
-
-                // Simple encryption by converting to bytes and XOR with a key
                 byte[] authBytes = Encoding.UTF8.GetBytes(authJson);
                 byte[] encryptedBytes = new byte[authBytes.Length];
-                byte[] key = Encoding.UTF8.GetBytes("UltiPawMagicSync"); // Simple encryption key
+                byte[] key = Encoding.UTF8.GetBytes("UltiPawMagicSync");
 
                 for (int i = 0; i < authBytes.Length; i++)
                 {
@@ -183,23 +160,17 @@ public static class UltiPawUtils
         }
     }
 
-    // Gets the current authentication data
     public static AuthData GetAuth()
     {
         try
         {
             string authPath = GetAuthFilePath();
-
-            if (!File.Exists(authPath))
-            {
-                return null;
-            }
+            if (!File.Exists(authPath)) return null;
 
             byte[] encryptedBytes = File.ReadAllBytes(authPath);
             byte[] key = Encoding.UTF8.GetBytes("UltiPawMagicSync");
             byte[] authBytes = new byte[encryptedBytes.Length];
 
-            // Decrypt the data
             for (int i = 0; i < encryptedBytes.Length; i++)
             {
                 authBytes[i] = (byte)(encryptedBytes[i] ^ key[i % key.Length]);
@@ -215,7 +186,6 @@ public static class UltiPawUtils
         }
     }
 
-    // Checks if the user has valid authentication
     public static bool HasAuth()
     {
         AuthData auth = GetAuth();
@@ -243,7 +213,6 @@ public static class UltiPawUtils
         try
         {
             string authPath = GetAuthFilePath();
-
             if (File.Exists(authPath))
             {
                 File.Delete(authPath);
@@ -253,7 +222,7 @@ public static class UltiPawUtils
             else
             {
                 Debug.Log("[UltiPawUtils] No authentication data found to remove");
-                return false;
+            return false;
             }
         }
         catch (System.Exception e)
@@ -263,44 +232,32 @@ public static class UltiPawUtils
         }
     }
 
-    // Gets the path to the authentication file
     private static string GetAuthFilePath()
     {
         string authFolder = Path.Combine(InternalEditorUtility.unityPreferencesFolder, "UltiPaw");
         return Path.Combine(authFolder, AUTH_FILENAME);
     }
 
-    // Generates the path for a specific version's data folder
-    // Uses UltiPaw version and the *Base FBX* version string
     public static string GetVersionDataPath(string ultiPawVersion, string defaultFbxVersion)
     {
-        // *** Return null if inputs are invalid ***
         if (string.IsNullOrEmpty(ultiPawVersion) || string.IsNullOrEmpty(defaultFbxVersion))
         {
-            // *** Log Warning instead of Error, and only if needed (maybe remove log entirely) ***
-            // Debug.LogWarning("[UltiPawUtils] Cannot generate version path with null/empty version strings.");
-            return null; // Indicate failure clearly
+            return null;
         }
-
         return $"{VERSIONS_FOLDER}/u{ultiPawVersion}d{defaultFbxVersion}";
     }
 
-    // Generates the full path to the downloaded .bin file for a version
     public static string GetVersionBinPath(string ultiPawVersion, string defaultFbxVersion)
     {
         string dataPath = GetVersionDataPath(ultiPawVersion, defaultFbxVersion);
-        // *** Handle null return from GetVersionDataPath ***
         if (dataPath == null) return null;
         return $"{dataPath}/ultipaw.bin";
     }
 
-    // Generates the full path to an avatar file within a version folder
-    public static string GetVersionAvatarPath(string ultiPawVersion, string defaultFbxVersion,
-        string relativeAvatarPath)
+    public static string GetVersionAvatarPath(string ultiPawVersion, string defaultFbxVersion, string relativeAvatarPath)
     {
         if (string.IsNullOrEmpty(relativeAvatarPath)) return null;
         string dataPath = GetVersionDataPath(ultiPawVersion, defaultFbxVersion);
-        // *** Handle null return from GetVersionDataPath ***
         if (dataPath == null) return null;
         return Path.Combine(dataPath, relativeAvatarPath).Replace("\\", "/");
     }
@@ -355,9 +312,9 @@ public static class UltiPawUtils
             Debug.Log($"[UltiPawUtils] Directory exists check: {Directory.Exists(absoluteDirectory)}");
 
             if (!Directory.Exists(absoluteDirectory))
+        {
+            try
             {
-                try
-                {
                     Debug.Log($"[UltiPawUtils] Creating directory: {absoluteDirectory}");
                     Directory.CreateDirectory(absoluteDirectory);
 
@@ -372,9 +329,9 @@ public static class UltiPawUtils
                         Debug.LogError(
                             $"[UltiPawUtils] Directory creation appeared to succeed but directory still doesn't exist: {absoluteDirectory}");
                     }
-                }
-                catch (System.Exception e)
-                {
+            }
+            catch (System.Exception e)
+            {
                     Debug.LogError($"[UltiPawUtils] Failed to create directory '{absoluteDirectory}': {e.Message}");
                     Debug.LogError($"[UltiPawUtils] Exception details: {e}");
                     throw; // Re-throw to let caller handle if needed
