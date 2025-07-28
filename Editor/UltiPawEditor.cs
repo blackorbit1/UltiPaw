@@ -58,6 +58,20 @@ public class UltiPawEditor : UnityEditor.Editor
         creatorModule.Initialize();
         CheckAuthentication();
         versionModule.OnEnable();
+        
+        // Subscribe to play mode state changes
+        EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+    }
+    
+    private void OnDisable()
+    {
+        // Unsubscribe from play mode state changes
+        EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
+    }
+    
+    private void OnPlayModeStateChanged(PlayModeStateChange state)
+    {
+        advancedModule?.OnPlayModeStateChanged(state);
     }
 
     public override void OnInspectorGUI()
@@ -74,6 +88,7 @@ public class UltiPawEditor : UnityEditor.Editor
         if (isAuthenticated)
         {
             creatorModule.Draw();
+            
             versionModule.Draw();
             DrawHelpBox();
             authModule.DrawLogoutButton();

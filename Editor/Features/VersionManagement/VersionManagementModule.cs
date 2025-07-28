@@ -72,6 +72,11 @@ public class VersionManagementModule
 
         if (selectedVersion == null) // If no version is selected, select the recommended version
         {
+            if(editor.recommendedVersion == null)
+            {
+                Debug.LogWarning("No recommended version available. Please select a version from the list.");
+                return;
+            }
             selectedVersion = editor.recommendedVersion;
             editor.selectedVersionForAction = selectedVersion;
         }
