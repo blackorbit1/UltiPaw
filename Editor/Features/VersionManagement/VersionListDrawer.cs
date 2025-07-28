@@ -23,9 +23,9 @@ public class VersionListDrawer
         {
             if (!editor.isFetching)
             {
-                foreach (var ver in allVersions)
+                for (var i = 0; i < allVersions.Count; i++)
                 {
-                    DrawVersionListItem(ver);
+                    DrawVersionListItem(allVersions[i], i == 0, i == allVersions.Count - 1);
                 }
             }
             else
@@ -44,12 +44,36 @@ public class VersionListDrawer
         }
     }
 
-    private void DrawVersionListItem(UltiPawVersion ver)
+    private void DrawVersionListItem(UltiPawVersion ver, bool isFirst, bool isLast)
     {
         string binPath = UltiPawUtils.GetVersionBinPath(ver.version, ver.defaultAviVersion);
         bool isDownloaded = !string.IsNullOrEmpty(binPath) && File.Exists(binPath);
         bool isSelected = ver.Equals(editor.selectedVersionForAction);
         bool isApplied = ver.Equals(editor.ultiPawTarget.appliedUltiPawVersion);
+
+        EditorGUILayout.BeginHorizontal();
+        
+        Rect timelineRect = GUILayoutUtility.GetRect(20f, 20f, GUILayout.ExpandHeight(true), GUILayout.Width(20f));
+        if (Event.current.type == EventType.Repaint)
+        {
+            Handles.color = Color.green;
+            float centerX = timelineRect.center.x;
+            
+            // Dot
+            float dotRadius = 4f;
+            Handles.DrawSolidDisc(new Vector3(centerX, timelineRect.center.y, 0), Vector3.forward, dotRadius);
+
+            // Line
+            float lineWidth = 2f;
+            if (!isFirst)
+            {
+                Handles.DrawAAPolyLine(lineWidth, new Vector3(centerX, timelineRect.yMin, 0), new Vector3(centerX, timelineRect.center.y - dotRadius, 0));
+            }
+            if (!isLast)
+            {
+                Handles.DrawAAPolyLine(lineWidth, new Vector3(centerX, timelineRect.center.y + dotRadius, 0), new Vector3(centerX, timelineRect.yMax, 0));
+            }
+        }
 
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
         EditorGUILayout.BeginHorizontal();
@@ -102,6 +126,7 @@ public class VersionListDrawer
             EditorGUILayout.HelpBox(ver.changelog, MessageType.None);
         }
         EditorGUILayout.EndVertical();
+        EditorGUILayout.EndHorizontal();
     }
     
     private void DrawScopeLabel(string text, Color textColor)
