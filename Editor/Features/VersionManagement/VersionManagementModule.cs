@@ -11,7 +11,7 @@ public class VersionManagementModule
     private readonly BlendshapeDrawer blendshapeDrawer;
     private readonly FileManagerService fileManagerService;
     
-    private enum ActionType { INSTALL, UPDATE, DOWNGRADE, UNAVAILABLE }
+    private enum ActionType { INSTALL, UPDATE, DOWNGRADE, RESET, UNAVAILABLE }
     
     private bool versionsFoldout = true;
 
@@ -40,13 +40,9 @@ public class VersionManagementModule
     {
         // TODO fileConfigDrawer.Draw();
         DrawFetchUpdatesButton();
-        versionsFoldout = EditorGUILayout.Foldout(versionsFoldout, "All UltiPaw Versions", true, EditorStyles.foldoutHeader);
         actions.DisplayErrors();
         
-        if (versionsFoldout)
-        {
-            versionListDrawer.Draw();
-        }
+        versionListDrawer.Draw();
         
         EditorGUILayout.Space();
         versionListDrawer.DrawUpdateNotification();
@@ -81,56 +77,72 @@ public class VersionManagementModule
             editor.selectedVersionForAction = selectedVersion;
         }
         
-        string binPath = UltiPawUtils.GetVersionBinPath(selectedVersion.version, selectedVersion.defaultAviVersion);
-        bool isDownloaded = !string.IsNullOrEmpty(binPath) && System.IO.File.Exists(binPath);
-        
         bool selectionIsValid = selectedVersion != null;
+        bool isResetSelected = selectedVersion == VersionListDrawer.RESET_VERSION;
         
         using (new EditorGUI.DisabledScope(!canInteract))
         {
-            // Main Apply/Update/Downgrade Button
-            using (new EditorGUI.DisabledScope(!selectionIsValid || selectedVersion.Equals(editor.ultiPawTarget.appliedUltiPawVersion)))
+            // Main Apply/Update/Downgrade/Reset Button
+            bool canReset = fileManagerService.BackupExists(actions.GetCurrentFBXPath()) || editor.isUltiPaw;
+            bool buttonDisabled = !selectionIsValid || 
+                                 (!isResetSelected && selectedVersion.Equals(editor.ultiPawTarget.appliedUltiPawVersion)) ||
+                                 (isResetSelected && !canReset);
+            
+            using (new EditorGUI.DisabledScope(buttonDisabled))
             {
                 var action = GetActionType();
-                string buttonText = GetActionButtonText(action, isDownloaded);
+                string buttonText = GetActionButtonText(action, selectedVersion);
                 
-                GUI.backgroundColor = action == ActionType.DOWNGRADE ? EditorUIUtils.OrangeColor : Color.green;
+                // Set button color based on action type
+                if (action == ActionType.DOWNGRADE)
+                {
+                    GUI.backgroundColor = EditorUIUtils.OrangeColor;
+                }
+                else if (action != ActionType.RESET) // Keep default color for reset, green for others
+                {
+                    GUI.backgroundColor = Color.green;
+                }
+                // For RESET, use default button color (no background color change)
 
                 if (GUILayout.Button(buttonText, GUILayout.Height(40)))
                 {
-                    if (EditorUtility.DisplayDialog("Confirm Transformation", $"This will modify your base FBX file using UltiPaw version '{selectedVersion.version}'.\nA backup will be created.", "Proceed", "Cancel"))
+                    if (isResetSelected)
                     {
-                        if (isDownloaded)
+                        if (EditorUtility.DisplayDialog("Confirm Reset", "This will restore the original FBX from its backup and reapply the default avatar configuration.", "Reset", "Cancel"))
                         {
-                            actions.StartApplyVersion();
+                            actions.StartReset();
                         }
-                        else
+                    }
+                    else
+                    {
+                        string binPath = UltiPawUtils.GetVersionBinPath(selectedVersion.version, selectedVersion.defaultAviVersion);
+                        bool isDownloaded = !string.IsNullOrEmpty(binPath) && System.IO.File.Exists(binPath);
+                        
+                        if (EditorUtility.DisplayDialog("Confirm Transformation", $"This will modify your base FBX file using UltiPaw version '{selectedVersion.version}'.\nA backup will be created.", "Proceed", "Cancel"))
                         {
-                            actions.StartVersionDownload(selectedVersion, true);
+                            if (isDownloaded)
+                            {
+                                actions.StartApplyVersion();
+                            }
+                            else
+                            {
+                                actions.StartVersionDownload(selectedVersion, true);
+                            }
                         }
                     }
                 }
                 GUI.backgroundColor = Color.white;
             }
 
-            // Reset Button
-            bool canRestore = fileManagerService.BackupExists(actions.GetCurrentFBXPath()) || editor.isUltiPaw;
-            using (new EditorGUI.DisabledScope(!canRestore))
-            {
-                if (GUILayout.Button("Reset to Original FBX"))
-                {
-                    if (EditorUtility.DisplayDialog("Confirm Reset", "This will restore the original FBX from its backup and reapply the default avatar configuration.", "Reset", "Cancel"))
-                    {
-                        actions.StartReset();
-                    }
-                }
-            }
+            // Note: Reset button has been removed - reset functionality is now handled through the version list
         }
     }
 
     private ActionType GetActionType()
     {
         if (editor.selectedVersionForAction == null) return ActionType.UNAVAILABLE;
+        
+        if (editor.selectedVersionForAction == VersionListDrawer.RESET_VERSION) return ActionType.RESET;
 
         if (!editor.isUltiPaw) return ActionType.INSTALL;
         
@@ -140,17 +152,21 @@ public class VersionManagementModule
         return ActionType.UNAVAILABLE;
     }
 
-    private string GetActionButtonText(ActionType action, bool isDownloaded)
+    private string GetActionButtonText(ActionType action, UltiPawVersion selectedVersion)
     {
-        if (editor.selectedVersionForAction == null) return "Select a Version";
+        if (selectedVersion == null) return "Select a Version";
         
+        if (action == ActionType.RESET) return "Reset to Original Avatar";
+        
+        string binPath = UltiPawUtils.GetVersionBinPath(selectedVersion.version, selectedVersion.defaultAviVersion);
+        bool isDownloaded = !string.IsNullOrEmpty(binPath) && System.IO.File.Exists(binPath);
         string downloadPrefix = isDownloaded ? "" : "Download and ";
 
         return action switch
         {
             ActionType.INSTALL => $"{downloadPrefix}Turn into UltiPaw",
-            ActionType.UPDATE => $"{downloadPrefix}Update to v{editor.selectedVersionForAction.version}",
-            ActionType.DOWNGRADE => $"{downloadPrefix}Downgrade to v{editor.selectedVersionForAction.version}",
+            ActionType.UPDATE => $"{downloadPrefix}Update to v{selectedVersion.version}",
+            ActionType.DOWNGRADE => $"{downloadPrefix}Downgrade to v{selectedVersion.version}",
             _ => $"Installed (v{editor.ultiPawTarget.appliedUltiPawVersion?.version})"
         };
     }
