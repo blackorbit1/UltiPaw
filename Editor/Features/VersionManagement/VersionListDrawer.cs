@@ -53,6 +53,9 @@ public class VersionListDrawer
         {
             if (!editor.isFetching)
             {
+                // Preload user info for all versions
+                UserService.PreloadUserInfo(allVersions);
+                
                 if (allVersions.Count > 0)
                 {
                     // Draw first version
@@ -128,32 +131,30 @@ public class VersionListDrawer
         // Reserve space for timeline - this will span the entire button height
         Rect timelineRect = GUILayoutUtility.GetRect(20f, 20f, GUILayout.Width(20f));
         
-        // Right side content (the clickable area)
+        // Right side content (the clickable area) - aligned to left
         EditorGUILayout.BeginVertical();
         
-        // Center the content vertically and horizontally
-        GUILayout.FlexibleSpace(); // Push content to center vertically
-        
         EditorGUILayout.BeginHorizontal();
-        GUILayout.FlexibleSpace(); // Push content to center horizontally
         
         Texture2D iconToUse = isListCollapsed ? expandIcon : collapseIcon;
         string labelText = isListCollapsed ? "expand all versions" : "collapse all versions";
         
-        // Draw icon and text without button frame, centered
+        // Draw icon and text aligned to left, vertically centered
         if (iconToUse != null)
         {
-            // Increase icon size by ~40% (from 16x16 to 22x22)
             GUILayout.Label(iconToUse, GUILayout.Width(22), GUILayout.Height(22));
-            GUILayout.Space(8); // Slightly more space between icon and text
+            GUILayout.Space(8);
         }
         
+        // Center the label vertically with the icon
+        EditorGUILayout.BeginVertical();
+        GUILayout.FlexibleSpace();
         GUILayout.Label(labelText, EditorStyles.miniLabel);
+        GUILayout.FlexibleSpace();
+        EditorGUILayout.EndVertical();
         
-        GUILayout.FlexibleSpace(); // Push content to center horizontally
+        GUILayout.FlexibleSpace(); // Push everything to the left
         EditorGUILayout.EndHorizontal();
-        
-        GUILayout.FlexibleSpace(); // Push content to center vertically
         EditorGUILayout.EndVertical();
         EditorGUILayout.EndHorizontal();
         
@@ -181,19 +182,54 @@ public class VersionListDrawer
             EditorGUIUtility.AddCursorRect(fullButtonItemRect, MouseCursor.Link);
         }
         
-        // Draw the timeline graphics (line only, no dot)
+        // Draw the timeline graphics
         if (Event.current.type == EventType.Repaint)
         {
             Color timelineColor = Color.green;
             float centerX = timelineRect.center.x;
             float lineWidth = 2f;
             
-            // Draw connecting lines through the button area (no dot)
             if (!isFirst)
             {
                 Handles.color = timelineColor;
-                Handles.DrawAAPolyLine(lineWidth, new Vector3(centerX, fullButtonItemRect.yMin, 0), new Vector3(centerX, fullButtonItemRect.yMax, 0));
+                if (isListCollapsed)
+                {
+                    // Draw dotted line when collapsed
+                    Vector3 startPoint = new Vector3(centerX, fullButtonItemRect.yMin, 0);
+                    Vector3 endPoint = new Vector3(centerX, fullButtonItemRect.yMax, 0);
+                    DrawDottedLine(startPoint, endPoint, lineWidth);
+                }
+                else
+                {
+                    // Draw solid line when expanded
+                    Handles.DrawAAPolyLine(lineWidth, new Vector3(centerX, fullButtonItemRect.yMin, 0), new Vector3(centerX, fullButtonItemRect.yMax, 0));
+                }
             }
+        }
+    }
+    
+    private void DrawDottedLine(Vector3 start, Vector3 end, float lineWidth)
+    {
+        float distance = Vector3.Distance(start, end);
+        float dashLength = 4f;
+        float gapLength = 3f;
+        float totalSegmentLength = dashLength + gapLength;
+        int segments = Mathf.FloorToInt(distance / totalSegmentLength);
+        
+        Vector3 direction = (end - start).normalized;
+        Vector3 currentPos = start;
+        
+        for (int i = 0; i < segments; i++)
+        {
+            Vector3 dashEnd = currentPos + direction * dashLength;
+            Handles.DrawAAPolyLine(lineWidth, currentPos, dashEnd);
+            currentPos = dashEnd + direction * gapLength;
+        }
+        
+        // Draw remaining partial dash if any
+        if (Vector3.Distance(currentPos, end) > 0.1f)
+        {
+            Handles.DrawAAPolyLine(lineWidth, currentPos, end);
         }
     }
 
@@ -205,8 +241,29 @@ public class VersionListDrawer
         bool isApplied = ver.Equals(editor.ultiPawTarget.appliedUltiPawVersion);
 
         DrawVersionItemInternal(ver, isFirst, isLast, isSelected, isApplied, () => {
-            GUILayout.Label($"UltiPaw {ver.version}", GUILayout.Width(100));
+            // Vertically center the version label and user info with the helpbox
+            EditorGUILayout.BeginVertical();
             GUILayout.FlexibleSpace();
+            
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label($"UltiPaw {ver.version}", GUILayout.Width(100));
+            
+            // Draw user info if available and not unsubmitted
+            if (!ver.isUnsubmitted && ver.uploaderId > 0)
+            {
+                DrawUserInfo(ver.uploaderId);
+            }
+            EditorGUILayout.EndHorizontal();
+            
+            GUILayout.FlexibleSpace();
+            EditorGUILayout.EndVertical();
+            
+            GUILayout.FlexibleSpace();
+            
+            // Vertically center the scope labels
+            EditorGUILayout.BeginVertical();
+            GUILayout.FlexibleSpace();
+            EditorGUILayout.BeginHorizontal();
             
             if (ver.isUnsubmitted)
             {
@@ -221,35 +278,115 @@ public class VersionListDrawer
             DrawScopeLabel(ver.scope.ToString(), GetColorForScope(ver.scope));
             GUILayout.Space(10);
             
+            EditorGUILayout.EndHorizontal();
+            GUILayout.FlexibleSpace();
+            EditorGUILayout.EndVertical();
+            
+            // Action buttons as clickable icons
             using (new EditorGUI.DisabledScope(editor.isDownloading || editor.isDeleting))
             {
-                // Changelog button (only show when not displaying all changelogs and changelog exists)
-                if (!displayAllChangelogs && !string.IsNullOrEmpty(ver.changelog))
-                {
-                    string changelogKey = $"{ver.version}_{ver.scope}";
-                    bool showingChangelog = individualChangelogStates.ContainsKey(changelogKey) && individualChangelogStates[changelogKey];
-                    
-                    if (GUILayout.Button(EditorGUIUtility.IconContent("UnityEditor.ConsoleWindow"), GUILayout.Width(22), GUILayout.Height(22)))
-                    {
-                        individualChangelogStates[changelogKey] = !showingChangelog;
-                    }
-                }
-                
-                if (isDownloaded)
-                {
-                    if (GUILayout.Button(EditorGUIUtility.IconContent("TreeEditor.Trash"), GUILayout.Width(22), GUILayout.Height(22)))
-                    {
-                        if (EditorUtility.DisplayDialog("Confirm Delete", $"Delete local files for version {ver.version}?", "Delete", "Cancel"))
-                            actions.StartVersionDelete(ver);
-                    }
-                }
-                else
-                {
-                    if (GUILayout.Button(EditorGUIUtility.IconContent("Download-Available"), GUILayout.Width(22), GUILayout.Height(22)))
-                        actions.StartVersionDownload(ver, false);
-                }
+                DrawActionIcons(ver);
             }
         });
+    }
+    
+    private void DrawUserInfo(int uploaderId)
+    {
+        var userInfo = UserService.GetUserInfo(uploaderId);
+        var userAvatar = UserService.GetUserAvatar(uploaderId);
+        
+        if (userInfo != null && userAvatar != null)
+        {
+            GUILayout.Label("by", EditorStyles.miniLabel, GUILayout.Width(15));
+            GUILayout.Space(3);
+            
+            // Draw avatar if available
+            if (userAvatar != null)
+            {
+                Rect avatarRect = GUILayoutUtility.GetRect(16, 16, GUILayout.Width(16), GUILayout.Height(16));
+                GUI.DrawTexture(avatarRect, userAvatar, ScaleMode.ScaleAndCrop);
+                GUILayout.Space(5);
+            }
+            
+            // Draw username
+            string displayName = userInfo?.username ?? $"User {uploaderId}";
+            GUILayout.Label(displayName, EditorStyles.miniLabel);
+        }
+        else
+        {
+            UserService.RequestUserInfo(uploaderId, () => editor.Repaint());
+            
+            // Show loading state
+            GUILayout.Label("by", EditorStyles.miniLabel, GUILayout.Width(15));
+            GUILayout.Space(3);
+            GUILayout.Label("...", EditorStyles.miniLabel);
+        }
+    }
+    
+    private void DrawActionIcons(UltiPawVersion ver)
+    {
+        string binPath = UltiPawUtils.GetVersionBinPath(ver.version, ver.defaultAviVersion);
+        bool isDownloaded = !string.IsNullOrEmpty(binPath) && File.Exists(binPath);
+        
+        EditorGUILayout.BeginVertical();
+        GUILayout.FlexibleSpace();
+        EditorGUILayout.BeginHorizontal();
+        
+        // Changelog button (only show when not displaying all changelogs and changelog exists)
+        if (!displayAllChangelogs && !string.IsNullOrEmpty(ver.changelog))
+        {
+            var changelogIcon = EditorGUIUtility.IconContent("UnityEditor.ConsoleWindow");
+            Rect changelogRect = GUILayoutUtility.GetRect(22, 22, GUILayout.Width(22), GUILayout.Height(22));
+            
+            if (Event.current.type == EventType.Repaint)
+            {
+                GUI.DrawTexture(changelogRect, changelogIcon.image);
+                if (changelogRect.Contains(Event.current.mousePosition))
+                {
+                    EditorGUIUtility.AddCursorRect(changelogRect, MouseCursor.Link);
+                }
+            }
+            
+            if (Event.current.type == EventType.MouseDown && Event.current.button == 0 && changelogRect.Contains(Event.current.mousePosition))
+            {
+                string changelogKey = $"{ver.version}_{ver.scope}";
+                bool showingChangelog = individualChangelogStates.ContainsKey(changelogKey) && individualChangelogStates[changelogKey];
+                individualChangelogStates[changelogKey] = !showingChangelog;
+                Event.current.Use();
+                editor.Repaint();
+            }
+        }
+        
+        // Download/Delete button
+        var actionIcon = isDownloaded ? EditorGUIUtility.IconContent("TreeEditor.Trash") : EditorGUIUtility.IconContent("Download-Available");
+        Rect actionRect = GUILayoutUtility.GetRect(22, 22, GUILayout.Width(22), GUILayout.Height(22));
+        
+        if (Event.current.type == EventType.Repaint)
+        {
+            GUI.DrawTexture(actionRect, actionIcon.image);
+            if (actionRect.Contains(Event.current.mousePosition))
+            {
+                EditorGUIUtility.AddCursorRect(actionRect, MouseCursor.Link);
+            }
+        }
+        
+        if (Event.current.type == EventType.MouseDown && Event.current.button == 0 && actionRect.Contains(Event.current.mousePosition))
+        {
+            if (isDownloaded)
+            {
+                if (EditorUtility.DisplayDialog("Confirm Delete", $"Delete local files for version {ver.version}?", "Delete", "Cancel"))
+                    actions.StartVersionDelete(ver);
+            }
+            else
+            {
+                actions.StartVersionDownload(ver, false);
+            }
+            Event.current.Use();
+        }
+        
+        EditorGUILayout.EndHorizontal();
+        GUILayout.FlexibleSpace();
+        EditorGUILayout.EndVertical();
     }
     
     private void DrawResetVersionItem(bool isFirst)
@@ -260,30 +397,57 @@ public class VersionListDrawer
         bool isApplied = !editor.isUltiPaw; // Reset is "applied" when we're not in UltiPaw state
 
         DrawVersionItemInternal(RESET_VERSION, isFirst, true, isSelected, isApplied, () => {
+            // Vertically center the reset label with the helpbox
+            EditorGUILayout.BeginVertical();
+            GUILayout.FlexibleSpace();
             GUILayout.Label("Base Default Winterpaw", GUILayout.Width(140));
             GUILayout.FlexibleSpace();
+            EditorGUILayout.EndVertical();
             
+            GUILayout.FlexibleSpace();
+            
+            // Vertically center the current label
             if (isApplied)
             {
+                EditorGUILayout.BeginVertical();
+                GUILayout.FlexibleSpace();
                 DrawScopeLabel("Current", new Color(0.33f, 0.79f, 0f));
+                GUILayout.FlexibleSpace();
+                EditorGUILayout.EndVertical();
                 GUILayout.Space(10);
             }
-            
-            // Removed the "Reset" label as requested
             
             // Show changelog button if not displaying all changelogs
             if (!displayAllChangelogs && !string.IsNullOrEmpty(RESET_VERSION.changelog))
             {
-                string changelogKey = "reset_base";
-                bool showingChangelog = individualChangelogStates.ContainsKey(changelogKey) && individualChangelogStates[changelogKey];
+                EditorGUILayout.BeginVertical();
+                GUILayout.FlexibleSpace();
                 
-                if (GUILayout.Button(EditorGUIUtility.IconContent("UnityEditor.ConsoleWindow"), GUILayout.Width(22), GUILayout.Height(22)))
+                var changelogIcon = EditorGUIUtility.IconContent("UnityEditor.ConsoleWindow");
+                Rect changelogRect = GUILayoutUtility.GetRect(22, 22, GUILayout.Width(22), GUILayout.Height(22));
+                
+                if (Event.current.type == EventType.Repaint)
                 {
-                    individualChangelogStates[changelogKey] = !showingChangelog;
+                    GUI.DrawTexture(changelogRect, changelogIcon.image);
+                    if (changelogRect.Contains(Event.current.mousePosition))
+                    {
+                        EditorGUIUtility.AddCursorRect(changelogRect, MouseCursor.Link);
+                    }
                 }
+                
+                if (Event.current.type == EventType.MouseDown && Event.current.button == 0 && changelogRect.Contains(Event.current.mousePosition))
+                {
+                    string changelogKey = "reset_base";
+                    bool showingChangelog = individualChangelogStates.ContainsKey(changelogKey) && individualChangelogStates[changelogKey];
+                    individualChangelogStates[changelogKey] = !showingChangelog;
+                    Event.current.Use();
+                    editor.Repaint();
+                }
+                
+                GUILayout.FlexibleSpace();
+                EditorGUILayout.EndVertical();
             }
             
-            // No download/delete buttons for reset option
         }, canReset ? null : "No backup available");
     }
     

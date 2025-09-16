@@ -34,6 +34,7 @@ public class UltiPawVersion
     [JsonProperty] public string[] defaultAviHash;
     [JsonProperty] public string[] customBlendshapes;
     [JsonProperty] public Dictionary<string, string> dependencies;
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)] public int uploaderId;
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)] public string parentVersion;
     
     // --- Fields for local unsubmitted versions ---
