@@ -5,7 +5,7 @@ using UnityEngine;
 public class VersionManagementModule
 {
     private readonly UltiPawEditor editor;
-    private readonly VersionActions actions;
+    public readonly VersionActions actions;
     public readonly FileConfigurationDrawer fileConfigDrawer;
     private readonly VersionListDrawer versionListDrawer;
     private readonly BlendshapeDrawer blendshapeDrawer;

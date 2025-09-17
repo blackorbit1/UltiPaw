@@ -1,4 +1,4 @@
-#if UNITY_EDITOR
+﻿#if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -26,6 +26,11 @@ public class UltiPawEditor : UnityEditor.Editor
     private CreatorModeModule creatorModule;
     private AdvancedModeModule advancedModule;
     
+    // --- Async Services ---
+    private AsyncTaskManager taskManager;
+    private AsyncHashService hashService;
+    private AsyncVersionService versionService;
+    
     // --- SHARED EDITOR STATE ---
     public bool isAuthenticated;
     public string authToken;
@@ -46,6 +51,15 @@ public class UltiPawEditor : UnityEditor.Editor
         ultiPawTarget = (UltiPaw)target;
         serializedObject = new SerializedObject(ultiPawTarget);
         
+        // Initialize async services first
+        taskManager = AsyncTaskManager.Instance;
+        hashService = AsyncHashService.Instance;
+        versionService = AsyncVersionService.Instance;
+        
+        // Subscribe to version service events
+        versionService.OnVersionsUpdated += OnVersionsUpdated;
+        versionService.OnVersionFetchError += OnVersionFetchError;
+        
         bannerTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(Path.Combine(UltiPawUtils.PACKAGE_BASE_FOLDER, "Editor/banner.png")); 
         FindSerializedProperties();
         
@@ -57,10 +71,15 @@ public class UltiPawEditor : UnityEditor.Editor
         creatorModule = new CreatorModeModule(this);
         advancedModule = new AdvancedModeModule(this);
         
-        LoadUnsubmittedVersions(); // Load local versions first
+        // Load local versions first (synchronous, but fast)
+        LoadUnsubmittedVersions();
+        
+        // Initialize modules
         creatorModule.Initialize();
         CheckAuthentication();
-        versionModule.OnEnable();
+        
+        // Start async initialization
+        StartAsyncInitialization();
         
         // Subscribe to play mode state changes
         EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
@@ -70,11 +89,109 @@ public class UltiPawEditor : UnityEditor.Editor
     {
         // Unsubscribe from play mode state changes
         EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
+        
+        // Unsubscribe from version service events
+        if (versionService != null)
+        {
+            versionService.OnVersionsUpdated -= OnVersionsUpdated;
+            versionService.OnVersionFetchError -= OnVersionFetchError;
+        }
     }
     
     private void OnPlayModeStateChanged(PlayModeStateChange state)
     {
         advancedModule?.OnPlayModeStateChanged(state);
+    }
+
+    private async void StartAsyncInitialization()
+    {
+        // Skip async initialization if already in progress or if we're submitting/building
+        if (isFetching || isSubmitting) return;
+
+        // Auto-detect FBX if needed (moved to background)
+        if (!specifyCustomBaseFbxProp.boolValue)
+        {
+            EditorApplication.delayCall += () => AutoDetectBaseFbxViaHierarchy();
+        }
+
+        // Try to load cached versions first to show immediately
+        string fbxPath = GetCurrentFBXPath();
+        if (!string.IsNullOrEmpty(fbxPath) && isAuthenticated)
+        {
+            var cached = versionService.GetCachedVersions(fbxPath, authToken);
+            if (cached.versions.Count > 0)
+            {
+                serverVersions = cached.versions;
+                recommendedVersion = cached.recommended;
+                Repaint();
+                Debug.Log($"[UltiPawEditor] Loaded {cached.versions.Count} cached versions");
+            }
+
+            // Start background version fetch (will update UI when complete)
+            if (!fetchAttempted)
+            {
+                fetchAttempted = true;
+                versionService.StartVersionFetchInBackground(fbxPath, authToken, useCache: true);
+            }
+        }
+    }
+
+    private void OnVersionsUpdated(System.Collections.Generic.List<UltiPawVersion> versions, UltiPawVersion recommended)
+    {
+        serverVersions = versions;
+        recommendedVersion = recommended;
+        fetchError = null; // Clear any previous errors
+        
+        // Update applied version state
+        if (versionModule?.actions != null)
+        {
+            versionModule.actions.UpdateAppliedVersionAndState();
+        }
+        
+        Repaint();
+        Debug.Log($"[UltiPawEditor] Updated with {versions.Count} server versions");
+    }
+
+    private void OnVersionFetchError(string error)
+    {
+        fetchError = error;
+        serverVersions.Clear();
+        Repaint();
+        Debug.LogError($"[UltiPawEditor] Version fetch error: {error}");
+    }
+
+    private void AutoDetectBaseFbxViaHierarchy()
+    {
+        var root = ultiPawTarget.transform.root;
+        var bodySmr = root.GetComponentsInChildren<SkinnedMeshRenderer>(true)
+            .FirstOrDefault(smr => smr.gameObject.name.Equals("Body", StringComparison.OrdinalIgnoreCase));
+        
+        if (bodySmr?.sharedMesh == null) return;
+        
+        string meshPath = AssetDatabase.GetAssetPath(bodySmr.sharedMesh);
+        if (string.IsNullOrEmpty(meshPath)) return;
+        
+        var fbxAsset = AssetDatabase.LoadAssetAtPath<GameObject>(meshPath);
+        if (fbxAsset != null && AssetImporter.GetAtPath(meshPath) is ModelImporter)
+        {
+            baseFbxFilesProp.ClearArray();
+            baseFbxFilesProp.InsertArrayElementAtIndex(0);
+            baseFbxFilesProp.GetArrayElementAtIndex(0).objectReferenceValue = fbxAsset;
+            serializedObject.ApplyModifiedProperties();
+            
+            Debug.Log($"[UltiPawEditor] Auto-detected FBX: {System.IO.Path.GetFileName(meshPath)}");
+            Repaint();
+        }
+    }
+
+    private string GetCurrentFBXPath()
+    {
+        if (baseFbxFilesProp.arraySize > 0)
+        {
+            var fbx = baseFbxFilesProp.GetArrayElementAtIndex(0).objectReferenceValue as GameObject;
+            return fbx != null ? AssetDatabase.GetAssetPath(fbx) : null;
+        }
+        return null;
     }
 
     public override void OnInspectorGUI()
@@ -84,6 +201,9 @@ public class UltiPawEditor : UnityEditor.Editor
         try
         {
             SafeUiCall(DrawBanner);
+            
+            // Draw progress bars for active tasks at the top
+            SafeUiCall(() => ProgressBarUI.DrawTaskProgressBars());
 
             if (!isAuthenticated)
             {

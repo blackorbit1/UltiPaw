@@ -244,7 +244,7 @@ public static class UltiPawUtils
         {
             return null;
         }
-        return $"{VERSIONS_FOLDER}/u{ultiPawVersion}d{defaultFbxVersion}";
+        return $"{VERSIONS_FOLDER}/u{ultiPawVersion}d{defaultFbxVersion}"; 
     }
 
     public static string GetVersionBinPath(string ultiPawVersion, string defaultFbxVersion)
@@ -260,6 +260,31 @@ public static class UltiPawUtils
         string dataPath = GetVersionDataPath(ultiPawVersion, defaultFbxVersion);
         if (dataPath == null) return null;
         return Path.Combine(dataPath, relativeAvatarPath).Replace("\\", "/");
+    }
+
+    public static string GetUltiPawDataFolder()
+    {
+        // Get the Unity Editor preferences folder and create UltiPaw subfolder
+        string dataFolder = Path.Combine(InternalEditorUtility.unityPreferencesFolder, "UltiPaw", "Data");
+        
+        // Ensure the directory exists
+        if (!Directory.Exists(dataFolder))
+        {
+            try
+            {
+                Directory.CreateDirectory(dataFolder);
+                Debug.Log($"[UltiPawUtils] Created UltiPaw data folder: {dataFolder}");
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[UltiPawUtils] Failed to create UltiPaw data folder: {ex.Message}");
+                // Fallback to temp directory
+                dataFolder = Path.Combine(Path.GetTempPath(), "UltiPaw", "Data");
+                Directory.CreateDirectory(dataFolder);
+            }
+        }
+        
+        return dataFolder;
     }
 
 
