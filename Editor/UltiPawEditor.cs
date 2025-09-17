@@ -1,4 +1,4 @@
-﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -37,6 +37,9 @@ public class UltiPawEditor : UnityEditor.Editor
     public List<UltiPawVersion> serverVersions = new List<UltiPawVersion>();
     public List<UltiPawVersion> unsubmittedVersions = new List<UltiPawVersion>();
     public UltiPawVersion recommendedVersion, selectedVersionForAction;
+    
+    public string uiRenderingError;
+    private string lastUiRenderingExceptionSignature;
     
     private void OnEnable()
     {
@@ -77,28 +80,134 @@ public class UltiPawEditor : UnityEditor.Editor
     public override void OnInspectorGUI()
     {
         serializedObject.Update();
-        
-        DrawBanner();
 
-        if (!isAuthenticated)
+        try
         {
-            authModule.DrawMagicSyncAuth();
-        }
-        
-        if (isAuthenticated)
-        {
-            creatorModule.Draw();
-            
-            versionModule.Draw();
-            DrawHelpBox();
-            authModule.DrawLogoutButton();
-        }
-        
-        advancedModule.Draw();
+            SafeUiCall(DrawBanner);
 
-        serializedObject.ApplyModifiedProperties();
+            if (!isAuthenticated)
+            {
+                SafeUiCall(() => authModule.DrawMagicSyncAuth());
+            }
+
+            if (isAuthenticated)
+            {
+                SafeUiCall(() => creatorModule.Draw());
+                SafeUiCall(() => versionModule.Draw());
+                SafeUiCall(DrawHelpBox);
+            }
+
+            DrawLogoutSectionSafely();
+            SafeUiCall(() => advancedModule.Draw());
+            DrawUiRenderingError();
+        }
+        finally
+        {
+            serializedObject.ApplyModifiedProperties();
+        }
     }
     
+    private void SafeUiCall(Action drawAction)
+    {
+        if (drawAction == null) return;
+
+        try
+        {
+            drawAction.Invoke();
+        }
+        catch (Exception ex)
+        {
+            if (ex is ExitGUIException) throw;
+            RecordUiException(ex);
+        }
+    }
+
+    private void DrawLogoutSectionSafely()
+    {
+        if (!isAuthenticated) return;
+
+        Color originalColor = GUI.backgroundColor;
+
+        try
+        {
+            authModule.DrawLogoutButton();
+        }
+        catch (Exception ex)
+        {
+            if (ex is ExitGUIException) throw;
+
+            GUI.backgroundColor = originalColor;
+            RecordUiException(ex);
+            DrawFallbackLogoutButton();
+        }
+        finally
+        {
+            GUI.backgroundColor = originalColor;
+        }
+    }
+
+    private void DrawFallbackLogoutButton()
+    {
+        EditorGUILayout.Space(10);
+        EditorGUILayout.BeginHorizontal();
+        GUILayout.FlexibleSpace();
+
+        if (GUILayout.Button("Logout", GUILayout.Width(100f), GUILayout.Height(25f)))
+        {
+            if (EditorUtility.DisplayDialog("Confirm Logout", "Are you sure you want to log out?", "Logout", "Cancel"))
+            {
+                if (UltiPawUtils.RemoveAuth())
+                {
+                    isAuthenticated = false;
+                    authToken = null;
+                    Repaint();
+                }
+            }
+        }
+
+        GUILayout.FlexibleSpace();
+        EditorGUILayout.EndHorizontal();
+        EditorGUILayout.Space(10);
+    }
+
+    private void DrawUiRenderingError()
+    {
+        if (string.IsNullOrEmpty(uiRenderingError)) return;
+
+        EditorGUILayout.Space();
+        EditorGUILayout.HelpBox(uiRenderingError, MessageType.Error);
+
+        if (GUILayout.Button("Dismiss Error Message"))
+        {
+            uiRenderingError = null;
+            lastUiRenderingExceptionSignature = null;
+        }
+    }
+
+    private void RecordUiException(Exception ex)
+    {
+        if (ex == null) return;
+
+        string baseMessage = "UltiPaw encountered a problem while drawing the editor UI. Check the Console for details.";
+        string reason = $"Reason: {ex.Message}";
+
+        if (string.IsNullOrEmpty(uiRenderingError))
+        {
+            uiRenderingError = $"{baseMessage}\n{reason}";
+        }
+        else if (!uiRenderingError.Contains(reason))
+        {
+            uiRenderingError += $"\n{reason}";
+        }
+
+        string signature = ex.ToString();
+        if (!string.Equals(lastUiRenderingExceptionSignature, signature, StringComparison.Ordinal))
+        {
+            Debug.LogException(ex);
+            lastUiRenderingExceptionSignature = signature;
+        }
+    }
+
     private void DrawBanner()
     {
         if (bannerTexture == null) return;
