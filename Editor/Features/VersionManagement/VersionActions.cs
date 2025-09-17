@@ -288,33 +288,86 @@ public class VersionActions
     public void UpdateCurrentBaseFbxHash()
     {
         string path = GetCurrentFBXPath();
-        string newHash = string.IsNullOrEmpty(path) ? null : fileManagerService.CalculateFileHash(path);
-        
-        // FIX: The hash to check against the server should be the *original* backup if it exists.
-        // This hash is used to fetch compatible versions.
-        string originalPath = path + FileManagerService.OriginalSuffix;
-        if(fileManagerService.BackupExists(path))
+        if (string.IsNullOrEmpty(path))
         {
-            editor.currentBaseFbxHash = fileManagerService.CalculateFileHash(originalPath);
+            editor.currentBaseFbxHash = null;
+            UpdateAppliedVersionAndState(null);
+            return;
+        }
+
+        // Try to get cached hashes first (non-blocking)
+        var hashService = AsyncHashService.Instance;
+        string cachedCurrentHash = hashService.GetHashIfCached(path);
+        
+        string originalPath = path + FileManagerService.OriginalSuffix;
+        string cachedOriginalHash = null;
+        bool hasBackup = fileManagerService.BackupExists(path);
+        
+        if (hasBackup)
+        {
+            cachedOriginalHash = hashService.GetHashIfCached(originalPath);
+        }
+
+        // Use cached hashes if available, otherwise start async calculation
+        if (cachedCurrentHash != null && (!hasBackup || cachedOriginalHash != null))
+        {
+            // We have all needed cached hashes - use them immediately
+            editor.currentBaseFbxHash = hasBackup ? cachedOriginalHash : cachedCurrentHash;
+            UpdateAppliedVersionAndState(cachedCurrentHash);
         }
         else
         {
-            editor.currentBaseFbxHash = newHash;
+            // Missing cache - start async hash calculation and use placeholder for now
+            editor.currentBaseFbxHash = null; // Will be updated when async calculation completes
+            
+            // Start async hash calculation in background
+            _ = System.Threading.Tasks.Task.Run(async () =>
+            {
+                try
+                {
+                    string currentHash = await hashService.CalculateFileHashAsync(path, null, true);
+                    string originalHash = null;
+                    
+                    if (hasBackup)
+                    {
+                        originalHash = await hashService.CalculateFileHashAsync(originalPath, null, true);
+                    }
+                    
+                    // Update on main thread when calculation completes
+                    AsyncTaskManager.Instance.ExecuteOnMainThread(() =>
+                    {
+                        editor.currentBaseFbxHash = hasBackup ? originalHash : currentHash;
+                        UpdateAppliedVersionAndState(currentHash);
+                        editor.Repaint();
+                    });
+                }
+                catch (System.Exception ex)
+                {
+                    UnityEngine.Debug.LogError($"[VersionActions] Async hash calculation failed: {ex.Message}");
+                }
+            });
         }
-
-        // We also need the hash of the file as it is *now* to check which version is applied.
-        string currentFileHash = newHash;
-        UpdateAppliedVersionAndState(currentFileHash);
     }
     
     // FIX: Centralized and corrected state detection logic. This is the single source of truth.
     public void UpdateAppliedVersionAndState(string currentFileHash = null)
     {
-        // If currentFileHash isn't provided, calculate it now.
+        // If currentFileHash isn't provided, try to get it from cache only (non-blocking)
         if (currentFileHash == null)
         {
             string path = GetCurrentFBXPath();
-            currentFileHash = string.IsNullOrEmpty(path) ? null : fileManagerService.CalculateFileHash(path);
+            if (!string.IsNullOrEmpty(path))
+            {
+                var hashService = AsyncHashService.Instance;
+                currentFileHash = hashService.GetHashIfCached(path);
+            }
+            
+            // If we don't have a cached hash, skip state update for now
+            // The state will be updated later when the async hash calculation completes
+            if (string.IsNullOrEmpty(currentFileHash))
+            {
+                return;
+            }
         }
 
         if (string.IsNullOrEmpty(currentFileHash) || editor.serverVersions == null)

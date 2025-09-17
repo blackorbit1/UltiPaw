@@ -1,4 +1,4 @@
-﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 using UnityEditor;
 using UnityEngine;
 
@@ -14,6 +14,10 @@ public class VersionManagementModule
     private enum ActionType { INSTALL, UPDATE, DOWNGRADE, RESET, UNAVAILABLE }
     
     private bool versionsFoldout = true;
+    private bool hasShownMissingVersionWarning;
+    private UltiPawVersion lastSelectionForWarning;
+    private bool lastRecommendedWasNull;
+
 
     public VersionManagementModule(UltiPawEditor editor, NetworkService network, FileManagerService files)
     {
@@ -28,12 +32,21 @@ public class VersionManagementModule
     public void OnEnable()
     {
         fileConfigDrawer.OnEnable();
+        ResetMissingVersionWarning();
     }
 
     public void OnFBXChange()
     {
+        ResetMissingVersionWarning();
         actions.UpdateCurrentBaseFbxHash();
         actions.StartVersionFetch();
+    }
+
+    public void ResetMissingVersionWarning()
+    {
+        hasShownMissingVersionWarning = false;
+        lastSelectionForWarning = editor.selectedVersionForAction;
+        lastRecommendedWasNull = editor.recommendedVersion == null;
     }
 
     public void Draw()
@@ -56,6 +69,7 @@ public class VersionManagementModule
         {
             if (GUILayout.Button(editor.isFetching ? "Fetching..." : "Check for Updates"))
             {
+                ResetMissingVersionWarning();
                 actions.StartVersionFetch();
             }
         }
@@ -65,16 +79,29 @@ public class VersionManagementModule
     {
         bool canInteract = !editor.isFetching && !editor.isDownloading && !editor.isDeleting;
         var selectedVersion = editor.selectedVersionForAction;
+        bool recommendedIsNull = editor.recommendedVersion == null;
+        if (editor.selectedVersionForAction != lastSelectionForWarning || recommendedIsNull != lastRecommendedWasNull)
+        {
+            hasShownMissingVersionWarning = false;
+            lastSelectionForWarning = editor.selectedVersionForAction;
+            lastRecommendedWasNull = recommendedIsNull;
+        }
+
 
         if (selectedVersion == null) // If no version is selected, select the recommended version
         {
-            if(editor.recommendedVersion == null)
+            if (editor.recommendedVersion == null)
             {
-                Debug.LogWarning("No recommended version available. Please select a version from the list.");
+                if (!hasShownMissingVersionWarning)
+                {
+                    Debug.LogWarning("[UltiPawEditor] No recommended version available. Please select a version from the list.");
+                    hasShownMissingVersionWarning = true;
+                }
                 return;
             }
             selectedVersion = editor.recommendedVersion;
             editor.selectedVersionForAction = selectedVersion;
+            lastSelectionForWarning = editor.selectedVersionForAction;
         }
         
         bool selectionIsValid = selectedVersion != null;
@@ -84,9 +111,9 @@ public class VersionManagementModule
         {
             // Main Apply/Update/Downgrade/Reset Button
             bool canReset = fileManagerService.BackupExists(actions.GetCurrentFBXPath()) || editor.isUltiPaw;
-            bool buttonDisabled = !selectionIsValid || 
-                                 (!isResetSelected && selectedVersion.Equals(editor.ultiPawTarget.appliedUltiPawVersion)) ||
-                                 (isResetSelected && !canReset);
+            bool buttonDisabled = !selectionIsValid ||
+                                   (!isResetSelected && selectedVersion.Equals(editor.ultiPawTarget.appliedUltiPawVersion)) ||
+                                   (isResetSelected && !canReset);
             
             using (new EditorGUI.DisabledScope(buttonDisabled))
             {
@@ -144,7 +171,7 @@ public class VersionManagementModule
         
         if (editor.selectedVersionForAction == VersionListDrawer.RESET_VERSION) return ActionType.RESET;
 
-        if (!editor.isUltiPaw) return ActionType.INSTALL;
+        if (!editor.isUltiPaw) return ActionType.INSTALL; 
         
         var compare = editor.CompareVersions(editor.selectedVersionForAction.version, editor.ultiPawTarget.appliedUltiPawVersion?.version ?? "0.0.0");
         if (compare > 0) return ActionType.UPDATE;

@@ -15,6 +15,7 @@ public class TaskProgress
     public bool hasError;
     public string errorMessage;
     public bool isCancelled;
+    public bool isUiHidden; // if true, ProgressBarManager should not display this task
     
     public TaskProgress(string id, string description)
     {
@@ -25,6 +26,7 @@ public class TaskProgress
         this.hasError = false;
         this.errorMessage = null;
         this.isCancelled = false;
+        this.isUiHidden = false;
     }
 }
 
@@ -58,6 +60,11 @@ public class AsyncTaskManager
 
     public TaskProgress StartTask(string taskId, string description, List<string> dependencies = null)
     {
+        return StartTask(taskId, description, false, dependencies);
+    }
+
+    public TaskProgress StartTask(string taskId, string description, bool hideInUi, List<string> dependencies = null)
+    {
         if (activeTasks.ContainsKey(taskId))
         {
             Debug.LogWarning($"[AsyncTaskManager] Task '{taskId}' already exists. Returning existing task.");
@@ -65,6 +72,7 @@ public class AsyncTaskManager
         }
 
         var taskProgress = new TaskProgress(taskId, description);
+        taskProgress.isUiHidden = hideInUi;
         activeTasks[taskId] = taskProgress;
         
         if (dependencies != null && dependencies.Count > 0)
@@ -73,7 +81,7 @@ public class AsyncTaskManager
         }
 
         OnTaskStarted?.Invoke(taskProgress);
-        Debug.Log($"[AsyncTaskManager] Started task: {taskId} - {description}");
+        Debug.Log($"[AsyncTaskManager] Started task: {taskId} - {description} (hidden: {hideInUi})");
         
         return taskProgress;
     }
@@ -224,6 +232,138 @@ public class AsyncTaskManager
         {
             mainThreadCallbacks.Add(action);
         }
+    }
+    
+    public Task ExecuteOnMainThreadAsync(Action action)
+    {
+        if (action == null) throw new ArgumentNullException(nameof(action));
+
+        var tcs = new TaskCompletionSource<bool>();
+        ExecuteOnMainThread(() =>
+        {
+            try
+            {
+                action();
+                tcs.TrySetResult(true);
+            }
+            catch (Exception ex)
+            {
+                tcs.TrySetException(ex);
+            }
+        });
+        return tcs.Task;
+    }
+
+    public Task<T> ExecuteOnMainThreadAsync<T>(Func<T> func)
+    {
+        if (func == null) throw new ArgumentNullException(nameof(func));
+
+        var tcs = new TaskCompletionSource<T>();
+        ExecuteOnMainThread(() =>
+        {
+            try
+            {
+                var result = func();
+                tcs.TrySetResult(result);
+            }
+            catch (Exception ex)
+            {
+                tcs.TrySetException(ex);
+            }
+        });
+        return tcs.Task;
+    }
+
+    public Task ExecuteOnMainThreadAsync(Func<Task> func)
+    {
+        if (func == null) throw new ArgumentNullException(nameof(func));
+
+        var tcs = new TaskCompletionSource<bool>();
+        ExecuteOnMainThread(() =>
+        {
+            Task taskInstance;
+            try
+            {
+                taskInstance = func();
+            }
+            catch (Exception ex)
+            {
+                tcs.TrySetException(ex);
+                return;
+            }
+
+            if (taskInstance == null)
+            {
+                tcs.TrySetResult(true);
+                return;
+            }
+
+            taskInstance.ContinueWith(t =>
+            {
+                if (t.IsFaulted)
+                {
+                    var exception = t.Exception != null && t.Exception.InnerExceptions.Count == 1
+                        ? t.Exception.InnerException
+                        : t.Exception;
+                    tcs.TrySetException(exception ?? new Exception("Main thread task faulted."));
+                }
+                else if (t.IsCanceled)
+                {
+                    tcs.TrySetCanceled();
+                }
+                else
+                {
+                    tcs.TrySetResult(true);
+                }
+            }, TaskScheduler.Default);
+        });
+        return tcs.Task;
+    }
+
+    public Task<T> ExecuteOnMainThreadAsync<T>(Func<Task<T>> func)
+    {
+        if (func == null) throw new ArgumentNullException(nameof(func));
+
+        var tcs = new TaskCompletionSource<T>();
+        ExecuteOnMainThread(() =>
+        {
+            Task<T> taskInstance;
+            try
+            {
+                taskInstance = func();
+            }
+            catch (Exception ex)
+            {
+                tcs.TrySetException(ex);
+                return;
+            }
+
+            if (taskInstance == null)
+            {
+                tcs.TrySetResult(default(T));
+                return;
+            }
+
+            taskInstance.ContinueWith(t =>
+            {
+                if (t.IsFaulted)
+                {
+                    var exception = t.Exception != null && t.Exception.InnerExceptions.Count == 1
+                        ? t.Exception.InnerException
+                        : t.Exception;
+                    tcs.TrySetException(exception ?? new Exception("Main thread task faulted."));
+                }
+                else if (t.IsCanceled)
+                {
+                    tcs.TrySetCanceled();
+                }
+                else
+                {
+                    tcs.TrySetResult(t.Result);
+                }
+            }, TaskScheduler.Default);
+        });
+        return tcs.Task;
     }
 
     private void ProcessMainThreadCallbacks()

@@ -56,6 +56,9 @@ public class UltiPawEditor : UnityEditor.Editor
         hashService = AsyncHashService.Instance;
         versionService = AsyncVersionService.Instance;
         
+        // Ensure ProgressBarManager is initialized early so it subscribes to task events
+        var __ensureProgressBars = ProgressBarManager.Instance;
+        
         // Subscribe to version service events
         versionService.OnVersionsUpdated += OnVersionsUpdated;
         versionService.OnVersionFetchError += OnVersionFetchError;
@@ -108,31 +111,16 @@ public class UltiPawEditor : UnityEditor.Editor
         // Skip async initialization if already in progress or if we're submitting/building
         if (isFetching || isSubmitting) return;
 
-        // Auto-detect FBX if needed (moved to background)
+        // Auto-detect FBX immediately (synchronously) to avoid missing detection on first draw
         if (!specifyCustomBaseFbxProp.boolValue)
         {
-            EditorApplication.delayCall += () => AutoDetectBaseFbxViaHierarchy();
+            DetectAndLoadCached();
+            // Also schedule another attempt on next editor tick to catch late-loaded assets
+            EditorApplication.delayCall += DetectAndLoadCached;
         }
-
-        // Try to load cached versions first to show immediately
-        string fbxPath = GetCurrentFBXPath();
-        if (!string.IsNullOrEmpty(fbxPath) && isAuthenticated)
+        else
         {
-            var cached = versionService.GetCachedVersions(fbxPath, authToken);
-            if (cached.versions.Count > 0)
-            {
-                serverVersions = cached.versions;
-                recommendedVersion = cached.recommended;
-                Repaint();
-                Debug.Log($"[UltiPawEditor] Loaded {cached.versions.Count} cached versions");
-            }
-
-            // Start background version fetch (will update UI when complete)
-            if (!fetchAttempted)
-            {
-                fetchAttempted = true;
-                versionService.StartVersionFetchInBackground(fbxPath, authToken, useCache: true);
-            }
+            TryLoadCachedVersionsAndRefetch();
         }
     }
 
@@ -150,6 +138,44 @@ public class UltiPawEditor : UnityEditor.Editor
         
         Repaint();
         Debug.Log($"[UltiPawEditor] Updated with {versions.Count} server versions");
+    }
+
+    private void TryLoadCachedVersionsAndRefetch()
+    {
+        string fbxPath = GetCurrentFBXPath();
+        if (!string.IsNullOrEmpty(fbxPath) && isAuthenticated)
+        {
+            var cached = versionService.GetCachedVersions(fbxPath, authToken);
+            if (cached.versions.Count > 0)
+            {
+                serverVersions = cached.versions;
+                recommendedVersion = cached.recommended;
+                if (versionModule != null && versionModule.actions != null)
+                {
+                    versionModule.actions.UpdateAppliedVersionAndState();
+                }
+                Repaint();
+                Debug.Log($"[UltiPawEditor] Loaded {cached.versions.Count} cached versions");
+            }
+
+            // Start background version fetch (will update UI when complete)
+            if (!fetchAttempted)
+            {
+                fetchAttempted = true;
+                versionService.StartVersionFetchInBackground(fbxPath, authToken, useCache: true);
+            }
+        }
+    }
+
+    private void DetectAndLoadCached()
+    {
+        AutoDetectBaseFbxViaHierarchy();
+        // Immediately update hash state so UI knows an FBX is present
+        if (versionModule != null && versionModule.actions != null)
+        {
+            versionModule.actions.UpdateCurrentBaseFbxHash();
+        }
+        TryLoadCachedVersionsAndRefetch();
     }
 
     private void OnVersionFetchError(string error)
@@ -181,6 +207,9 @@ public class UltiPawEditor : UnityEditor.Editor
             
             Debug.Log($"[UltiPawEditor] Auto-detected FBX: {System.IO.Path.GetFileName(meshPath)}");
             Repaint();
+
+            // After detection, immediately try to load cached versions and start a background refresh
+            TryLoadCachedVersionsAndRefetch();
         }
     }
 
@@ -203,7 +232,7 @@ public class UltiPawEditor : UnityEditor.Editor
             SafeUiCall(DrawBanner);
             
             // Draw progress bars for active tasks at the top
-            SafeUiCall(() => ProgressBarUI.DrawTaskProgressBars());
+            SafeUiCall(() => ProgressBarManager.Instance.DrawProgressBars());
 
             if (!isAuthenticated)
             {

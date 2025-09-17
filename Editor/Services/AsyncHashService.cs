@@ -22,11 +22,20 @@ public class AsyncHashService
     private const int BUFFER_SIZE = 1024 * 1024; // 1MB buffer for reading files
     private readonly object _lockObject = new object();
 
+    // Deduplicate concurrent hash requests per normalized file path
+    private readonly System.Collections.Generic.Dictionary<string, Task<string>> _inflightByPath = new System.Collections.Generic.Dictionary<string, Task<string>>();
+
     private AsyncHashService()
     {
     }
 
     public async Task<string> CalculateFileHashAsync(string filePath, string taskId = null)
+    {
+        // Default behavior: visible task
+        return await CalculateFileHashAsync(filePath, taskId, false);
+    }
+
+    public async Task<string> CalculateFileHashAsync(string filePath, string taskId, bool hideUi)
     {
         if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
         {
@@ -34,34 +43,58 @@ public class AsyncHashService
             return null;
         }
 
+        // Normalize path for consistent cache/inflight keys
+        string normalizedPath = Path.GetFullPath(filePath);
+
         // Check cache first
-        string cachedHash = PersistentCache.Instance.GetCachedHash(filePath);
+        string cachedHash = PersistentCache.Instance.GetCachedHash(normalizedPath);
         if (!string.IsNullOrEmpty(cachedHash))
         {
-            Debug.Log($"[AsyncHashService] Using cached hash for: {Path.GetFileName(filePath)}");
+            Debug.Log($"[AsyncHashService] Using cached hash for: {Path.GetFileName(normalizedPath)}");
             return cachedHash;
+        }
+
+        // If a hash calculation is already in-flight for this file, await it instead of starting a new task
+        Task<string> existing = null;
+        lock (_lockObject)
+        {
+            if (_inflightByPath.TryGetValue(normalizedPath, out existing))
+            {
+                // fall through and await outside the lock
+            }
+        }
+        if (existing != null)
+        {
+            return await existing; // join existing computation
         }
 
         // Generate unique task ID if not provided
         if (string.IsNullOrEmpty(taskId))
         {
-            taskId = $"hash_{Path.GetFileName(filePath)}_{Guid.NewGuid().ToString().Substring(0, 8)}";
+            taskId = $"hash_{Path.GetFileName(normalizedPath)}_{Guid.NewGuid().ToString().Substring(0, 8)}";
         }
 
         var taskManager = AsyncTaskManager.Instance;
-        var fileName = Path.GetFileName(filePath);
+        var fileName = Path.GetFileName(normalizedPath);
         
-        // Start the task
-        taskManager.StartTask(taskId, $"Calculating hash for {fileName}");
+        // Start the task (optionally hidden)
+        taskManager.StartTask(taskId, $"Calculating hash for {fileName}", hideUi);
+
+        // Create computation task and register as in-flight
+        Task<string> computeTask = Task.Run(() => CalculateHashInternal(normalizedPath, taskId, taskManager));
+        lock (_lockObject)
+        {
+            _inflightByPath[normalizedPath] = computeTask;
+        }
 
         try
         {
-            var hash = await Task.Run(() => CalculateHashInternal(filePath, taskId, taskManager));
+            var hash = await computeTask;
             
             // Cache the result
             if (!string.IsNullOrEmpty(hash))
             {
-                PersistentCache.Instance.CacheHash(filePath, hash);
+                PersistentCache.Instance.CacheHash(normalizedPath, hash);
             }
             
             taskManager.CompleteTask(taskId);
@@ -72,6 +105,17 @@ public class AsyncHashService
             Debug.LogError($"[AsyncHashService] Hash calculation failed for {fileName}: {ex.Message}");
             taskManager.CompleteTask(taskId, true, ex.Message);
             return null;
+        }
+        finally
+        {
+            lock (_lockObject)
+            {
+                Task<string> t;
+                if (_inflightByPath.TryGetValue(normalizedPath, out t) && t == computeTask)
+                {
+                    _inflightByPath.Remove(normalizedPath);
+                }
+            }
         }
     }
 
@@ -87,36 +131,45 @@ public class AsyncHashService
             byte[] buffer = new byte[BUFFER_SIZE];
             int bytesRead;
 
+            if (totalBytes == 0)
+            {
+                // Empty file
+                sha256.TransformFinalBlock(new byte[0], 0, 0);
+                taskManager.UpdateTaskProgress(taskId, 1.0f);
+                return BitConverter.ToString(sha256.Hash).Replace("-", "").ToLowerInvariant();
+            }
+
             while ((bytesRead = fileStream.Read(buffer, 0, buffer.Length)) > 0)
             {
-                // Update progress
                 processedBytes += bytesRead;
-                float progress = totalBytes > 0 ? (float)processedBytes / totalBytes : 1.0f;
-                
-                taskManager.UpdateTaskProgress(taskId, progress);
+                bool isFinal = fileStream.Position >= totalBytes;
 
-                // Add data to hash
-                if (bytesRead == buffer.Length)
-                {
-                    sha256.TransformBlock(buffer, 0, bytesRead, null, 0);
-                }
-                else
+                if (isFinal)
                 {
                     sha256.TransformFinalBlock(buffer, 0, bytesRead);
                 }
+                else
+                {
+                    sha256.TransformBlock(buffer, 0, bytesRead, buffer, 0);
+                }
+
+                float progress = totalBytes > 0 ? (float)processedBytes / totalBytes : 1.0f;
+                taskManager.UpdateTaskProgress(taskId, progress);
+
+                if (isFinal)
+                {
+                    break;
+                }
 
                 // Yield control periodically to prevent UI blocking
-                if (processedBytes % (BUFFER_SIZE * 10) == 0) // Every 10MB
+                if ((processedBytes & ((BUFFER_SIZE * 4) - 1)) == 0) // roughly every 4MB
                 {
-                    System.Threading.Thread.Sleep(1); // Brief pause to yield
+                    System.Threading.Thread.Sleep(1);
                 }
             }
 
-            // Finalize hash if not already done
-            if (processedBytes == totalBytes && bytesRead == BUFFER_SIZE)
-            {
-                sha256.TransformFinalBlock(new byte[0], 0, 0);
-            }
+            // Ensure UI shows completion
+            taskManager.UpdateTaskProgress(taskId, 1.0f);
 
             var hashBytes = sha256.Hash;
             return BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();

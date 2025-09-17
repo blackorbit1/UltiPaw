@@ -1,4 +1,4 @@
-﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -24,6 +24,9 @@ public class AsyncVersionService
     private readonly PersistentCache cache;
     private readonly AsyncTaskManager taskManager;
 
+    // Track in-flight fetches to prevent duplicates per FBX path + token
+    private readonly System.Collections.Generic.Dictionary<string, Task> inflightFetches = new System.Collections.Generic.Dictionary<string, Task>();
+
     // Events for UI updates
     public event Action<List<UltiPawVersion>, UltiPawVersion> OnVersionsUpdated;
     public event Action<string> OnVersionFetchError; 
@@ -31,7 +34,7 @@ public class AsyncVersionService
     private AsyncVersionService()
     {
         networkService = new NetworkService();
-        hashService = AsyncHashService.Instance;
+        hashService = AsyncHashService.Instance; 
         cache = PersistentCache.Instance;
         taskManager = AsyncTaskManager.Instance;
     }
@@ -39,6 +42,23 @@ public class AsyncVersionService
     public async Task<(List<UltiPawVersion> versions, UltiPawVersion recommended, string error)> FetchVersionsAsync(
         string fbxPath, string authToken, bool useCache = true)
     {
+        // Fast path: if we can resolve the base hash from cache and versions are cached, avoid creating any task
+        if (useCache)
+        {
+            string cachedBaseHash = GetBaseFbxHashIfCached(fbxPath);
+            if (!string.IsNullOrEmpty(cachedBaseHash))
+            {
+                var cachedEntryFast = cache.GetCachedVersions(cachedBaseHash, authToken);
+                if (cachedEntryFast != null)
+                {
+                    Debug.Log($"[AsyncVersionService] Fast cache hit, returning versions without UI task for hash: {cachedBaseHash}");
+                    taskManager.ExecuteOnMainThread(() =>
+                        OnVersionsUpdated?.Invoke(cachedEntryFast.serverVersions, cachedEntryFast.recommendedVersion));
+                    return (cachedEntryFast.serverVersions, cachedEntryFast.recommendedVersion, null);
+                }
+            }
+        }
+
         var taskId = $"fetch_versions_{Guid.NewGuid().ToString().Substring(0, 8)}";
         var fileName = System.IO.Path.GetFileName(fbxPath);
         
@@ -81,7 +101,7 @@ public class AsyncVersionService
             taskManager.UpdateTaskProgress(taskId, 0.5f, "Fetching from server...");
             
             string url = $"{UltiPawUtils.getServerUrl()}{UltiPawUtils.VERSION_ENDPOINT}?d={baseFbxHash}&t={authToken}";
-            var fetchTask = networkService.FetchVersionsAsync(url);
+            var fetchTask = taskManager.ExecuteOnMainThreadAsync(() => networkService.FetchVersionsAsync(url));
 
             // Wait for network request with progress updates
             var random = new System.Random();
@@ -91,7 +111,8 @@ public class AsyncVersionService
                 taskManager.UpdateTaskProgress(taskId, 0.5f + (0.4f * (float)random.NextDouble()), "Waiting for server response...");
             }
 
-            var (success, response, fetchError) = fetchTask.Result;
+            var (success, response, fetchError) = await fetchTask;
+
             
             if (success && response != null)
             {
@@ -101,7 +122,7 @@ public class AsyncVersionService
                 var recommendedVersion = versions.FirstOrDefault(v => v.version == response.recommendedVersion);
 
                 // Cache the results
-                cache.CacheVersions(baseFbxHash, versions, recommendedVersion, authToken);
+                await Task.Run(() => cache.CacheVersions(baseFbxHash, versions, recommendedVersion, authToken));
 
                 taskManager.CompleteTask(taskId);
                 
@@ -147,13 +168,37 @@ public class AsyncVersionService
         }
     }
 
+    private string GetBaseFbxHashIfCached(string fbxPath)
+    {
+        if (string.IsNullOrEmpty(fbxPath)) return null;
+        string originalPath = fbxPath + FileManagerService.OriginalSuffix;
+        if (System.IO.File.Exists(originalPath))
+        {
+            string orig = hashService.GetHashIfCached(originalPath);
+            if (!string.IsNullOrEmpty(orig)) return orig;
+        }
+        return hashService.GetHashIfCached(fbxPath);
+    }
+
     public void StartVersionFetchInBackground(string fbxPath, string authToken, bool useCache = true)
     {
-        _ = Task.Run(async () =>
+        if (string.IsNullOrEmpty(fbxPath) || string.IsNullOrEmpty(authToken))
+            return;
+        string key = System.IO.Path.GetFullPath(fbxPath) + "|" + authToken;
+        lock (inflightFetches)
         {
-            await FetchVersionsAsync(fbxPath, authToken, useCache);
-        });
+            Task running;
+            if (inflightFetches.TryGetValue(key, out running) && running != null && !running.IsCompleted)
+            {
+                // Already fetching for this FBX+token
+                return;
+            }
+            var t = FetchVersionsAsync(fbxPath, authToken, useCache);
+            inflightFetches[key] = t;
+            t.ContinueWith(_ => { lock (inflightFetches) { inflightFetches.Remove(key); } }, TaskScheduler.Default);
+        }
     }
+
 
     public bool AreVersionsCached(string fbxPath, string authToken)
     {
@@ -215,8 +260,8 @@ public class AsyncVersionService
 
             taskManager.UpdateTaskProgress(taskId, 0.1f, "Starting download...");
 
-            var downloadTask = networkService.DownloadFileAsync(url, tempZipPath);
-            
+            var downloadTask = taskManager.ExecuteOnMainThreadAsync(() => networkService.DownloadFileAsync(url, tempZipPath));
+
             // Monitor download progress
             var random = new System.Random();
             while (!downloadTask.IsCompleted)
@@ -226,7 +271,8 @@ public class AsyncVersionService
                 taskManager.UpdateTaskProgress(taskId, 0.1f + (0.7f * (float)random.NextDouble()), $"Downloading {version.version}...");
             }
 
-            var (success, error) = downloadTask.Result;
+            var (success, error) = await downloadTask;
+
             
             if (success)
             {

@@ -46,6 +46,48 @@ public static class EditorUIUtils
         GUI.Label(rect, text, labelStyle);
     }
 
+    public static void DrawProgressBar(string label, float progress, int width = 300, int height = 20, 
+        Color? backgroundColor = null, Color? progressColor = null, Color? textColor = null)
+    {
+        progress = Mathf.Clamp01(progress);
+        
+        Color bgColor = backgroundColor ?? new Color(0.3f, 0.3f, 0.3f);
+        Color progColor = progressColor ?? new Color(0.2f, 0.8f, 0.2f);
+        Color txtColor = textColor ?? Color.white;
+
+        Rect rect = GUILayoutUtility.GetRect(width, height);
+        
+        // Draw background
+        Handles.BeginGUI();
+        Color oldColor = Handles.color;
+        Handles.color = bgColor;
+        DrawRoundedRect(rect, 4f);
+        
+        // Draw progress fill
+        if (progress > 0)
+        {
+            Rect progressRect = new Rect(rect.x, rect.y, rect.width * progress, rect.height);
+            Handles.color = progColor;
+            DrawRoundedRect(progressRect, 4f);
+        }
+        
+        Handles.color = oldColor;
+        Handles.EndGUI();
+
+        // Draw text
+        var labelStyle = new GUIStyle(EditorStyles.label)
+        {
+            alignment = TextAnchor.MiddleCenter,
+            fontSize = 10,
+            fontStyle = FontStyle.Normal,
+            normal = { textColor = txtColor },
+            padding = new RectOffset(4, 4, 2, 2)
+        };
+        
+        string displayText = $"{label} ({Mathf.RoundToInt(progress * 100)}%)";
+        GUI.Label(rect, displayText, labelStyle);
+    }
+
     private static void DrawRoundedRect(Rect rect, float radius)
     {
         List<Vector3> verts = new List<Vector3>();
