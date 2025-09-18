@@ -393,7 +393,7 @@ public class CreatorModeModule
         if (buildError != null)
         {
             editor.submitError = buildError.Message;
-            Debug.LogError($"[CreatorMode] Test Build failed: {buildError}");
+            UltiPawLogger.LogError($"[CreatorMode] Test Build failed: {buildError}");
         }
         else
         {
@@ -463,7 +463,7 @@ public class CreatorModeModule
         catch (Exception ex)
         {
             editor.submitError = ex.Message;
-            Debug.LogError($"[CreatorMode] Submission failed: {ex}");
+            UltiPawLogger.LogError($"[CreatorMode] Submission failed: {ex}");
         }
         finally
         {

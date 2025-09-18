@@ -23,7 +23,7 @@ public static class UltiPawUtils
     public const string CUSTOM_LOGIC_NAME = "ultipaw logic.asset";
 
     public static bool isDevEnvironment = false; // Set to true for development environment
-    public const string SERVER_BASE_URL = "api.orbiters.cc/unity-wizard"; // Update with your server URL
+    public const string SERVER_BASE_URL = "api.orbiters.cc/"; // Update with your server URL
     public const string VERSION_ENDPOINT = "/ultipaw/versions";
     public const string MODEL_ENDPOINT = "/ultipaw/model";
     private const string TOKEN_ENDPOINT = "/token"; // Replace with your actual API endpoint
@@ -34,15 +34,15 @@ public static class UltiPawUtils
     private const string AUTH_FILENAME = "auth.dat";
     private static HttpClient client = new HttpClient();
     
-    public static string getServerUrl()
+    public static string getServerUrl(string scope = "unity-wizard")
     {
         if (isDevEnvironment)
         {
-            return "http://localhost:4100/unity-wizard";
+            return "http://localhost:4100/" + scope;
         }
         else
         {
-            return "https://" + SERVER_BASE_URL;
+            return "https://" + SERVER_BASE_URL + scope;
         }
     }
 
@@ -51,7 +51,7 @@ public static class UltiPawUtils
     {
         if (!File.Exists(filePath))
         {
-            Debug.LogError($"[UltiPawUtils] File not found for hashing: {filePath}");
+            UltiPawLogger.LogError($"[UltiPawUtils] File not found for hashing: {filePath}");
             return null;
         }
 
@@ -88,7 +88,7 @@ public static class UltiPawUtils
             if (!string.IsNullOrEmpty(clipboardContent) && tokenPattern.IsMatch(clipboardContent))
             {
                 tokenToUse = clipboardContent;
-                Debug.Log("[UltiPawUtils] Found valid token pattern in clipboard");
+                UltiPawLogger.Log("[UltiPawUtils] Found valid token pattern in clipboard");
             }
 
             AuthData authData = null;
@@ -112,18 +112,18 @@ public static class UltiPawUtils
                     else if ((int)response.StatusCode == 425)
                     {
                         retryCount++;
-                        Debug.Log($"[UltiPawUtils] Server is processing request (Status 425). Retry {retryCount}/{maxRetries}");
+                        UltiPawLogger.Log($"[UltiPawUtils] Server is processing request (Status 425). Retry {retryCount}/{maxRetries}");
                         await Task.Delay(1000);
                     }
                     else
                     {
-                        Debug.LogWarning($"[UltiPawUtils] Authentication failed with status code {response.StatusCode}");
+                        UltiPawLogger.LogWarning($"[UltiPawUtils] Authentication failed with status code {response.StatusCode}");
                         return false;
                     }
                 }
                 catch (System.Exception e)
                 {
-                    Debug.LogError($"[UltiPawUtils] Error during authentication attempt {retryCount + 1}: {e.Message}");
+                    UltiPawLogger.LogError($"[UltiPawUtils] Error during authentication attempt {retryCount + 1}: {e.Message}");
                     retryCount++;
                     await Task.Delay(1000);
                 }
@@ -144,18 +144,18 @@ public static class UltiPawUtils
                 }
 
                 File.WriteAllBytes(authPath, encryptedBytes);
-                Debug.Log("[UltiPawUtils] Authentication data stored successfully");
+                UltiPawLogger.Log("[UltiPawUtils] Authentication data stored successfully");
                 return true;
             }
             else
             {
-                Debug.LogWarning("[UltiPawUtils] Authentication failed after maximum retries");
+                UltiPawLogger.LogWarning("[UltiPawUtils] Authentication failed after maximum retries");
                 return false;
             }
         }
         catch (System.Exception e)
         {
-            Debug.LogError($"[UltiPawUtils] Error registering authentication: {e.Message}");
+            UltiPawLogger.LogError($"[UltiPawUtils] Error registering authentication: {e.Message}");
             return false;
         }
     }
@@ -181,7 +181,7 @@ public static class UltiPawUtils
         }
         catch (System.Exception e)
         {
-            Debug.LogError($"[UltiPawUtils] Error retrieving authentication: {e.Message}");
+            UltiPawLogger.LogError($"[UltiPawUtils] Error retrieving authentication: {e.Message}");
             return null;
         }
     }
@@ -202,7 +202,7 @@ public static class UltiPawUtils
         }
         catch (System.Exception e)
         {
-            Debug.LogError($"[UltiPawUtils] Error validating token with server: {e.Message}");
+            UltiPawLogger.LogError($"[UltiPawUtils] Error validating token with server: {e.Message}");
             return false;
         }
     }
@@ -216,18 +216,18 @@ public static class UltiPawUtils
             if (File.Exists(authPath))
             {
                 File.Delete(authPath);
-                Debug.Log("[UltiPawUtils] Authentication data removed successfully");
+                UltiPawLogger.Log("[UltiPawUtils] Authentication data removed successfully");
                 return true;
             }
             else
             {
-                Debug.Log("[UltiPawUtils] No authentication data found to remove");
+                UltiPawLogger.Log("[UltiPawUtils] No authentication data found to remove");
             return false;
             }
         }
         catch (System.Exception e)
         {
-            Debug.LogError($"[UltiPawUtils] Error removing authentication data: {e.Message}");
+            UltiPawLogger.LogError($"[UltiPawUtils] Error removing authentication data: {e.Message}");
             return false;
         }
     }
@@ -273,11 +273,11 @@ public static class UltiPawUtils
             try
             {
                 Directory.CreateDirectory(dataFolder);
-                Debug.Log($"[UltiPawUtils] Created UltiPaw data folder: {dataFolder}");
+                UltiPawLogger.Log($"[UltiPawUtils] Created UltiPaw data folder: {dataFolder}");
             }
             catch (System.Exception ex)
             {
-                Debug.LogError($"[UltiPawUtils] Failed to create UltiPaw data folder: {ex.Message}");
+                UltiPawLogger.LogError($"[UltiPawUtils] Failed to create UltiPaw data folder: {ex.Message}");
                 // Fallback to temp directory
                 dataFolder = Path.Combine(Path.GetTempPath(), "UltiPaw", "Data");
                 Directory.CreateDirectory(dataFolder);
@@ -332,44 +332,44 @@ public static class UltiPawUtils
             // Normalize the path
             absoluteDirectory = Path.GetFullPath(absoluteDirectory);
 
-            Debug.Log(
+            UltiPawLogger.Log(
                 $"[UltiPawUtils] EnsureDirectoryExists - Input: '{directoryPath}' (canBeFilePath: {canBeFilePath}) -> Directory: '{directory}' -> Absolute: '{absoluteDirectory}'");
-            Debug.Log($"[UltiPawUtils] Directory exists check: {Directory.Exists(absoluteDirectory)}");
+            UltiPawLogger.Log($"[UltiPawUtils] Directory exists check: {Directory.Exists(absoluteDirectory)}");
 
             if (!Directory.Exists(absoluteDirectory))
         {
             try
             {
-                    Debug.Log($"[UltiPawUtils] Creating directory: {absoluteDirectory}");
+                    UltiPawLogger.Log($"[UltiPawUtils] Creating directory: {absoluteDirectory}");
                     Directory.CreateDirectory(absoluteDirectory);
 
                     // Verify creation
                     if (Directory.Exists(absoluteDirectory))
                     {
-                        Debug.Log($"[UltiPawUtils] Successfully created directory: {absoluteDirectory}");
+                        UltiPawLogger.Log($"[UltiPawUtils] Successfully created directory: {absoluteDirectory}");
                         AssetDatabase.Refresh(); // Make Unity aware of the new folder
                     }
                     else
                     {
-                        Debug.LogError(
+                        UltiPawLogger.LogError(
                             $"[UltiPawUtils] Directory creation appeared to succeed but directory still doesn't exist: {absoluteDirectory}");
                     }
             }
             catch (System.Exception e)
             {
-                    Debug.LogError($"[UltiPawUtils] Failed to create directory '{absoluteDirectory}': {e.Message}");
-                    Debug.LogError($"[UltiPawUtils] Exception details: {e}");
+                    UltiPawLogger.LogError($"[UltiPawUtils] Failed to create directory '{absoluteDirectory}': {e.Message}");
+                    UltiPawLogger.LogError($"[UltiPawUtils] Exception details: {e}");
                     throw; // Re-throw to let caller handle if needed
                 }
             }
             else
             {
-                Debug.Log($"[UltiPawUtils] Directory already exists: {absoluteDirectory}");
+                UltiPawLogger.Log($"[UltiPawUtils] Directory already exists: {absoluteDirectory}");
             }
         }
         else
         {
-            Debug.LogWarning(
+            UltiPawLogger.LogWarning(
                 $"[UltiPawUtils] EnsureDirectoryExists called with empty or invalid directory path: '{directoryPath}' (canBeFilePath: {canBeFilePath})");
         }
     }

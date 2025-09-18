@@ -218,7 +218,7 @@ public class VersionActions
         }
         catch(Exception e)
         {
-            Debug.LogError($"[UltiPaw] Operation failed: {e.Message}");
+            UltiPawLogger.LogError($"[UltiPaw] Operation failed: {e.Message}");
             if(!isReset && fileManagerService.BackupExists(fbxPath)) fileManagerService.RestoreBackup(fbxPath);
         }
         
@@ -265,7 +265,7 @@ public class VersionActions
                 }
                 else
                 {
-                    Debug.LogWarning($"[UltiPaw] Custom logic prefab not found at: {customLogicPath}");
+                    UltiPawLogger.LogWarning($"[UltiPaw] Custom logic prefab not found at: {customLogicPath}");
                 }
             }
             
@@ -343,7 +343,7 @@ public class VersionActions
                 }
                 catch (System.Exception ex)
                 {
-                    UnityEngine.Debug.LogError($"[VersionActions] Async hash calculation failed: {ex.Message}");
+                    UltiPawLogger.LogError($"[VersionActions] Async hash calculation failed: {ex.Message}");
                 }
             });
         }

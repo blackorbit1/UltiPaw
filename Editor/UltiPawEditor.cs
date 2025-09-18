@@ -137,7 +137,7 @@ public class UltiPawEditor : UnityEditor.Editor
         }
         
         Repaint();
-        Debug.Log($"[UltiPawEditor] Updated with {versions.Count} server versions");
+        UltiPawLogger.Log($"[UltiPawEditor] Updated with {versions.Count} server versions");
     }
 
     private void TryLoadCachedVersionsAndRefetch()
@@ -155,7 +155,7 @@ public class UltiPawEditor : UnityEditor.Editor
                     versionModule.actions.UpdateAppliedVersionAndState();
                 }
                 Repaint();
-                Debug.Log($"[UltiPawEditor] Loaded {cached.versions.Count} cached versions");
+                UltiPawLogger.Log($"[UltiPawEditor] Loaded {cached.versions.Count} cached versions");
             }
 
             // Start background version fetch (will update UI when complete)
@@ -183,7 +183,7 @@ public class UltiPawEditor : UnityEditor.Editor
         fetchError = error;
         serverVersions.Clear();
         Repaint();
-        Debug.LogError($"[UltiPawEditor] Version fetch error: {error}");
+        UltiPawLogger.LogError($"[UltiPawEditor] Version fetch error: {error}");
     }
 
     private void AutoDetectBaseFbxViaHierarchy()
@@ -205,7 +205,7 @@ public class UltiPawEditor : UnityEditor.Editor
             baseFbxFilesProp.GetArrayElementAtIndex(0).objectReferenceValue = fbxAsset;
             serializedObject.ApplyModifiedProperties();
             
-            Debug.Log($"[UltiPawEditor] Auto-detected FBX: {System.IO.Path.GetFileName(meshPath)}");
+            UltiPawLogger.Log($"[UltiPawEditor] Auto-detected FBX: {System.IO.Path.GetFileName(meshPath)}");
             Repaint();
 
             // After detection, immediately try to load cached versions and start a background refresh
@@ -352,7 +352,7 @@ public class UltiPawEditor : UnityEditor.Editor
         string signature = ex.ToString();
         if (!string.Equals(lastUiRenderingExceptionSignature, signature, StringComparison.Ordinal))
         {
-            Debug.LogException(ex);
+            UltiPawLogger.LogException(ex);
             lastUiRenderingExceptionSignature = signature;
         }
     }
@@ -416,7 +416,7 @@ public class UltiPawEditor : UnityEditor.Editor
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[UltiPaw] Failed to load unsubmitted versions from {path}: {ex.Message}");
+                UltiPawLogger.LogError($"[UltiPaw] Failed to load unsubmitted versions from {path}: {ex.Message}");
             }
         }
     }

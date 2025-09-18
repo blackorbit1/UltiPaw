@@ -81,12 +81,12 @@ public class UserService
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogError($"[UltiPaw] Failed to parse user info for ID {uploaderId}: {ex.Message}");
+                    UltiPawLogger.LogError($"[UltiPaw] Failed to parse user info for ID {uploaderId}: {ex.Message}");
                 }
             }
             else
             {
-                Debug.LogWarning($"[UltiPaw] Failed to fetch user info for ID {uploaderId}: {request.error}");
+                UltiPawLogger.LogWarning($"[UltiPaw] Failed to fetch user info for ID {uploaderId}: {request.error}");
             }
             
             onComplete?.Invoke();
@@ -122,17 +122,17 @@ public class UserService
                         // Cache in memory
                         avatarCache[uploaderId] = texture;
                         
-                        Debug.Log($"[UltiPaw] Downloaded and cached avatar for user {uploaderId}");
+                        UltiPawLogger.Log($"[UltiPaw] Downloaded and cached avatar for user {uploaderId}");
                     }
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogError($"[UltiPaw] Failed to process avatar for user {uploaderId}: {ex.Message}");
+                    UltiPawLogger.LogError($"[UltiPaw] Failed to process avatar for user {uploaderId}: {ex.Message}");
                 }
             }
             else
             {
-                Debug.LogWarning($"[UltiPaw] Failed to download avatar for user {uploaderId}: {request.error}");
+                UltiPawLogger.LogWarning($"[UltiPaw] Failed to download avatar for user {uploaderId}: {request.error}");
             }
         }
     }
@@ -146,12 +146,12 @@ public class UserService
             if (texture.LoadImage(fileData))
             {
                 avatarCache[uploaderId] = texture;
-                Debug.Log($"[UltiPaw] Loaded cached avatar for user {uploaderId}");
+                UltiPawLogger.Log($"[UltiPaw] Loaded cached avatar for user {uploaderId}");
             }
         }
         catch (Exception ex)
         {
-            Debug.LogError($"[UltiPaw] Failed to load cached avatar for user {uploaderId}: {ex.Message}");
+            UltiPawLogger.LogError($"[UltiPaw] Failed to load cached avatar for user {uploaderId}: {ex.Message}");
         }
     }
     

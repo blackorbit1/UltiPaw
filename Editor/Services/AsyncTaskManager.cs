@@ -67,7 +67,7 @@ public class AsyncTaskManager
     {
         if (activeTasks.ContainsKey(taskId))
         {
-            Debug.LogWarning($"[AsyncTaskManager] Task '{taskId}' already exists. Returning existing task.");
+            UltiPawLogger.LogWarning($"[AsyncTaskManager] Task '{taskId}' already exists. Returning existing task.");
             return activeTasks[taskId];
         }
 
@@ -81,7 +81,7 @@ public class AsyncTaskManager
         }
 
         OnTaskStarted?.Invoke(taskProgress);
-        Debug.Log($"[AsyncTaskManager] Started task: {taskId} - {description} (hidden: {hideInUi})");
+        UltiPawLogger.Log($"[AsyncTaskManager] Started task: {taskId} - {description} (hidden: {hideInUi})");
         
         return taskProgress;
     }
@@ -90,7 +90,7 @@ public class AsyncTaskManager
     {
         if (!activeTasks.TryGetValue(taskId, out var taskProgress))
         {
-            Debug.LogWarning($"[AsyncTaskManager] Task '{taskId}' not found for progress update.");
+            UltiPawLogger.LogWarning($"[AsyncTaskManager] Task '{taskId}' not found for progress update.");
             return;
         }
 
@@ -105,7 +105,7 @@ public class AsyncTaskManager
     {
         if (!activeTasks.TryGetValue(taskId, out var taskProgress))
         {
-            Debug.LogWarning($"[AsyncTaskManager] Task '{taskId}' not found for completion.");
+            UltiPawLogger.LogWarning($"[AsyncTaskManager] Task '{taskId}' not found for completion.");
             return;
         }
 
@@ -127,7 +127,7 @@ public class AsyncTaskManager
         ExecuteOnMainThread(() => 
         {
             OnTaskCompleted?.Invoke(taskProgress);
-            Debug.Log($"[AsyncTaskManager] Completed task: {taskId} - Success: {!hasError}");
+            UltiPawLogger.Log($"[AsyncTaskManager] Completed task: {taskId} - Success: {!hasError}");
         });
     }
 
@@ -135,7 +135,7 @@ public class AsyncTaskManager
     {
         if (!activeTasks.TryGetValue(taskId, out var taskProgress))
         {
-            Debug.LogWarning($"[AsyncTaskManager] Task '{taskId}' not found for cancellation.");
+            UltiPawLogger.LogWarning($"[AsyncTaskManager] Task '{taskId}' not found for cancellation.");
             return;
         }
 
@@ -155,7 +155,7 @@ public class AsyncTaskManager
         ExecuteOnMainThread(() => 
         {
             OnTaskCompleted?.Invoke(taskProgress);
-            Debug.Log($"[AsyncTaskManager] Cancelled task: {taskId}");
+            UltiPawLogger.Log($"[AsyncTaskManager] Cancelled task: {taskId}");
         });
     }
 
@@ -194,7 +194,7 @@ public class AsyncTaskManager
     {
         if (runningTasks.ContainsKey(taskId))
         {
-            Debug.LogWarning($"[AsyncTaskManager] Task '{taskId}' is already running.");
+            UltiPawLogger.LogWarning($"[AsyncTaskManager] Task '{taskId}' is already running.");
             return runningTasks[taskId];
         }
 
@@ -217,7 +217,7 @@ public class AsyncTaskManager
             catch (Exception ex)
             {
                 CompleteTask(taskId, true, ex.Message);
-                Debug.LogError($"[AsyncTaskManager] Task '{taskId}' failed: {ex.Message}");
+                UltiPawLogger.LogError($"[AsyncTaskManager] Task '{taskId}' failed: {ex.Message}");
                 throw;
             }
         });
@@ -385,7 +385,7 @@ public class AsyncTaskManager
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[AsyncTaskManager] Main thread callback failed: {ex.Message}");
+                UltiPawLogger.LogError($"[AsyncTaskManager] Main thread callback failed: {ex.Message}");
             }
         }
     }
@@ -404,7 +404,7 @@ public class AsyncTaskManager
         foreach (var key in keysToRemove)
         {
             activeTasks.Remove(key);
-            Debug.Log($"[AsyncTaskManager] Cleaned up completed task: {key}");
+            UltiPawLogger.Log($"[AsyncTaskManager] Cleaned up completed task: {key}");
         }
     }
 }

@@ -39,7 +39,7 @@ public class AsyncHashService
     {
         if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
         {
-            Debug.LogError($"[AsyncHashService] File not found: {filePath}");
+            UltiPawLogger.LogError($"[AsyncHashService] File not found: {filePath}");
             return null;
         }
 
@@ -50,7 +50,7 @@ public class AsyncHashService
         string cachedHash = PersistentCache.Instance.GetCachedHash(normalizedPath);
         if (!string.IsNullOrEmpty(cachedHash))
         {
-            Debug.Log($"[AsyncHashService] Using cached hash for: {Path.GetFileName(normalizedPath)}");
+            UltiPawLogger.Log($"[AsyncHashService] Using cached hash for: {Path.GetFileName(normalizedPath)}");
             return cachedHash;
         }
 
@@ -102,7 +102,7 @@ public class AsyncHashService
         }
         catch (Exception ex)
         {
-            Debug.LogError($"[AsyncHashService] Hash calculation failed for {fileName}: {ex.Message}");
+            UltiPawLogger.LogError($"[AsyncHashService] Hash calculation failed for {fileName}: {ex.Message}");
             taskManager.CompleteTask(taskId, true, ex.Message);
             return null;
         }
@@ -214,7 +214,7 @@ public class AsyncHashService
         }
         catch (Exception ex)
         {
-            Debug.LogError($"[AsyncHashService] FBX hash calculation failed: {ex.Message}");
+            UltiPawLogger.LogError($"[AsyncHashService] FBX hash calculation failed: {ex.Message}");
             taskManager.CompleteTask(taskId, true, ex.Message);
             return (null, null);
         }
@@ -228,7 +228,7 @@ public class AsyncHashService
     public void InvalidateHashCache(string filePath)
     {
         // This will be handled automatically by the PersistentCache when file timestamp changes
-        Debug.Log($"[AsyncHashService] Hash cache will be invalidated for: {Path.GetFileName(filePath)} on next access");
+        UltiPawLogger.Log($"[AsyncHashService] Hash cache will be invalidated for: {Path.GetFileName(filePath)} on next access");
     }
 
     // Convenience method for immediate hash needs (checks cache first)
@@ -288,7 +288,7 @@ public class AsyncHashService
     public void ClearHashCache()
     {
         PersistentCache.Instance.ClearHashCache();
-        Debug.Log("[AsyncHashService] Hash cache cleared.");
+        UltiPawLogger.Log("[AsyncHashService] Hash cache cleared.");
     }
 }
 #endif

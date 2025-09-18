@@ -14,6 +14,8 @@ public class AdvancedModeModule
     public AdvancedModeModule(UltiPawEditor editor)
     {
         this.editor = editor;
+        // Ensure issue reporter subscribes according to current settings
+        EditorIssueReporter.RefreshListener();
     }
 
     public void Draw()
@@ -42,6 +44,42 @@ public class AdvancedModeModule
                 if (newDevEnvironment != currentDevEnvironment)
                 {
                     UltiPawUtils.isDevEnvironment = newDevEnvironment;
+                }
+
+                // Logging checkbox (false by default via EditorPrefs)
+                bool currentLogging = UltiPawLogger.IsEnabled();
+                bool newLogging = EditorGUILayout.Toggle("Log in Console", currentLogging);
+                if (newLogging != currentLogging)
+                {
+                    UltiPawLogger.SetEnabled(newLogging);
+                }
+
+                // Share issue logs (true by default) + minimum severity slider
+                bool currentShare = EditorIssueReporter.ShareIssueLogs;
+                bool newShare = EditorGUILayout.Toggle(new GUIContent("Share issue logs", "Send warnings/errors/exceptions to the UltiPaw server to help us improve."), currentShare);
+                if (newShare != currentShare)
+                {
+                    EditorIssueReporter.ShareIssueLogs = newShare;
+                    EditorIssueReporter.RefreshListener();
+                }
+
+                int currentMin = EditorIssueReporter.MinSeverityLevel; // 1..4
+                int newMin = EditorGUILayout.IntSlider(new GUIContent("Min error severity", "1=Info, 2=Warning, 3=Error, 4=Exception"), currentMin, 1, 4);
+                // Severity chips visualization
+                DrawSeverityChips(newMin);
+                
+                // Test button for info-level logging
+                EditorGUILayout.BeginHorizontal();
+                GUILayout.Space(EditorGUI.indentLevel * 15);
+                if (GUILayout.Button(new GUIContent("Test INFO log", "Emits an INFO level log to test the logging & reporting pipeline"), GUILayout.Width(120)))
+                {
+                    UltiPawLogger.Log("[UltiPaw] Test INFO log from AdvancedModeModule");
+                }
+                EditorGUILayout.EndHorizontal();
+
+                if (newMin != currentMin)
+                {
+                    EditorIssueReporter.MinSeverityLevel = newMin;
                 }
                 
                 // Debug Tools section
@@ -108,14 +146,14 @@ public class AdvancedModeModule
         
         if (debugPrefab == null)
         {
-            Debug.LogError($"Could not find debug prefab at {prefabPath}");
+            UltiPawLogger.LogError($"Could not find debug prefab at {prefabPath}");
             return;
         }
         
         debugPrefabInstance = (GameObject)PrefabUtility.InstantiatePrefab(debugPrefab, editor.ultiPawTarget.transform);
         debugPrefabInstance.name = "debug";
         
-        Debug.Log("Debug prefab placed in avatar root");
+        UltiPawLogger.Log("Debug prefab placed in avatar root");
     }
     
     private void RemoveDebugPrefab()
@@ -124,7 +162,7 @@ public class AdvancedModeModule
         {
             Object.DestroyImmediate(debugPrefabInstance);
             debugPrefabInstance = null;
-            Debug.Log("Debug prefab removed from avatar root");
+            UltiPawLogger.Log("Debug prefab removed from avatar root");
         }
         else
         {
@@ -135,7 +173,7 @@ public class AdvancedModeModule
                 if (existingDebug != null)
                 {
                     Object.DestroyImmediate(existingDebug.gameObject);
-                    Debug.Log("Existing debug object removed from avatar root");
+                    UltiPawLogger.Log("Existing debug object removed from avatar root");
                 }
             }
         }
@@ -150,6 +188,9 @@ public class AdvancedModeModule
     
     public void OnPlayModeStateChanged(PlayModeStateChange state)
     {
+        // Ensure reporter is set according to latest preference whenever play mode changes
+        EditorIssueReporter.RefreshListener();
+
         if (state == PlayModeStateChange.ExitingEditMode && addArmatureToggle)
         {
             // Generate the mesh right before leaving edit mode (before VRCFury processing)
@@ -197,17 +238,17 @@ public class AdvancedModeModule
             }
             else
             {
-                Debug.LogWarning($"Could not find ArmatureDebugMaterial at {materialPath}");
+                UltiPawLogger.LogWarning($"Could not find ArmatureDebugMaterial at {materialPath}");
             }
             
             // Set the enabled state
             generatedMesh.gameObject.SetActive(enableMesh);
             
-            Debug.Log($"ArmatureDebugMesh generated and placed in debug prefab (enabled: {enableMesh})");
+            UltiPawLogger.Log($"ArmatureDebugMesh generated and placed in debug prefab (enabled: {enableMesh})");
         }
         else
         {
-            Debug.LogError("Failed to generate ArmatureDebugMesh");
+            UltiPawLogger.LogError("Failed to generate ArmatureDebugMesh");
         }
     }
     
@@ -220,6 +261,35 @@ public class AdvancedModeModule
         {
             existingMesh.gameObject.SetActive(enableMesh);
         }
+    }
+
+    // Renders four severity chips using shared EditorUIUtils style; chips below the selected threshold are grayed out.
+    private void DrawSeverityChips(int minLevel)
+    {
+        EditorGUILayout.BeginHorizontal();
+        GUILayout.Space(EditorGUI.indentLevel * 15);
+        DrawSeverityChip("INFO", new Color(0.20f, 0.60f, 1.00f), 1, minLevel);
+        GUILayout.Space(6);
+        DrawSeverityChip("WARN", EditorUIUtils.OrangeColor, 2, minLevel);
+        GUILayout.Space(6);
+        DrawSeverityChip("ERROR", new Color(1.00f, 0.20f, 0.20f), 3, minLevel);
+        GUILayout.Space(6);
+        DrawSeverityChip("FATAL", Color.black, 4, minLevel);
+        EditorGUILayout.EndHorizontal();
+    }
+
+    private void DrawSeverityChip(string label, Color activeTextColor, int level, int minLevel)
+    {
+        bool isActive = level >= minLevel;
+        // Reuse chip style from VersionListDrawer: dark background with border, colored text
+        Color bg = new Color(0.28f, 0.28f, 0.28f);
+        Color border = new Color(0.46f, 0.46f, 0.46f);
+        Color txt = isActive ? activeTextColor : new Color(0.65f, 0.65f, 0.65f);
+        // Slightly dim inactive chips by also lightening the background
+        Color bgInactive = new Color(0.32f, 0.32f, 0.32f);
+
+        // Draw using shared util (rounded chip with border)
+        EditorUIUtils.DrawChipLabel(label, isActive ? bg : bgInactive, txt, border, width: 70, height: 20, cornerRadius: 8f, borderWidth: 1.0f);
     }
 }
 #endif

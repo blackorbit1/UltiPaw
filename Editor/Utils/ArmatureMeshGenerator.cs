@@ -13,7 +13,7 @@ public static class ArmatureMeshGenerator
     {
         if (avatarRoot == null)
         {
-            Debug.LogError("Avatar root is null.");
+            UltiPawLogger.LogError("Avatar root is null.");
             return;
         }
 
@@ -21,7 +21,7 @@ public static class ArmatureMeshGenerator
         Transform armatureTransform = avatarRoot.transform.Find("Armature");
         if (armatureTransform == null)
         {
-            Debug.LogError("Could not find 'Armature' child in avatar root.", avatarRoot);
+            UltiPawLogger.LogError("Could not find 'Armature' child in avatar root.", avatarRoot);
             return;
         }
 
@@ -40,14 +40,14 @@ public static class ArmatureMeshGenerator
 
         if (targetSkinnedMeshRenderer == null || targetSkinnedMeshRenderer.bones.Length == 0)
         {
-            Debug.LogError("Could not find a SkinnedMeshRenderer that uses the main 'Armature'.", avatarRoot);
+            UltiPawLogger.LogError("Could not find a SkinnedMeshRenderer that uses the main 'Armature'.", avatarRoot);
             return;
         }
 
         Transform rootBone = targetSkinnedMeshRenderer.rootBone;
         if (rootBone == null)
         {
-            Debug.LogError("SkinnedMeshRenderer is missing its root bone.", targetSkinnedMeshRenderer);
+            UltiPawLogger.LogError("SkinnedMeshRenderer is missing its root bone.", targetSkinnedMeshRenderer);
             return;
         }
         
@@ -123,13 +123,13 @@ public static class ArmatureMeshGenerator
         
         if (debugMaterial == null)
         {
-            Debug.LogWarning($"Could not find ArmatureDebugMaterial at {materialPath}. Creating fallback material.");
+            UltiPawLogger.LogWarning($"Could not find ArmatureDebugMaterial at {materialPath}. Creating fallback material.");
             debugMaterial = CreateFallbackMaterial();
         }
         
         smr.sharedMaterial = debugMaterial;
         
-        Debug.Log($"Generated armature mesh '{meshType}' successfully using main Armature.", meshGo);
+        UltiPawLogger.Log($"Generated armature mesh '{meshType}' successfully using main Armature.", meshGo);
     }
 
     private static Material CreateFallbackMaterial()
@@ -228,7 +228,7 @@ public static class ArmatureMeshGenerator
         }
         else
         {
-            Debug.LogWarning($"Bone '{boneHead.name}' not in map.", boneHead);
+            UltiPawLogger.LogWarning($"Bone '{boneHead.name}' not in map.", boneHead);
             for(int i = 0; i < 8; i++) boneWeights.Add(new BoneWeight());
         }
     }

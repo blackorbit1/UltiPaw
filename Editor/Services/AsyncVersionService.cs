@@ -51,7 +51,7 @@ public class AsyncVersionService
                 var cachedEntryFast = cache.GetCachedVersions(cachedBaseHash, authToken);
                 if (cachedEntryFast != null)
                 {
-                    Debug.Log($"[AsyncVersionService] Fast cache hit, returning versions without UI task for hash: {cachedBaseHash}");
+                    UltiPawLogger.Log($"[AsyncVersionService] Fast cache hit, returning versions without UI task for hash: {cachedBaseHash}");
                     taskManager.ExecuteOnMainThread(() =>
                         OnVersionsUpdated?.Invoke(cachedEntryFast.serverVersions, cachedEntryFast.recommendedVersion));
                     return (cachedEntryFast.serverVersions, cachedEntryFast.recommendedVersion, null);
@@ -86,7 +86,7 @@ public class AsyncVersionService
                 var cachedEntry = cache.GetCachedVersions(baseFbxHash, authToken);
                 if (cachedEntry != null)
                 {
-                    Debug.Log($"[AsyncVersionService] Using cached versions for hash: {baseFbxHash}");
+                    UltiPawLogger.Log($"[AsyncVersionService] Using cached versions for hash: {baseFbxHash}");
                     taskManager.CompleteTask(taskId);
                     
                     // Fire event on main thread
@@ -143,7 +143,7 @@ public class AsyncVersionService
         catch (Exception ex)
         {
             var errorMsg = $"Version fetch failed: {ex.Message}";
-            Debug.LogError($"[AsyncVersionService] {errorMsg}");
+            UltiPawLogger.LogError($"[AsyncVersionService] {errorMsg}");
             taskManager.CompleteTask(taskId, true, errorMsg);
             taskManager.ExecuteOnMainThread(() => OnVersionFetchError?.Invoke(errorMsg));
             return (new List<UltiPawVersion>(), null, errorMsg);
@@ -304,7 +304,7 @@ public class AsyncVersionService
         catch (Exception ex)
         {
             var errorMsg = $"Download failed: {ex.Message}";
-            Debug.LogError($"[AsyncVersionService] {errorMsg}");
+            UltiPawLogger.LogError($"[AsyncVersionService] {errorMsg}");
             taskManager.CompleteTask(taskId, true, errorMsg);
             return (false, errorMsg);
         }
@@ -313,13 +313,13 @@ public class AsyncVersionService
     public void ClearVersionCache()
     {
         cache.ClearVersionCache();
-        Debug.Log("[AsyncVersionService] Version cache cleared.");
+        UltiPawLogger.Log("[AsyncVersionService] Version cache cleared.");
     }
 
     public void ClearAllCache()
     {
         cache.ClearAllCache();
-        Debug.Log("[AsyncVersionService] All cache cleared.");
+        UltiPawLogger.Log("[AsyncVersionService] All cache cleared.");
     }
 
     // Get statistics about cache usage

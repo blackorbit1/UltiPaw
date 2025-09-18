@@ -94,7 +94,7 @@ public class VersionManagementModule
             {
                 if (!hasShownMissingVersionWarning)
                 {
-                    Debug.LogWarning("[UltiPawEditor] No recommended version available. Please select a version from the list.");
+                    UltiPawLogger.LogWarning("[UltiPawEditor] No recommended version available. Please select a version from the list.");
                     hasShownMissingVersionWarning = true;
                 }
                 return;

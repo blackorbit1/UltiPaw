@@ -128,7 +128,7 @@ public class FileManagerService
 
         if (!File.Exists(prefabPath))
         {
-            Debug.LogWarning($"[FileManager] Expected prefab not found at '{prefabPath}' after package import.");
+            UltiPawLogger.LogWarning($"[FileManager] Expected prefab not found at '{prefabPath}' after package import.");
             return;
         }
 
@@ -200,7 +200,7 @@ public class FileManagerService
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogWarning($"Failed to parse {packageJsonPath}: {ex.Message}");
+                    UltiPawLogger.LogWarning($"Failed to parse {packageJsonPath}: {ex.Message}");
                 }
             }
         }
