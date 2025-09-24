@@ -73,6 +73,37 @@ public class NetworkService
             return (true, req.downloadHandler.text, null);
         }
     }
+
+    public class CheckConnectionResponse { public string state; }
+
+    public async Task<string> CheckConnectionAsync(string url, string authToken = null)
+    {
+        using (var req = UnityWebRequest.Get(url))
+        {
+            if (!string.IsNullOrEmpty(authToken))
+            {
+                req.SetRequestHeader("Authorization", $"Bearer {authToken}");
+            }
+
+            try
+            {
+                await req.SendWebRequest();
+                if (req.result != UnityWebRequest.Result.Success)
+                {
+                    return "disconnected";
+                }
+
+                var resp = JsonConvert.DeserializeObject<CheckConnectionResponse>(req.downloadHandler.text);
+                if (resp == null || string.IsNullOrEmpty(resp.state)) return "disconnected";
+                return resp.state == "connected" || resp.state == "limited" ? resp.state : "disconnected";
+            }
+            catch
+            {
+                return "disconnected";
+            }
+        }
+    }
+
 }
 
 public static class EditorAsyncExtensions

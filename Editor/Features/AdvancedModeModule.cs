@@ -46,6 +46,15 @@ public class AdvancedModeModule
                     UltiPawUtils.isDevEnvironment = newDevEnvironment;
                 }
 
+                // Refresh account state button
+                EditorGUILayout.BeginHorizontal();
+                GUILayout.Space(EditorGUI.indentLevel * 15);
+                if (GUILayout.Button("Refresh account state", GUILayout.Width(180)))
+                {
+                    editor.RefreshAccountAndVersions();
+                }
+                EditorGUILayout.EndHorizontal();
+
                 // Logging checkbox (false by default via EditorPrefs)
                 bool currentLogging = UltiPawLogger.IsEnabled();
                 bool newLogging = EditorGUILayout.Toggle("Log in Console", currentLogging);

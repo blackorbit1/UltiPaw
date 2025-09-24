@@ -88,6 +88,36 @@ public static class EditorUIUtils
         GUI.Label(rect, displayText, labelStyle);
     }
 
+    public static void DrawCircularAvatar(Rect rect, Texture2D texture, Color backgroundColor, Color borderColor, float borderWidth = 1f)
+    {
+        float size = Mathf.Min(rect.width, rect.height);
+        Rect squareRect = new Rect(rect.x + (rect.width - size) * 0.5f, rect.y + (rect.height - size) * 0.5f, size, size);
+        Vector3 center = new Vector3(squareRect.center.x, squareRect.center.y, 0f);
+        float radius = size * 0.5f;
+
+        Handles.BeginGUI();
+        Color oldColor = Handles.color;
+        Handles.color = backgroundColor;
+        Handles.DrawSolidDisc(center, Vector3.forward, radius);
+        Handles.color = oldColor;
+        Handles.EndGUI();
+
+        if (texture != null)
+        {
+            GUI.DrawTexture(squareRect, texture, ScaleMode.ScaleAndCrop, true);
+        }
+
+        if (borderWidth > 0f)
+        {
+            Handles.BeginGUI();
+            oldColor = Handles.color;
+            Handles.color = borderColor;
+            Handles.DrawWireDisc(center, Vector3.forward, radius);
+            Handles.color = oldColor;
+            Handles.EndGUI();
+        }
+    }
+
     private static void DrawRoundedRect(Rect rect, float radius)
     {
         List<Vector3> verts = new List<Vector3>();
