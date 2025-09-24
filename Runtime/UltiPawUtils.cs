@@ -27,8 +27,9 @@ public static class UltiPawUtils
     public const string VERSION_ENDPOINT = "/ultipaw/versions";
     public const string MODEL_ENDPOINT = "/ultipaw/model";
     private const string TOKEN_ENDPOINT = "/token"; // Replace with your actual API endpoint
-
+    
     public const string NEW_VERSION_ENDPOINT = "/ultipaw/newVersion";
+    public const string CHECK_CONNECTION_ENDPOINT = "/check-connection";
     public static readonly string PACKAGE_BASE_FOLDER_FULL_PATH = Path.Combine(Application.dataPath, "UltiPaw");
 
     private const string AUTH_FILENAME = "auth.dat";

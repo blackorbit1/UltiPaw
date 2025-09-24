@@ -25,6 +25,7 @@ public class UltiPawEditor : UnityEditor.Editor
     public VersionManagementModule versionModule;
     private CreatorModeModule creatorModule;
     private AdvancedModeModule advancedModule;
+    private AccountModule accountModule;
     
     // --- Async Services ---
     private AsyncTaskManager taskManager;
@@ -73,6 +74,8 @@ public class UltiPawEditor : UnityEditor.Editor
         versionModule = new VersionManagementModule(this, networkService, fileManagerService);
         creatorModule = new CreatorModeModule(this);
         advancedModule = new AdvancedModeModule(this);
+        accountModule = new AccountModule(this, networkService);
+        accountModule.Initialize();
         
         // Load local versions first (synchronous, but fast)
         LoadUnsubmittedVersions();
@@ -231,6 +234,9 @@ public class UltiPawEditor : UnityEditor.Editor
         {
             SafeUiCall(DrawBanner);
             
+            // Account module just under the banner
+            SafeUiCall(() => accountModule?.Draw());
+            
             // Draw progress bars for active tasks at the top
             SafeUiCall(() => ProgressBarManager.Instance.DrawProgressBars());
 
@@ -246,7 +252,7 @@ public class UltiPawEditor : UnityEditor.Editor
                 SafeUiCall(DrawHelpBox);
             }
 
-            DrawLogoutSectionSafely();
+            // Logout moved to AccountModule
             SafeUiCall(() => advancedModule.Draw());
             DrawUiRenderingError();
         }
@@ -284,7 +290,7 @@ public class UltiPawEditor : UnityEditor.Editor
         catch (Exception ex)
         {
             if (ex is ExitGUIException) throw;
-
+ 
             GUI.backgroundColor = originalColor;
             RecordUiException(ex);
             DrawFallbackLogoutButton();
@@ -381,6 +387,25 @@ public class UltiPawEditor : UnityEditor.Editor
     {
         authToken = UltiPawUtils.GetAuth()?.token;
         isAuthenticated = !string.IsNullOrEmpty(authToken);
+        accountModule?.Refresh();
+    }
+
+    public void RefreshAccountAndVersions()
+    {
+        try
+        {
+            accountModule?.Refresh();
+        }
+        catch (Exception ex)
+        {
+            RecordUiException(ex);
+        }
+
+        string fbxPath = GetCurrentFBXPath();
+        if (!string.IsNullOrEmpty(fbxPath) && isAuthenticated)
+        {
+            versionService?.StartVersionFetchInBackground(fbxPath, authToken, useCache: false);
+        }
     }
 
     private void FindSerializedProperties()

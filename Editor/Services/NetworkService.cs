@@ -73,6 +73,55 @@ public class NetworkService
             return (true, req.downloadHandler.text, null);
         }
     }
+
+    public class CheckConnectionResponse { public string state; }
+
+    public async Task<string> CheckConnectionAsync(string url, string authToken = null)
+    {
+        using (var req = UnityWebRequest.Get(url))
+        {
+            if (!string.IsNullOrEmpty(authToken))
+            {
+                req.SetRequestHeader("Authorization", $"Bearer {authToken}");
+            }
+
+            try
+            {
+                await req.SendWebRequest();
+                if (req.result != UnityWebRequest.Result.Success)
+                {
+                    long code = req.responseCode;
+                    string body = null;
+                    try { body = req.downloadHandler?.text; } catch { /* ignore */ }
+                    UltiPawLogger.LogWarning($"[UltiPaw] Connection check failed: [{code}] {req.error} {(string.IsNullOrEmpty(body) ? string.Empty : "- " + body)}");
+                    return "disconnected";
+                }
+
+                var text = req.downloadHandler.text;
+                CheckConnectionResponse resp = null;
+                try { resp = JsonConvert.DeserializeObject<CheckConnectionResponse>(text); }
+                catch (Exception jex)
+                {
+                    UltiPawLogger.LogWarning($"[UltiPaw] Invalid connection check response JSON: {jex.Message}");
+                    return "disconnected";
+                }
+                if (resp == null || string.IsNullOrEmpty(resp.state))
+                {
+                    UltiPawLogger.LogWarning("[UltiPaw] Connection check response missing 'state'.");
+                    return "disconnected";
+                }
+                if (resp.state == "connected" || resp.state == "limited") return resp.state;
+                UltiPawLogger.LogWarning($"[UltiPaw] Connection check returned unexpected state '{resp.state}'. Treating as disconnected.");
+                return "disconnected";
+            }
+            catch (Exception ex)
+            {
+                UltiPawLogger.LogWarning($"[UltiPaw] Connection check error: {ex.Message}");
+                return "disconnected";
+            }
+        }
+    }
+
 }
 
 public static class EditorAsyncExtensions

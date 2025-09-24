@@ -1,5 +1,6 @@
 ﻿
 #if UNITY_EDITOR
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -249,7 +250,7 @@ public class VersionListDrawer
             GUILayout.Label($"UltiPaw {ver.version}", GUILayout.Width(100));
             
             // Draw user info if available and not unsubmitted
-            if (!ver.isUnsubmitted && ver.uploaderId > 0)
+            if (ver.uploaderId > 0)
             {
                 DrawUserInfo(ver.uploaderId);
             }
@@ -294,35 +295,70 @@ public class VersionListDrawer
     {
         var userInfo = UserService.GetUserInfo(uploaderId);
         var userAvatar = UserService.GetUserAvatar(uploaderId);
-        
-        if (userInfo != null && userAvatar != null)
+
+        GUILayout.Label("by", EditorStyles.miniLabel, GUILayout.Width(15));
+        GUILayout.Space(3);
+
+        Rect avatarRect = GUILayoutUtility.GetRect(18, 18, GUILayout.Width(18), GUILayout.Height(18));
+        Color fallbackColor = new Color(0.23f, 0.23f, 0.23f);
+        EditorUIUtils.DrawCircularAvatar(avatarRect, userAvatar, fallbackColor, new Color(0.46f, 0.46f, 0.46f), 1f);
+
+        bool requestedThisFrame = false;
+
+        if (userInfo == null)
         {
-            GUILayout.Label("by", EditorStyles.miniLabel, GUILayout.Width(15));
-            GUILayout.Space(3);
-            
-            // Draw avatar if available
-            if (userAvatar != null)
+            UserService.RequestUserInfo(uploaderId, () => editor.Repaint());
+            requestedThisFrame = true;
+        }
+
+        if (userAvatar == null)
+        {
+            if (userInfo != null && !string.IsNullOrEmpty(userInfo.username))
             {
-                Rect avatarRect = GUILayoutUtility.GetRect(16, 16, GUILayout.Width(16), GUILayout.Height(16));
-                GUI.DrawTexture(avatarRect, userAvatar, ScaleMode.ScaleAndCrop);
-                GUILayout.Space(5);
+                string initials = GetInitials(userInfo.username);
+                var initialsStyle = new GUIStyle(EditorStyles.centeredGreyMiniLabel)
+                {
+                    alignment = TextAnchor.MiddleCenter,
+                    normal = { textColor = Color.white }
+                };
+                GUI.Label(avatarRect, initials, initialsStyle);
             }
-            
-            // Draw username
-            string displayName = userInfo?.username ?? $"User {uploaderId}";
-            GUILayout.Label(displayName, EditorStyles.miniLabel);
+
+            if (!requestedThisFrame)
+            {
+                UserService.RequestUserInfo(uploaderId, () => editor.Repaint());
+            }
+        }
+
+        GUILayout.Space(5);
+
+        string displayName;
+        if (userInfo != null && !string.IsNullOrEmpty(userInfo.username))
+        {
+            displayName = userInfo.username;
+        }
+        else if (userInfo != null)
+        {
+            displayName = $"User {uploaderId}";
         }
         else
         {
-            UserService.RequestUserInfo(uploaderId, () => editor.Repaint());
-            
-            // Show loading state
-            GUILayout.Label("by", EditorStyles.miniLabel, GUILayout.Width(15));
-            GUILayout.Space(3);
-            GUILayout.Label("...", EditorStyles.miniLabel);
+            displayName = "...";
         }
+
+        GUILayout.Label(displayName, EditorStyles.miniLabel);
     }
-    
+
+    private static string GetInitials(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return "?";
+        string[] parts = name.Split(new[] { ' ', '\t', '\n', '\r', '_' }, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 1) return parts[0].Substring(0, Math.Min(2, parts[0].Length)).ToUpperInvariant();
+        string a = parts[0].Substring(0, 1);
+        string b = parts[parts.Length - 1].Substring(0, 1);
+        return (a + b).ToUpperInvariant();
+    }
+
     private void DrawActionIcons(UltiPawVersion ver)
     {
         string binPath = UltiPawUtils.GetVersionBinPath(ver.version, ver.defaultAviVersion);

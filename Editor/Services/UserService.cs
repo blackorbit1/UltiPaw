@@ -7,6 +7,7 @@ using UnityEditor;
 using UnityEngine;
 using UnityEngine.Networking;
 using Newtonsoft.Json;
+using Object = UnityEngine.Object;
 
 [JsonObject(MemberSerialization.OptIn)]
 public class UserInfo
@@ -34,34 +35,40 @@ public class UserService
     
     public static void RequestUserInfo(int uploaderId, System.Action onComplete = null)
     {
-        // Skip if already cached or request is pending
-        // if (userCache.ContainsKey(uploaderId) || pendingRequests.Contains(uploaderId))
-        // {
-        //     onComplete?.Invoke();
-        //     return;
-        // }
-        
         pendingRequests.Add(uploaderId);
-        EditorCoroutineUtility.StartCoroutineOwnerless(FetchUserInfo(uploaderId, onComplete));
+        EditorCoroutineUtility.StartCoroutineOwnerless(FetchUserInfo(uploaderId, null, onComplete));
     }
     
-    private static IEnumerator FetchUserInfo(int uploaderId, System.Action onComplete)
+    // Overload allowing an explicit auth token when auth.dat is not available yet
+    public static void RequestUserInfo(int uploaderId, string authToken, System.Action onComplete)
     {
-        var auth = UltiPawUtils.GetAuth();
-        if (auth == null)
+        pendingRequests.Add(uploaderId);
+        EditorCoroutineUtility.StartCoroutineOwnerless(FetchUserInfo(uploaderId, authToken, onComplete));
+    }
+    
+    private static IEnumerator FetchUserInfo(int userId, string overrideToken, System.Action onComplete)
+    {
+        string tokenToUse = overrideToken;
+        if (string.IsNullOrEmpty(tokenToUse))
         {
-            pendingRequests.Remove(uploaderId);
+            var auth = UltiPawUtils.GetAuth();
+            if (auth != null) tokenToUse = auth.token;
+        }
+        
+        if (string.IsNullOrEmpty(tokenToUse))
+        {
+            pendingRequests.Remove(userId);
             onComplete?.Invoke();
             yield break;
         }
         
-        string url = $"{UltiPawUtils.getServerUrl()}/user?u={uploaderId}&t={auth.token}";
+        string url = $"{UltiPawUtils.getServerUrl()}/user?u={userId}&t={tokenToUse}";
         
         using (UnityWebRequest request = UnityWebRequest.Get(url))
         {
             yield return request.SendWebRequest();
             
-            pendingRequests.Remove(uploaderId);
+            pendingRequests.Remove(userId);
             
             if (request.result == UnityWebRequest.Result.Success)
             {
@@ -70,23 +77,23 @@ public class UserService
                     var userInfo = JsonConvert.DeserializeObject<UserInfo>(request.downloadHandler.text);
                     if (userInfo != null)
                     {
-                        userCache[uploaderId] = userInfo;
+                        userCache[userId] = userInfo;
                         
                         // Start downloading avatar if we have a URL
                         if (!string.IsNullOrEmpty(userInfo.avatarUrl))
                         {
-                            EditorCoroutineUtility.StartCoroutineOwnerless(DownloadAvatar(uploaderId, userInfo.avatarUrl));
+                            EditorCoroutineUtility.StartCoroutineOwnerless(DownloadAvatar(userId, userInfo.avatarUrl));
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    UltiPawLogger.LogError($"[UltiPaw] Failed to parse user info for ID {uploaderId}: {ex.Message}");
+                    UltiPawLogger.LogError($"[UltiPaw] Failed to parse user info for ID {userId}: {ex.Message}");
                 }
             }
             else
             {
-                UltiPawLogger.LogWarning($"[UltiPaw] Failed to fetch user info for ID {uploaderId}: {request.error}");
+                UltiPawLogger.LogWarning($"[UltiPaw] Failed to fetch user info for ID {userId}: {request.error}");
             }
             
             onComplete?.Invoke();
@@ -96,18 +103,18 @@ public class UserService
     private static IEnumerator DownloadAvatar(int uploaderId, string avatarUrl)
     {
         string localPath = Path.Combine(AVATARS_FOLDER, $"avatar_{uploaderId}.png");
-        
+
         // Check if avatar already exists locally
         if (File.Exists(localPath))
         {
             LoadLocalAvatar(uploaderId, localPath);
             yield break;
         }
-        
+
         using (UnityWebRequest request = UnityWebRequestTexture.GetTexture(avatarUrl))
         {
             yield return request.SendWebRequest();
-            
+
             if (request.result == UnityWebRequest.Result.Success)
             {
                 try
@@ -115,14 +122,17 @@ public class UserService
                     Texture2D texture = DownloadHandlerTexture.GetContent(request);
                     if (texture != null)
                     {
-                        // Save to disk
-                        byte[] pngData = texture.EncodeToPNG();
+                        Texture2D processed = MakeCircularAvatar(texture) ?? texture;
+                        byte[] pngData = processed.EncodeToPNG();
                         File.WriteAllBytes(localPath, pngData);
-                        
-                        // Cache in memory
-                        avatarCache[uploaderId] = texture;
-                        
+
+                        avatarCache[uploaderId] = processed;
                         UltiPawLogger.Log($"[UltiPaw] Downloaded and cached avatar for user {uploaderId}");
+
+                        if (!ReferenceEquals(processed, texture))
+                        {
+                            Object.DestroyImmediate(texture);
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -136,6 +146,7 @@ public class UserService
             }
         }
     }
+
     
     private static void LoadLocalAvatar(int uploaderId, string localPath)
     {
@@ -145,7 +156,15 @@ public class UserService
             Texture2D texture = new Texture2D(2, 2);
             if (texture.LoadImage(fileData))
             {
-                avatarCache[uploaderId] = texture;
+                Texture2D processed = MakeCircularAvatar(texture) ?? texture;
+                avatarCache[uploaderId] = processed;
+
+                if (!ReferenceEquals(processed, texture))
+                {
+                    File.WriteAllBytes(localPath, processed.EncodeToPNG());
+                    Object.DestroyImmediate(texture);
+                }
+
                 UltiPawLogger.Log($"[UltiPaw] Loaded cached avatar for user {uploaderId}");
             }
         }
@@ -154,6 +173,7 @@ public class UserService
             UltiPawLogger.LogError($"[UltiPaw] Failed to load cached avatar for user {uploaderId}: {ex.Message}");
         }
     }
+
     
     public static UserInfo GetUserInfo(int uploaderId)
     {
@@ -175,6 +195,52 @@ public class UserService
         return avatarCache.ContainsKey(uploaderId) ? avatarCache[uploaderId] : null;
     }
     
+    private static Texture2D MakeCircularAvatar(Texture2D texture)
+    {
+        if (texture == null)
+            return null;
+
+        try
+        {
+            int size = Mathf.Min(texture.width, texture.height);
+            int xOffset = Mathf.Max(0, (texture.width - size) / 2);
+            int yOffset = Mathf.Max(0, (texture.height - size) / 2);
+            Color[] sourcePixels = texture.GetPixels(xOffset, yOffset, size, size);
+
+            float radius = size * 0.5f;
+            float radiusSquared = radius * radius;
+
+            for (int y = 0; y < size; y++)
+            {
+                float dy = (y + 0.5f) - radius;
+                for (int x = 0; x < size; x++)
+                {
+                    float dx = (x + 0.5f) - radius;
+                    int index = y * size + x;
+                    if ((dx * dx) + (dy * dy) > radiusSquared)
+                    {
+                        Color c = sourcePixels[index];
+                        c.a = 0f;
+                        sourcePixels[index] = c;
+                    }
+                }
+            }
+
+            Texture2D circular = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            circular.SetPixels(sourcePixels);
+            circular.Apply();
+            circular.wrapMode = TextureWrapMode.Clamp;
+            circular.filterMode = FilterMode.Bilinear;
+            circular.name = texture.name;
+            return circular;
+        }
+        catch (UnityException ex)
+        {
+            UltiPawLogger.LogWarning($"[UltiPaw] Avatar texture for circular mask was not readable: {ex.Message}");
+            return texture;
+        }
+    }
+
     public static bool IsUserInfoAvailable(int uploaderId)
     {
         return userCache.ContainsKey(uploaderId);
