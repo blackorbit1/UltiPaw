@@ -26,6 +26,7 @@ public class UltiPawEditor : UnityEditor.Editor
     private CreatorModeModule creatorModule;
     private AdvancedModeModule advancedModule;
     private AccountModule accountModule;
+    private AvatarOptionsModule avatarOptionsModule;
     
     // --- Async Services ---
     private AsyncTaskManager taskManager;
@@ -76,6 +77,7 @@ public class UltiPawEditor : UnityEditor.Editor
         advancedModule = new AdvancedModeModule(this);
         accountModule = new AccountModule(this, networkService);
         accountModule.Initialize();
+        avatarOptionsModule = new AvatarOptionsModule(this);
         
         // Load local versions first (synchronous, but fast)
         LoadUnsubmittedVersions();
@@ -249,6 +251,7 @@ public class UltiPawEditor : UnityEditor.Editor
             {
                 SafeUiCall(() => creatorModule.Draw());
                 SafeUiCall(() => versionModule.Draw());
+                SafeUiCall(() => avatarOptionsModule?.Draw());
                 SafeUiCall(DrawHelpBox);
             }
 
@@ -392,6 +395,9 @@ public class UltiPawEditor : UnityEditor.Editor
 
     public void RefreshAccountAndVersions()
     {
+        // Clear failed user info requests to allow retry
+        UserService.ClearAllFailedRequests();
+        
         try
         {
             accountModule?.Refresh();
