@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Runtime.Serialization;
 using Newtonsoft.Json;
@@ -43,6 +43,8 @@ public class UltiPawVersion
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)] public string customFbxPath;
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)] public string ultipawAvatarPath;
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)] public string logicPrefabPath;
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)] public bool? includeCustomVeins;
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)] public string customVeinsTexturePath;
 
     [JsonIgnore] public bool isUnsubmitted; // Runtime flag, not saved to JSON
 

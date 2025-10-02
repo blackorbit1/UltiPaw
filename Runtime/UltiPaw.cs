@@ -30,5 +30,7 @@ public class UltiPaw : MonoBehaviour
     [HideInInspector] public GameObject customFbxForCreator;
     [HideInInspector] public Avatar ultipawAvatarForCreatorProp;
     [HideInInspector] public GameObject avatarLogicPrefab;
+    [HideInInspector] public bool includeCustomVeinsForCreator = false;
+    [HideInInspector] public Texture2D customVeinsNormalMap;
     [HideInInspector] public List<string> customBlendshapesForCreator = new List<string>();
 }
