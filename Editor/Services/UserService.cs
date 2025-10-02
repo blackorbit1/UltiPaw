@@ -21,6 +21,7 @@ public class UserService
     private static Dictionary<int, UserInfo> userCache = new Dictionary<int, UserInfo>();
     private static Dictionary<int, Texture2D> avatarCache = new Dictionary<int, Texture2D>();
     private static HashSet<int> pendingRequests = new HashSet<int>();
+    private static HashSet<int> failedRequests = new HashSet<int>();
     
     private const string AVATARS_FOLDER = "Packages/ultipaw/data/avatars";
     
@@ -35,6 +36,26 @@ public class UserService
     
     public static void RequestUserInfo(int uploaderId, System.Action onComplete = null)
     {
+        // Don't request if already cached
+        if (userCache.ContainsKey(uploaderId))
+        {
+            onComplete?.Invoke();
+            return;
+        }
+        
+        // Don't request if already pending
+        if (pendingRequests.Contains(uploaderId))
+        {
+            return;
+        }
+        
+        // Don't request if previously failed (unless explicitly cleared)
+        if (failedRequests.Contains(uploaderId))
+        {
+            onComplete?.Invoke();
+            return;
+        }
+        
         pendingRequests.Add(uploaderId);
         EditorCoroutineUtility.StartCoroutineOwnerless(FetchUserInfo(uploaderId, null, onComplete));
     }
@@ -42,6 +63,26 @@ public class UserService
     // Overload allowing an explicit auth token when auth.dat is not available yet
     public static void RequestUserInfo(int uploaderId, string authToken, System.Action onComplete)
     {
+        // Don't request if already cached
+        if (userCache.ContainsKey(uploaderId))
+        {
+            onComplete?.Invoke();
+            return;
+        }
+        
+        // Don't request if already pending
+        if (pendingRequests.Contains(uploaderId))
+        {
+            return;
+        }
+        
+        // Don't request if previously failed (unless explicitly cleared)
+        if (failedRequests.Contains(uploaderId))
+        {
+            onComplete?.Invoke();
+            return;
+        }
+        
         pendingRequests.Add(uploaderId);
         EditorCoroutineUtility.StartCoroutineOwnerless(FetchUserInfo(uploaderId, authToken, onComplete));
     }
@@ -58,6 +99,7 @@ public class UserService
         if (string.IsNullOrEmpty(tokenToUse))
         {
             pendingRequests.Remove(userId);
+            failedRequests.Add(userId);
             onComplete?.Invoke();
             yield break;
         }
@@ -93,6 +135,7 @@ public class UserService
             }
             else
             {
+                failedRequests.Add(userId);
                 UltiPawLogger.LogWarning($"[UltiPaw] Failed to fetch user info for ID {userId}: {request.error}");
             }
             
@@ -244,6 +287,18 @@ public class UserService
     public static bool IsUserInfoAvailable(int uploaderId)
     {
         return userCache.ContainsKey(uploaderId);
+    }
+    
+    // Clear failed requests to allow retry (e.g., when user clicks refresh)
+    public static void ClearFailedRequest(int uploaderId)
+    {
+        failedRequests.Remove(uploaderId);
+    }
+    
+    // Clear all failed requests (e.g., on component reload or manual refresh all)
+    public static void ClearAllFailedRequests()
+    {
+        failedRequests.Clear();
     }
     
     public static void PreloadUserInfo(List<UltiPawVersion> versions)

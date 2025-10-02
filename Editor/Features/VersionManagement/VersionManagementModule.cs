@@ -8,7 +8,6 @@ public class VersionManagementModule
     public readonly VersionActions actions;
     public readonly FileConfigurationDrawer fileConfigDrawer;
     private readonly VersionListDrawer versionListDrawer;
-    private readonly BlendshapeDrawer blendshapeDrawer;
     private readonly FileManagerService fileManagerService;
     
     private enum ActionType { INSTALL, UPDATE, DOWNGRADE, RESET, UNAVAILABLE }
@@ -26,7 +25,6 @@ public class VersionManagementModule
         fileManagerService = files;
         fileConfigDrawer = new FileConfigurationDrawer(editor, actions);
         versionListDrawer = new VersionListDrawer(editor, actions);
-        blendshapeDrawer = new BlendshapeDrawer(editor);
     }
 
     public void OnEnable()
@@ -60,7 +58,6 @@ public class VersionManagementModule
         EditorGUILayout.Space();
         versionListDrawer.DrawUpdateNotification();
         DrawActionButtons();
-        blendshapeDrawer.Draw();
     }
 
     private void DrawFetchUpdatesButton()

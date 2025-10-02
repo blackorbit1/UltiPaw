@@ -389,11 +389,7 @@ public class VersionActions
         {
             // Match found! This is a known UltiPaw version.
             editor.isUltiPaw = true;
-            // Only update if the applied version has actually changed to avoid unnecessary churn.
-            if (!matchingVersion.Equals(editor.ultiPawTarget.appliedUltiPawVersion))
-            {
-                editor.ultiPawTarget.appliedUltiPawVersion = matchingVersion;
-            }
+            editor.ultiPawTarget.appliedUltiPawVersion = matchingVersion;
         }
         else
         {
