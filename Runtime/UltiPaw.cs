@@ -1,8 +1,17 @@
 #if UNITY_EDITOR
 using VRC.SDKBase;
 #endif
+using System;
 using System.Collections.Generic;
 using UnityEngine;
+
+// Represents a blendshape with a default value in creator mode.
+[Serializable]
+public class CreatorBlendshapeEntry
+{
+    public string name;
+    public string defaultValue;
+}
 
 // This component is a pure data container for an avatar that has been modified
 // by UltiPaw. It holds only the state that needs to be saved with the scene/prefab.
@@ -25,6 +34,12 @@ public class UltiPaw : MonoBehaviour
     [Tooltip("Stores the current values of the custom blendshape sliders.")]
     [HideInInspector] public List<float> blendShapeValues = new List<float>();
 
+    [Tooltip("Stores user-customized blendshape values that override defaults (keys: blendshape names).")]
+    [HideInInspector] [SerializeField] public List<string> customBlendshapeOverrideNames = new List<string>();
+    
+    [Tooltip("Stores user-customized blendshape values that override defaults (values: custom values).")]
+    [HideInInspector] [SerializeField] public List<float> customBlendshapeOverrideValues = new List<float>();
+
     // --- CREATOR MODE PERSISTENT DATA ---
     [HideInInspector] public bool isCreatorMode = false;
     [HideInInspector] public GameObject customFbxForCreator;
@@ -32,5 +47,5 @@ public class UltiPaw : MonoBehaviour
     [HideInInspector] public GameObject avatarLogicPrefab;
     [HideInInspector] public bool includeCustomVeinsForCreator = false;
     [HideInInspector] public Texture2D customVeinsNormalMap;
-    [HideInInspector] public List<string> customBlendshapesForCreator = new List<string>();
+    [HideInInspector] public List<CreatorBlendshapeEntry> customBlendshapesForCreator = new List<CreatorBlendshapeEntry>();
 }

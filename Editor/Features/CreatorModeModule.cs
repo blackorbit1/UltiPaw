@@ -48,12 +48,25 @@ public class CreatorModeModule
     {
         blendshapeList = new ReorderableList(editor.serializedObject, editor.customBlendshapesForCreatorProp, true, true, false, true);
         
-        blendshapeList.drawHeaderCallback = (Rect rect) => EditorGUI.LabelField(rect, "Custom Blendshapes to Expose");
+        blendshapeList.drawHeaderCallback = (Rect rect) =>
+        {
+            float nameWidth = rect.width * 0.75f;
+            float defaultWidth = rect.width * 0.25f;
+            EditorGUI.LabelField(new Rect(rect.x, rect.y, nameWidth, rect.height), "Blendshape Name");
+            EditorGUI.LabelField(new Rect(rect.x + nameWidth, rect.y, defaultWidth, rect.height), "Default Value");
+        };
         blendshapeList.drawElementCallback = (Rect rect, int index, bool isActive, bool isFocused) =>
         {
             var element = blendshapeList.serializedProperty.GetArrayElementAtIndex(index);
             rect.y += 2;
-            EditorGUI.PropertyField(new Rect(rect.x, rect.y, rect.width, EditorGUIUtility.singleLineHeight), element, GUIContent.none);
+            float nameWidth = rect.width * 0.75f - 5f; // 5px spacing
+            float defaultWidth = rect.width * 0.25f;
+            
+            var nameProp = element.FindPropertyRelative("name");
+            var defaultValueProp = element.FindPropertyRelative("defaultValue");
+            
+            EditorGUI.PropertyField(new Rect(rect.x, rect.y, nameWidth, EditorGUIUtility.singleLineHeight), nameProp, GUIContent.none);
+            EditorGUI.PropertyField(new Rect(rect.x + nameWidth + 5f, rect.y, defaultWidth, EditorGUIUtility.singleLineHeight), defaultValueProp, GUIContent.none);
         };
         
         // Initialize the autocomplete search field for blendshapes
@@ -192,8 +205,8 @@ public class CreatorModeModule
 
         var allBlendshapes = Enumerable.Range(0, smr.sharedMesh.blendShapeCount)
             .Select(i => smr.sharedMesh.GetBlendShapeName(i));
-        var existingBlendshapes = editor.ultiPawTarget.customBlendshapesForCreator;
-        var availableBlendshapes = allBlendshapes.Except(existingBlendshapes).OrderBy(s => s);
+        var existingBlendshapeNames = editor.ultiPawTarget.customBlendshapesForCreator.Select(e => e.name);
+        var availableBlendshapes = allBlendshapes.Except(existingBlendshapeNames).OrderBy(s => s);
 
         // Filter blendshapes that contain the search string (case-insensitive)
         foreach (var shapeName in availableBlendshapes)
@@ -214,7 +227,9 @@ public class CreatorModeModule
         var prop = editor.customBlendshapesForCreatorProp;
         int index = prop.arraySize;
         prop.arraySize++;
-        prop.GetArrayElementAtIndex(index).stringValue = selectedBlendshape;
+        var element = prop.GetArrayElementAtIndex(index);
+        element.FindPropertyRelative("name").stringValue = selectedBlendshape;
+        element.FindPropertyRelative("defaultValue").stringValue = "0";
         editor.serializedObject.ApplyModifiedProperties();
 
         // Clear the search field
@@ -367,7 +382,9 @@ public class CreatorModeModule
             for (int i = 0; i < newParent.customBlendshapes.Length; i++)
             {
                 editor.customBlendshapesForCreatorProp.InsertArrayElementAtIndex(i);
-                editor.customBlendshapesForCreatorProp.GetArrayElementAtIndex(i).stringValue = newParent.customBlendshapes[i];
+                var element = editor.customBlendshapesForCreatorProp.GetArrayElementAtIndex(i);
+                element.FindPropertyRelative("name").stringValue = newParent.customBlendshapes[i].name;
+                element.FindPropertyRelative("defaultValue").stringValue = newParent.customBlendshapes[i].defaultValue;
             }
             editor.serializedObject.ApplyModifiedProperties();
         }
@@ -490,6 +507,11 @@ public class CreatorModeModule
 
         string customVeinsAssetPath = shouldIncludeCustomVeins ? AssetDatabase.GetAssetPath(customVeinsTexture) : null;
 
+        // Convert CreatorBlendshapeEntry list to CustomBlendshapeEntry array
+        var customBlendshapeEntries = editor.ultiPawTarget.customBlendshapesForCreator
+            .Select(entry => new CustomBlendshapeEntry { name = entry.name, defaultValue = entry.defaultValue })
+            .ToArray();
+
         var metadata = new UltiPawVersion {
             version = newVersionString,
             scope = newVersionScope,
@@ -497,7 +519,7 @@ public class CreatorModeModule
             defaultAviVersion = selectedParentVersionObject.defaultAviVersion,
             parentVersion = selectedParentVersionObject?.version,
             dependencies = fileManagerService.FindPrefabDependencies(logicPrefab),
-            customBlendshapes = editor.ultiPawTarget.customBlendshapesForCreator.ToArray(),
+            customBlendshapes = customBlendshapeEntries,
             extraCustomization = extraCustomization.Count > 0 ? extraCustomization.Distinct().ToArray() : null,
             includeCustomVeins = shouldIncludeCustomVeins ? true : (bool?)null,
             customVeinsTexturePath = customVeinsAssetPath,
@@ -594,7 +616,9 @@ public class CreatorModeModule
                 for (int i = 0; i < ver.customBlendshapes.Length; i++)
                 {
                     editor.customBlendshapesForCreatorProp.InsertArrayElementAtIndex(i);
-                    editor.customBlendshapesForCreatorProp.GetArrayElementAtIndex(i).stringValue = ver.customBlendshapes[i];
+                    var element = editor.customBlendshapesForCreatorProp.GetArrayElementAtIndex(i);
+                    element.FindPropertyRelative("name").stringValue = ver.customBlendshapes[i].name;
+                    element.FindPropertyRelative("defaultValue").stringValue = ver.customBlendshapes[i].defaultValue;
                 }
             }
 

@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
+using UnityEngine;
+
+#if UNITY_EDITOR
 using UnityEditor;
 using UnityEditor.IMGUI.Controls;
-using UnityEngine;
 
 namespace AutocompleteSearchField
 {
@@ -292,3 +294,4 @@ namespace AutocompleteSearchField
 		}
 	}
 }
+#endif
