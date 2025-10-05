@@ -9,6 +9,7 @@ using UnityEngine;
 using System;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
+using AutocompleteSearchField;
 
 // Handles all UI and logic for the Creator Mode feature.
 public class CreatorModeModule
@@ -17,6 +18,7 @@ public class CreatorModeModule
     private readonly NetworkService networkService;
     private readonly FileManagerService fileManagerService;
     private ReorderableList blendshapeList;
+    private AutocompleteSearchField.AutocompleteSearchField blendshapeSearchField;
 
     // UI State
     private bool creatorModeFoldout = true;
@@ -44,7 +46,7 @@ public class CreatorModeModule
 
     public void Initialize()
     {
-        blendshapeList = new ReorderableList(editor.serializedObject, editor.customBlendshapesForCreatorProp, true, true, true, true);
+        blendshapeList = new ReorderableList(editor.serializedObject, editor.customBlendshapesForCreatorProp, true, true, false, true);
         
         blendshapeList.drawHeaderCallback = (Rect rect) => EditorGUI.LabelField(rect, "Custom Blendshapes to Expose");
         blendshapeList.drawElementCallback = (Rect rect, int index, bool isActive, bool isFocused) =>
@@ -53,7 +55,11 @@ public class CreatorModeModule
             rect.y += 2;
             EditorGUI.PropertyField(new Rect(rect.x, rect.y, rect.width, EditorGUIUtility.singleLineHeight), element, GUIContent.none);
         };
-        blendshapeList.onAddDropdownCallback = OnAddBlendshapeDropdown;
+        
+        // Initialize the autocomplete search field for blendshapes
+        blendshapeSearchField = new AutocompleteSearchField.AutocompleteSearchField();
+        blendshapeSearchField.onInputChanged = OnBlendshapeSearchInputChanged;
+        blendshapeSearchField.onConfirm = OnBlendshapeSearchConfirm;
     }
 
     public void Draw()
@@ -92,7 +98,21 @@ public class CreatorModeModule
             DrawCustomVeinsSection();
             
             EditorGUILayout.Space();
+            
+            // vertical group with helpbox style
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            
             blendshapeList.DoLayoutList();
+            
+            // Display inline blendshape search field
+            if (blendshapeSearchField != null)
+            {
+                EditorGUILayout.LabelField("Search and Add Blendshapes:", EditorStyles.miniBoldLabel);
+                blendshapeSearchField.OnGUI();
+            }
+            
+            EditorGUILayout.EndVertical();  
+            
             EditorGUILayout.Space();
 
             EditorGUILayout.LabelField("New Version Details:", EditorStyles.miniBoldLabel);
@@ -156,31 +176,50 @@ public class CreatorModeModule
         EditorGUILayout.EndVertical();
     }
     
-    private void OnAddBlendshapeDropdown(Rect buttonRect, ReorderableList l)
+
+    private void OnBlendshapeSearchInputChanged(string searchString)
     {
-        var menu = new GenericMenu();
+        blendshapeSearchField.ClearResults();
+        
+        if (string.IsNullOrEmpty(searchString))
+            return;
+
         var fbxObject = editor.customFbxForCreatorProp.objectReferenceValue as GameObject;
-        if (fbxObject == null) { menu.AddDisabledItem(new GUIContent("Assign a Custom FBX first")); menu.ShowAsContext(); return; }
+        if (fbxObject == null) return;
 
         var smr = fbxObject.GetComponentInChildren<SkinnedMeshRenderer>();
-        if (smr == null || smr.sharedMesh == null) { menu.AddDisabledItem(new GUIContent("FBX has no SkinnedMeshRenderer/Mesh")); menu.ShowAsContext(); return; }
+        if (smr == null || smr.sharedMesh == null) return;
 
-        var allBlendshapes = Enumerable.Range(0, smr.sharedMesh.blendShapeCount).Select(i => smr.sharedMesh.GetBlendShapeName(i));
+        var allBlendshapes = Enumerable.Range(0, smr.sharedMesh.blendShapeCount)
+            .Select(i => smr.sharedMesh.GetBlendShapeName(i));
         var existingBlendshapes = editor.ultiPawTarget.customBlendshapesForCreator;
-        var availableBlendshapes = allBlendshapes.Except(existingBlendshapes).OrderBy(s => s).ToList();
+        var availableBlendshapes = allBlendshapes.Except(existingBlendshapes).OrderBy(s => s);
 
-        if (availableBlendshapes.Count == 0) { menu.AddDisabledItem(new GUIContent("No more blendshapes to add")); }
-        
+        // Filter blendshapes that contain the search string (case-insensitive)
         foreach (var shapeName in availableBlendshapes)
         {
-            menu.AddItem(new GUIContent(shapeName), false, () => {
-                var index = l.serializedProperty.arraySize;
-                l.serializedProperty.arraySize++;
-                l.serializedProperty.GetArrayElementAtIndex(index).stringValue = shapeName;
-                editor.serializedObject.ApplyModifiedProperties();
-            });
+            if (shapeName.IndexOf(searchString, StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                blendshapeSearchField.AddResult(shapeName);
+            }
         }
-        menu.ShowAsContext();
+    }
+
+    private void OnBlendshapeSearchConfirm(string selectedBlendshape)
+    {
+        if (string.IsNullOrEmpty(selectedBlendshape))
+            return;
+
+        // Add the selected blendshape to the list
+        var prop = editor.customBlendshapesForCreatorProp;
+        int index = prop.arraySize;
+        prop.arraySize++;
+        prop.GetArrayElementAtIndex(index).stringValue = selectedBlendshape;
+        editor.serializedObject.ApplyModifiedProperties();
+
+        // Clear the search field
+        blendshapeSearchField.searchString = "";
+        blendshapeSearchField.ClearResults();
     }
 
     private void DrawParentVersionDropdown()
