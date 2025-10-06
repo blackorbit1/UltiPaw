@@ -1,4 +1,4 @@
-﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
@@ -9,6 +9,7 @@ using UnityEngine;
 using System;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
+using AutocompleteSearchField;
 
 // Handles all UI and logic for the Creator Mode feature.
 public class CreatorModeModule
@@ -17,6 +18,7 @@ public class CreatorModeModule
     private readonly NetworkService networkService;
     private readonly FileManagerService fileManagerService;
     private ReorderableList blendshapeList;
+    private AutocompleteSearchField.AutocompleteSearchField blendshapeSearchField;
 
     // UI State
     private bool creatorModeFoldout = true;
@@ -30,6 +32,10 @@ public class CreatorModeModule
     private int selectedParentVersionIndex = -1;
     private UltiPawVersion selectedParentVersionObject = null;
     private UltiPawVersion previouslySelectedVersion = null;
+    private const string CustomVeinsKey = "customVeins";
+    private string autoAssignedVeinsTexturePath;
+    private UltiPawVersion lastParentVersionForVeins;
+    private bool isRestoringFromVersionState;
     
     public CreatorModeModule(UltiPawEditor editor)
     {
@@ -40,16 +46,33 @@ public class CreatorModeModule
 
     public void Initialize()
     {
-        blendshapeList = new ReorderableList(editor.serializedObject, editor.customBlendshapesForCreatorProp, true, true, true, true);
+        blendshapeList = new ReorderableList(editor.serializedObject, editor.customBlendshapesForCreatorProp, true, true, false, true);
         
-        blendshapeList.drawHeaderCallback = (Rect rect) => EditorGUI.LabelField(rect, "Custom Blendshapes to Expose");
+        blendshapeList.drawHeaderCallback = (Rect rect) =>
+        {
+            float nameWidth = rect.width * 0.75f;
+            float defaultWidth = rect.width * 0.25f;
+            EditorGUI.LabelField(new Rect(rect.x, rect.y, nameWidth, rect.height), "Blendshape Name");
+            EditorGUI.LabelField(new Rect(rect.x + nameWidth, rect.y, defaultWidth, rect.height), "Default Value");
+        };
         blendshapeList.drawElementCallback = (Rect rect, int index, bool isActive, bool isFocused) =>
         {
             var element = blendshapeList.serializedProperty.GetArrayElementAtIndex(index);
             rect.y += 2;
-            EditorGUI.PropertyField(new Rect(rect.x, rect.y, rect.width, EditorGUIUtility.singleLineHeight), element, GUIContent.none);
+            float nameWidth = rect.width * 0.75f - 5f; // 5px spacing
+            float defaultWidth = rect.width * 0.25f;
+            
+            var nameProp = element.FindPropertyRelative("name");
+            var defaultValueProp = element.FindPropertyRelative("defaultValue");
+            
+            EditorGUI.PropertyField(new Rect(rect.x, rect.y, nameWidth, EditorGUIUtility.singleLineHeight), nameProp, GUIContent.none);
+            EditorGUI.PropertyField(new Rect(rect.x + nameWidth + 5f, rect.y, defaultWidth, EditorGUIUtility.singleLineHeight), defaultValueProp, GUIContent.none);
         };
-        blendshapeList.onAddDropdownCallback = OnAddBlendshapeDropdown;
+        
+        // Initialize the autocomplete search field for blendshapes
+        blendshapeSearchField = new AutocompleteSearchField.AutocompleteSearchField();
+        blendshapeSearchField.onInputChanged = OnBlendshapeSearchInputChanged;
+        blendshapeSearchField.onConfirm = OnBlendshapeSearchConfirm;
     }
 
     public void Draw()
@@ -80,15 +103,30 @@ public class CreatorModeModule
                 SetDefaultVersionNumbers(editor.ultiPawTarget.appliedUltiPawVersion);
             }
 
+            DrawParentVersionDropdown();
+            
             EditorGUILayout.PropertyField(editor.customFbxForCreatorProp, new GUIContent("Custom FBX (Transformed)"));
             EditorGUILayout.PropertyField(editor.ultipawAvatarForCreatorProp, new GUIContent("UltiPaw Avatar (Transformed)"));
             EditorGUILayout.PropertyField(editor.avatarLogicPrefabProp, new GUIContent("Avatar Logic Prefab"));
+            DrawCustomVeinsSection();
             
             EditorGUILayout.Space();
+            
+            // vertical group with helpbox style
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            
             blendshapeList.DoLayoutList();
+            
+            // Display inline blendshape search field
+            if (blendshapeSearchField != null)
+            {
+                EditorGUILayout.LabelField("Search and Add Blendshapes:", EditorStyles.miniBoldLabel);
+                blendshapeSearchField.OnGUI();
+            }
+            
+            EditorGUILayout.EndVertical();  
+            
             EditorGUILayout.Space();
-
-            DrawParentVersionDropdown();
 
             EditorGUILayout.LabelField("New Version Details:", EditorStyles.miniBoldLabel);
             DrawVersionFields();
@@ -110,6 +148,10 @@ public class CreatorModeModule
                              editor.ultipawAvatarForCreatorProp.objectReferenceValue != null &&
                              selectedParentVersionObject != null &&
                              isVersionValid;
+            if (editor.includeCustomVeinsForCreatorProp.boolValue && editor.customVeinsNormalMapProp.objectReferenceValue == null)
+            {
+                canSubmit = false;
+            }
             
             using (new EditorGUI.DisabledScope(!canSubmit))
             {
@@ -147,39 +189,69 @@ public class CreatorModeModule
         EditorGUILayout.EndVertical();
     }
     
-    private void OnAddBlendshapeDropdown(Rect buttonRect, ReorderableList l)
+
+    private void OnBlendshapeSearchInputChanged(string searchString)
     {
-        var menu = new GenericMenu();
+        blendshapeSearchField.ClearResults();
+        
+        if (string.IsNullOrEmpty(searchString))
+            return;
+
         var fbxObject = editor.customFbxForCreatorProp.objectReferenceValue as GameObject;
-        if (fbxObject == null) { menu.AddDisabledItem(new GUIContent("Assign a Custom FBX first")); menu.ShowAsContext(); return; }
+        if (fbxObject == null) return;
 
         var smr = fbxObject.GetComponentInChildren<SkinnedMeshRenderer>();
-        if (smr == null || smr.sharedMesh == null) { menu.AddDisabledItem(new GUIContent("FBX has no SkinnedMeshRenderer/Mesh")); menu.ShowAsContext(); return; }
+        if (smr == null || smr.sharedMesh == null) return;
 
-        var allBlendshapes = Enumerable.Range(0, smr.sharedMesh.blendShapeCount).Select(i => smr.sharedMesh.GetBlendShapeName(i));
-        var existingBlendshapes = editor.ultiPawTarget.customBlendshapesForCreator;
-        var availableBlendshapes = allBlendshapes.Except(existingBlendshapes).OrderBy(s => s).ToList();
+        var allBlendshapes = Enumerable.Range(0, smr.sharedMesh.blendShapeCount)
+            .Select(i => smr.sharedMesh.GetBlendShapeName(i));
+        var existingBlendshapeNames = editor.ultiPawTarget.customBlendshapesForCreator.Select(e => e.name);
+        var availableBlendshapes = allBlendshapes.Except(existingBlendshapeNames).OrderBy(s => s);
 
-        if (availableBlendshapes.Count == 0) { menu.AddDisabledItem(new GUIContent("No more blendshapes to add")); }
-        
+        // Filter blendshapes that contain the search string (case-insensitive)
         foreach (var shapeName in availableBlendshapes)
         {
-            menu.AddItem(new GUIContent(shapeName), false, () => {
-                var index = l.serializedProperty.arraySize;
-                l.serializedProperty.arraySize++;
-                l.serializedProperty.GetArrayElementAtIndex(index).stringValue = shapeName;
-                editor.serializedObject.ApplyModifiedProperties();
-            });
+            if (shapeName.IndexOf(searchString, StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                blendshapeSearchField.AddResult(shapeName);
+            }
         }
-        menu.ShowAsContext();
+    }
+
+    private void OnBlendshapeSearchConfirm(string selectedBlendshape)
+    {
+        if (string.IsNullOrEmpty(selectedBlendshape))
+            return;
+
+        // Add the selected blendshape to the list
+        var prop = editor.customBlendshapesForCreatorProp;
+        int index = prop.arraySize;
+        prop.arraySize++;
+        var element = prop.GetArrayElementAtIndex(index);
+        element.FindPropertyRelative("name").stringValue = selectedBlendshape;
+        element.FindPropertyRelative("defaultValue").stringValue = "0";
+        editor.serializedObject.ApplyModifiedProperties();
+
+        // Clear the search field
+        blendshapeSearchField.searchString = "";
+        blendshapeSearchField.ClearResults();
     }
 
     private void DrawParentVersionDropdown()
     {
         EditorGUILayout.BeginHorizontal();
         EditorGUILayout.LabelField("Parent Version:", GUILayout.Width(100));
+
+        if (parentVersionDisplayOptions == null || parentVersionDisplayOptions.Count == 0)
+        {
+            EditorGUILayout.Popup(0, Array.Empty<string>());
+            EditorGUILayout.EndHorizontal();
+            HandleParentVersionChanged(null);
+            return;
+        }
+
         int currentParentPopupIndex = (selectedParentVersionIndex == -1) ? defaultParentIndex : selectedParentVersionIndex;
-        
+
         EditorGUI.BeginChangeCheck();
         int newParentIndex = EditorGUILayout.Popup(currentParentPopupIndex, parentVersionDisplayOptions.ToArray());
         if (EditorGUI.EndChangeCheck() || (selectedParentVersionIndex == -1 && defaultParentIndex != -1 && currentParentPopupIndex != newParentIndex))
@@ -187,16 +259,135 @@ public class CreatorModeModule
             selectedParentVersionIndex = newParentIndex;
             if (selectedParentVersionIndex >= 0 && selectedParentVersionIndex < compatibleParentVersions.Count)
             {
-                 selectedParentVersionObject = compatibleParentVersions[selectedParentVersionIndex];
-                 SetDefaultVersionNumbers(selectedParentVersionObject);
+                selectedParentVersionObject = compatibleParentVersions[selectedParentVersionIndex];
+                SetDefaultVersionNumbers(selectedParentVersionObject);
             }
             else
             {
-                 selectedParentVersionObject = null;
-                 SetDefaultVersionNumbers(null);
+                selectedParentVersionObject = null;
+                SetDefaultVersionNumbers(null);
             }
         }
         EditorGUILayout.EndHorizontal();
+        HandleParentVersionChanged(selectedParentVersionObject);
+    }
+
+    private void DrawCustomVeinsSection()
+    {
+        var includeProp = editor.includeCustomVeinsForCreatorProp;
+        var textureProp = editor.customVeinsNormalMapProp;
+
+        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+        EditorGUI.BeginChangeCheck();
+        bool includeVeins = EditorGUILayout.Toggle(new GUIContent("Include custom veins"), includeProp.boolValue);
+        if (EditorGUI.EndChangeCheck())
+        {
+            includeProp.boolValue = includeVeins;
+            if (!includeVeins)
+            {
+                textureProp.objectReferenceValue = null;
+                autoAssignedVeinsTexturePath = null;
+            }
+        }
+
+        if (includeProp.boolValue)
+        {
+            DrawVeinsTextureField(textureProp);
+            if (textureProp.objectReferenceValue == null)
+            {
+                EditorGUILayout.HelpBox("Assign a normal map texture to include custom veins.", MessageType.Warning);
+            }
+        }
+
+        EditorGUILayout.EndVertical();
+    }
+
+    private void DrawVeinsTextureField(SerializedProperty textureProp)
+    {
+        UnityEngine.Object currentTexture = textureProp.objectReferenceValue;
+        EditorGUI.indentLevel++;
+        EditorGUIUtility.SetIconSize(new Vector2(64f, 64f));
+        Texture2D newTexture = (Texture2D)EditorGUILayout.ObjectField(new GUIContent("Custom veins", "Normal map applied to the veins detail layer."), currentTexture, typeof(Texture2D), false, GUILayout.Height(64f));
+        EditorGUIUtility.SetIconSize(Vector2.zero);
+        EditorGUI.indentLevel--;
+
+        if (!Equals(newTexture, currentTexture))
+        {
+            textureProp.objectReferenceValue = newTexture;
+            string selectedPath = AssetDatabase.GetAssetPath(newTexture);
+            string parentPath = GetVeinsTexturePathForVersion(selectedParentVersionObject);
+            autoAssignedVeinsTexturePath = (!string.IsNullOrEmpty(selectedPath) && selectedPath == parentPath) ? selectedPath : null;
+        }
+    }
+
+    private static string GetVeinsTexturePathForVersion(UltiPawVersion version)
+    {
+        if (version == null) return null;
+        string folder = UltiPawUtils.GetVersionDataPath(version.version, version.defaultAviVersion);
+        if (string.IsNullOrEmpty(folder)) return null;
+        return Path.Combine(folder, "veins normal.png").Replace("\\", "/");
+    }
+
+    private bool ParentSupportsCustomVeins(UltiPawVersion version)
+    {
+        return version?.extraCustomization != null && version.extraCustomization.Contains(CustomVeinsKey);
+    }
+
+    private void HandleParentVersionChanged(UltiPawVersion newParent)
+    {
+        if (ReferenceEquals(lastParentVersionForVeins, newParent) && !isRestoringFromVersionState)
+        {
+            return;
+        }
+
+        lastParentVersionForVeins = newParent;
+
+        var includeProp = editor.includeCustomVeinsForCreatorProp;
+        var textureProp = editor.customVeinsNormalMapProp;
+
+        // Only auto-populate if parent supports custom veins
+        if (ParentSupportsCustomVeins(newParent))
+        {
+            // Auto-check the checkbox if not already checked (but only when not restoring from saved state)
+            if (!isRestoringFromVersionState && !includeProp.boolValue)
+            {
+                includeProp.boolValue = true;
+            }
+
+            string parentTexturePath = GetVeinsTexturePathForVersion(newParent);
+            if (!string.IsNullOrEmpty(parentTexturePath))
+            {
+                Texture2D parentTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(parentTexturePath);
+                if (parentTexture != null)
+                {
+                    string currentTexturePath = AssetDatabase.GetAssetPath(textureProp.objectReferenceValue);
+                    bool wasAutoAssigned = !string.IsNullOrEmpty(autoAssignedVeinsTexturePath) && autoAssignedVeinsTexturePath == currentTexturePath;
+
+                    // Auto-assign the texture if empty or was previously auto-assigned
+                    if (textureProp.objectReferenceValue == null || wasAutoAssigned)
+                    {
+                        textureProp.objectReferenceValue = parentTexture;
+                        autoAssignedVeinsTexturePath = parentTexturePath;
+                    }
+                }
+            }
+        }
+        // If parent doesn't support custom veins, don't uncheck or clear - just leave it as is
+        
+        // Auto-populate custom blendshapes from parent version
+        if (newParent?.customBlendshapes != null && newParent.customBlendshapes.Length > 0 && !isRestoringFromVersionState)
+        {
+            editor.customBlendshapesForCreatorProp.ClearArray();
+            for (int i = 0; i < newParent.customBlendshapes.Length; i++)
+            {
+                editor.customBlendshapesForCreatorProp.InsertArrayElementAtIndex(i);
+                var element = editor.customBlendshapesForCreatorProp.GetArrayElementAtIndex(i);
+                element.FindPropertyRelative("name").stringValue = newParent.customBlendshapes[i].name;
+                element.FindPropertyRelative("defaultValue").stringValue = newParent.customBlendshapes[i].defaultValue;
+            }
+            editor.serializedObject.ApplyModifiedProperties();
+        }
     }
 
     private void DrawVersionFields()
@@ -262,6 +453,14 @@ public class CreatorModeModule
         var customFbxPath = AssetDatabase.GetAssetPath(customFbxGO);
         var ultipawAvatar = editor.ultipawAvatarForCreatorProp.objectReferenceValue as Avatar;
         var logicPrefab = editor.avatarLogicPrefabProp.objectReferenceValue as GameObject;
+        bool shouldIncludeCustomVeins = editor.includeCustomVeinsForCreatorProp.boolValue;
+        var customVeinsTexture = editor.customVeinsNormalMapProp.objectReferenceValue as Texture2D;
+
+        if (shouldIncludeCustomVeins)
+        {
+            if (customVeinsTexture == null)
+                throw new Exception("Custom veins is enabled but no normal map texture is assigned.");
+        }
 
         string originalFbxPath = new VersionActions(editor, networkService, fileManagerService).GetCurrentFBXPath() + FileManagerService.OriginalSuffix;
         if (!File.Exists(originalFbxPath))
@@ -280,12 +479,39 @@ public class CreatorModeModule
             customFbxGO,
             ultipawAvatar,
             logicPrefab,
-            selectedParentVersionObject
+            selectedParentVersionObject,
+            shouldIncludeCustomVeins,
+            customVeinsTexture
         );
 
         EditorUtility.DisplayProgressBar("Preparing Build", "Calculating hashes and dependencies...", 0.5f);
         string binPath = Path.Combine(UltiPawUtils.GetVersionDataPath(newVersionString, selectedParentVersionObject.defaultAviVersion), "ultipaw.bin");
-        
+
+        var extraCustomization = new List<string>();
+        if (selectedParentVersionObject.extraCustomization != null)
+        {
+            extraCustomization.AddRange(selectedParentVersionObject.extraCustomization);
+        }
+
+        if (shouldIncludeCustomVeins)
+        {
+            if (!extraCustomization.Contains(CustomVeinsKey))
+            {
+                extraCustomization.Add(CustomVeinsKey);
+            }
+        }
+        else
+        {
+            extraCustomization.RemoveAll(value => value == CustomVeinsKey);
+        }
+
+        string customVeinsAssetPath = shouldIncludeCustomVeins ? AssetDatabase.GetAssetPath(customVeinsTexture) : null;
+
+        // Convert CreatorBlendshapeEntry list to CustomBlendshapeEntry array
+        var customBlendshapeEntries = editor.ultiPawTarget.customBlendshapesForCreator
+            .Select(entry => new CustomBlendshapeEntry { name = entry.name, defaultValue = entry.defaultValue })
+            .ToArray();
+
         var metadata = new UltiPawVersion {
             version = newVersionString,
             scope = newVersionScope,
@@ -293,7 +519,10 @@ public class CreatorModeModule
             defaultAviVersion = selectedParentVersionObject.defaultAviVersion,
             parentVersion = selectedParentVersionObject?.version,
             dependencies = fileManagerService.FindPrefabDependencies(logicPrefab),
-            customBlendshapes = editor.ultiPawTarget.customBlendshapesForCreator.ToArray(),
+            customBlendshapes = customBlendshapeEntries,
+            extraCustomization = extraCustomization.Count > 0 ? extraCustomization.Distinct().ToArray() : null,
+            includeCustomVeins = shouldIncludeCustomVeins ? true : (bool?)null,
+            customVeinsTexturePath = customVeinsAssetPath,
             // Local-only data for repopulating fields
             baseFbxHash = fileManagerService.CalculateFileHash(originalFbxPath),
             customFbxPath = customFbxPath,
@@ -303,7 +532,7 @@ public class CreatorModeModule
             customAviHash = fileManagerService.CalculateFileHash(binPath),
             appliedCustomAviHash = fileManagerService.CalculateFileHash(customFbxPath)
         };
-        
+
         return (metadata, tempZipPath);
     }
 
@@ -344,38 +573,79 @@ public class CreatorModeModule
 
     private void PopulateFieldsFromVersion(UltiPawVersion ver)
     {
-        var parsedVersion = editor.ParseVersion(ver.version);
-        newVersionMajor = parsedVersion.Major;
-        newVersionMinor = parsedVersion.Minor;
-        newVersionPatch = parsedVersion.Build;
-        newVersionScope = ver.scope;
-        newChangelog = ver.changelog;
+        isRestoringFromVersionState = true;
+        try
+        {
+            var parsedVersion = editor.ParseVersion(ver.version);
+            newVersionMajor = parsedVersion.Major;
+            newVersionMinor = parsedVersion.Minor;
+            newVersionPatch = parsedVersion.Build;
+            newVersionScope = ver.scope;
+            newChangelog = ver.changelog;
 
-        if (!string.IsNullOrEmpty(ver.parentVersion))
-        {
-            int parentIdx = compatibleParentVersions.FindIndex(p => p.version == ver.parentVersion);
-            if (parentIdx != -1)
+            if (!string.IsNullOrEmpty(ver.parentVersion))
             {
-                selectedParentVersionIndex = parentIdx;
-                selectedParentVersionObject = compatibleParentVersions[parentIdx];
+                int parentIdx = compatibleParentVersions.FindIndex(p => p.version == ver.parentVersion);
+                if (parentIdx != -1)
+                {
+                    selectedParentVersionIndex = parentIdx;
+                    selectedParentVersionObject = compatibleParentVersions[parentIdx];
+                    SetDefaultVersionNumbers(selectedParentVersionObject);
+                }
+                else
+                {
+                    selectedParentVersionIndex = -1;
+                    selectedParentVersionObject = null;
+                    SetDefaultVersionNumbers(null);
+                }
             }
-        }
-        
-        editor.customFbxForCreatorProp.objectReferenceValue = AssetDatabase.LoadAssetAtPath<GameObject>(ver.customFbxPath);
-        editor.ultipawAvatarForCreatorProp.objectReferenceValue = AssetDatabase.LoadAssetAtPath<Avatar>(ver.ultipawAvatarPath);
-        editor.avatarLogicPrefabProp.objectReferenceValue = AssetDatabase.LoadAssetAtPath<GameObject>(ver.logicPrefabPath);
-        
-        editor.customBlendshapesForCreatorProp.ClearArray();
-        if(ver.customBlendshapes != null)
-        {
-            for(int i = 0; i < ver.customBlendshapes.Length; i++)
+            else
             {
-                editor.customBlendshapesForCreatorProp.InsertArrayElementAtIndex(i);
-                editor.customBlendshapesForCreatorProp.GetArrayElementAtIndex(i).stringValue = ver.customBlendshapes[i];
+                selectedParentVersionIndex = -1;
+                selectedParentVersionObject = null;
+                SetDefaultVersionNumbers(null);
             }
+
+            editor.customFbxForCreatorProp.objectReferenceValue = AssetDatabase.LoadAssetAtPath<GameObject>(ver.customFbxPath);
+            editor.ultipawAvatarForCreatorProp.objectReferenceValue = AssetDatabase.LoadAssetAtPath<Avatar>(ver.ultipawAvatarPath);
+            editor.avatarLogicPrefabProp.objectReferenceValue = AssetDatabase.LoadAssetAtPath<GameObject>(ver.logicPrefabPath);
+
+            editor.customBlendshapesForCreatorProp.ClearArray();
+            if (ver.customBlendshapes != null)
+            {
+                for (int i = 0; i < ver.customBlendshapes.Length; i++)
+                {
+                    editor.customBlendshapesForCreatorProp.InsertArrayElementAtIndex(i);
+                    var element = editor.customBlendshapesForCreatorProp.GetArrayElementAtIndex(i);
+                    element.FindPropertyRelative("name").stringValue = ver.customBlendshapes[i].name;
+                    element.FindPropertyRelative("defaultValue").stringValue = ver.customBlendshapes[i].defaultValue;
+                }
+            }
+
+            bool includeCustomVeins = ver.includeCustomVeins ?? (ver.extraCustomization != null && ver.extraCustomization.Contains(CustomVeinsKey));
+            editor.includeCustomVeinsForCreatorProp.boolValue = includeCustomVeins;
+
+            if (!string.IsNullOrEmpty(ver.customVeinsTexturePath))
+            {
+                editor.customVeinsNormalMapProp.objectReferenceValue = AssetDatabase.LoadAssetAtPath<Texture2D>(ver.customVeinsTexturePath);
+            }
+            else
+            {
+                editor.customVeinsNormalMapProp.objectReferenceValue = null;
+            }
+
+            string assignedPath = AssetDatabase.GetAssetPath(editor.customVeinsNormalMapProp.objectReferenceValue);
+            string parentPath = GetVeinsTexturePathForVersion(selectedParentVersionObject);
+            autoAssignedVeinsTexturePath = (!string.IsNullOrEmpty(assignedPath) && assignedPath == parentPath) ? assignedPath : null;
+            lastParentVersionForVeins = selectedParentVersionObject;
+
+            editor.serializedObject.ApplyModifiedProperties();
+            editor.Repaint();
         }
-        editor.serializedObject.ApplyModifiedProperties();
-        editor.Repaint();
+        finally
+        {
+            isRestoringFromVersionState = false;
+        }
     }
 
     private IEnumerator BuildAndApplyLocalVersionCoroutine()
@@ -477,3 +747,5 @@ public class CreatorModeModule
     }
 }
 #endif
+
+

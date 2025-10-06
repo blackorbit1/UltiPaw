@@ -1,9 +1,16 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Runtime.Serialization;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 
+// Represents a custom blendshape with a name and default value.
+[JsonObject(MemberSerialization.OptIn)]
+public class CustomBlendshapeEntry
+{
+    [JsonProperty] public string name;
+    [JsonProperty] public string defaultValue;
+}
 
 // This response object maps to the JSON from the server's version endpoint.
 
@@ -32,7 +39,8 @@ public class UltiPawVersion
     [JsonProperty] public string customAviHash;
     [JsonProperty] public string appliedCustomAviHash;
     [JsonProperty] public string[] defaultAviHash;
-    [JsonProperty] public string[] customBlendshapes;
+    [JsonProperty] public CustomBlendshapeEntry[] customBlendshapes;
+    [JsonProperty] public string[] extraCustomization;
     [JsonProperty] public Dictionary<string, string> dependencies;
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)] public int uploaderId;
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)] public string parentVersion;
@@ -42,6 +50,8 @@ public class UltiPawVersion
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)] public string customFbxPath;
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)] public string ultipawAvatarPath;
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)] public string logicPrefabPath;
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)] public bool? includeCustomVeins;
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)] public string customVeinsTexturePath;
 
     [JsonIgnore] public bool isUnsubmitted; // Runtime flag, not saved to JSON
 

@@ -17,7 +17,8 @@ public class UltiPawEditor : UnityEditor.Editor
 
     // --- Serialized Properties ---
     public SerializedProperty specifyCustomBaseFbxProp, baseFbxFilesProp, blendShapeValuesProp, isCreatorModeProp,
-                              customFbxForCreatorProp, ultipawAvatarForCreatorProp, avatarLogicPrefabProp, customBlendshapesForCreatorProp;
+                              customFbxForCreatorProp, ultipawAvatarForCreatorProp, avatarLogicPrefabProp, customBlendshapesForCreatorProp,
+                              includeCustomVeinsForCreatorProp, customVeinsNormalMapProp;
 
     // --- Services and Modules ---
     private NetworkService networkService;
@@ -26,6 +27,7 @@ public class UltiPawEditor : UnityEditor.Editor
     private CreatorModeModule creatorModule;
     private AdvancedModeModule advancedModule;
     private AccountModule accountModule;
+    private AvatarOptionsModule avatarOptionsModule;
     
     // --- Async Services ---
     private AsyncTaskManager taskManager;
@@ -76,6 +78,7 @@ public class UltiPawEditor : UnityEditor.Editor
         advancedModule = new AdvancedModeModule(this);
         accountModule = new AccountModule(this, networkService);
         accountModule.Initialize();
+        avatarOptionsModule = new AvatarOptionsModule(this);
         
         // Load local versions first (synchronous, but fast)
         LoadUnsubmittedVersions();
@@ -249,6 +252,7 @@ public class UltiPawEditor : UnityEditor.Editor
             {
                 SafeUiCall(() => creatorModule.Draw());
                 SafeUiCall(() => versionModule.Draw());
+                SafeUiCall(() => avatarOptionsModule?.Draw());
                 SafeUiCall(DrawHelpBox);
             }
 
@@ -392,6 +396,9 @@ public class UltiPawEditor : UnityEditor.Editor
 
     public void RefreshAccountAndVersions()
     {
+        // Clear failed user info requests to allow retry
+        UserService.ClearAllFailedRequests();
+        
         try
         {
             accountModule?.Refresh();
@@ -418,6 +425,8 @@ public class UltiPawEditor : UnityEditor.Editor
         ultipawAvatarForCreatorProp = serializedObject.FindProperty("ultipawAvatarForCreatorProp");
         avatarLogicPrefabProp = serializedObject.FindProperty("avatarLogicPrefab");
         customBlendshapesForCreatorProp = serializedObject.FindProperty("customBlendshapesForCreator");
+        includeCustomVeinsForCreatorProp = serializedObject.FindProperty("includeCustomVeinsForCreator");
+        customVeinsNormalMapProp = serializedObject.FindProperty("customVeinsNormalMap");
     }
 
     public void LoadUnsubmittedVersions()

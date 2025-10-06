@@ -15,7 +15,7 @@ public class VersionListDrawer
     // UI State
     private static bool displayAllChangelogs = false;
     private static Dictionary<string, bool> individualChangelogStates = new Dictionary<string, bool>();
-    private static bool isListCollapsed = false;
+    private static bool isListCollapsed = true;
     
     // Special reset version identifier
     public static readonly UltiPawVersion RESET_VERSION = new UltiPawVersion

@@ -1,4 +1,4 @@
-﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -217,7 +217,9 @@ public class FileManagerService
         GameObject customFbx,
         Avatar ultipawAvatar,
         GameObject logicPrefab,
-        UltiPawVersion parentVersion)
+        UltiPawVersion parentVersion,
+        bool includeCustomVeins,
+        Texture2D customVeinsTexture)
     {
         string newVersionDataPath = UltiPawUtils.GetVersionDataPath(newVersionString, baseFbxVersion);
         string newVersionDataFullPath = Path.GetFullPath(newVersionDataPath);
@@ -253,7 +255,34 @@ public class FileManagerService
             string packagePath = Path.Combine(newVersionDataPath, "ultipaw logic.unitypackage");
             AssetDatabase.ExportPackage(AssetDatabase.GetDependencies(prefabSourcePath, true), packagePath, ExportPackageOptions.Recurse | ExportPackageOptions.IncludeDependencies);
 
-            // 4. Create ZIP
+            // 4. Copy custom veins normal map if requested
+            if (includeCustomVeins)
+            {
+                if (customVeinsTexture == null)
+                    throw new ArgumentNullException(nameof(customVeinsTexture), "Custom veins texture is required when includeCustomVeins is enabled.");
+
+                string sourceTexturePath = AssetDatabase.GetAssetPath(customVeinsTexture);
+                if (string.IsNullOrEmpty(sourceTexturePath))
+                    throw new FileNotFoundException("Could not resolve asset path for the selected custom veins texture.");
+
+                string sourceTextureFullPath = Path.GetFullPath(sourceTexturePath);
+                if (!File.Exists(sourceTextureFullPath))
+                    throw new FileNotFoundException("Custom veins texture asset file not found on disk.", sourceTextureFullPath);
+
+                if (!sourceTexturePath.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("Custom veins normal map must be provided as a PNG texture.");
+
+                string veinsDestPath = Path.Combine(newVersionDataPath, "veins normal.png").Replace("\\", "/");
+                if (AssetDatabase.LoadAssetAtPath<Texture2D>(veinsDestPath) != null)
+                {
+                    AssetDatabase.DeleteAsset(veinsDestPath);
+                }
+
+                if (!AssetDatabase.CopyAsset(sourceTexturePath, veinsDestPath))
+                    throw new IOException($"Failed to copy custom veins normal map to {veinsDestPath}");
+            }
+
+            // 5. Create ZIP
             AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
             if (File.Exists(tempZipPath)) File.Delete(tempZipPath);
             ZipFile.CreateFromDirectory(newVersionDataFullPath, tempZipPath, CompressionLevel.Optimal, false);
