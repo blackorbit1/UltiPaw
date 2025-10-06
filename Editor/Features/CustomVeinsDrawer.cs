@@ -10,8 +10,8 @@ public class CustomVeinsDrawer
     private Texture2D okIcon;
     private Texture2D koIcon;
     private MaterialService materialService;
-    
-    private const string CUSTOM_VEINS_PREF_KEY = "UltiPaw_CustomVeins_Enabled";
+
+    public const string CUSTOM_VEINS_PREF_KEY = "UltiPaw_CustomVeins_Enabled";
 
     public CustomVeinsDrawer(UltiPawEditor editor)
     {
@@ -67,14 +67,22 @@ public class CustomVeinsDrawer
         bool newEnabled = EditorGUILayout.Toggle("Custom veins", currentEnabled);
         if (EditorGUI.EndChangeCheck())
         {
-            EditorPrefs.SetBool(CUSTOM_VEINS_PREF_KEY, newEnabled);
+            bool success = false;
             if (newEnabled)
             {
-                ApplyCustomVeins();
+                success = ApplyCustomVeins();
             }
             else
             {
-                RemoveCustomVeins();
+                success = RemoveCustomVeins();
+                // Removing always succeeds, or we want to update the toggle anyway
+                success = true;
+            }
+
+            // Only update EditorPrefs if the operation succeeded
+            if (success)
+            {
+                EditorPrefs.SetBool(CUSTOM_VEINS_PREF_KEY, newEnabled);
             }
         }
 
@@ -161,13 +169,13 @@ public class CustomVeinsDrawer
     }
 
 
-    private void ApplyCustomVeins()
+    private bool ApplyCustomVeins()
     {
         var appliedVersion = editor.ultiPawTarget.appliedUltiPawVersion;
         if (appliedVersion == null)
         {
             UltiPawLogger.LogError("[CustomVeinsDrawer] No applied version found");
-            return;
+            return false;
         }
 
         // Construct the path to the veins normal map using the utility method
@@ -188,12 +196,13 @@ public class CustomVeinsDrawer
         {
             UltiPawLogger.LogError("[CustomVeinsDrawer] Failed to apply custom veins");
         }
+        return success;
     }
 
-    private void RemoveCustomVeins()
+    private bool RemoveCustomVeins()
     {
         UltiPawLogger.Log("[CustomVeinsDrawer] Removing custom veins");
-        
+
         bool success = materialService.RemoveDetailNormalMap("Body");
         if (success)
         {
@@ -203,6 +212,7 @@ public class CustomVeinsDrawer
         {
             UltiPawLogger.LogError("[CustomVeinsDrawer] Failed to remove custom veins");
         }
+        return success;
     }
 }
 #endif
