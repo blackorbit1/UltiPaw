@@ -1,4 +1,5 @@
 ﻿#if UNITY_EDITOR
+using System.Globalization;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
@@ -36,7 +37,8 @@ public class BlendshapeDrawer
         {
             var entry = blendshapeEntries[i];
             string shapeName = entry.name;
-            float defaultValue = float.TryParse(entry.defaultValue, out float parsedDefault) ? parsedDefault : 0f;
+            string defaultValueStr = entry.defaultValue;
+            float defaultValue = float.TryParse(defaultValueStr, NumberStyles.Float, CultureInfo.InvariantCulture, out float parsedDefault) ? parsedDefault : 0f;
             
             int index = smr.sharedMesh.GetBlendShapeIndex(shapeName);
             if (index < 0) continue;
@@ -76,7 +78,9 @@ public class BlendshapeDrawer
             for (int i = 0; i < blendshapeEntries.Length; i++)
             {
                 var entry = blendshapeEntries[i];
-                float defaultValue = float.TryParse(entry.defaultValue, out float parsedDefault) ? parsedDefault : 0f;
+                string defaultValueStr = entry.defaultValue;
+                
+                float defaultValue = float.TryParse(defaultValueStr, NumberStyles.Float, CultureInfo.InvariantCulture, out float parsedDefault) ? parsedDefault : 0f;
                 int index = smr.sharedMesh.GetBlendShapeIndex(entry.name);
                 if (index >= 0)
                 {

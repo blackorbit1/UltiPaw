@@ -120,6 +120,7 @@ public class UserService
                     if (userInfo != null)
                     {
                         userCache[userId] = userInfo;
+                        failedRequests.Remove(userId); // Remove from failed list on success
                         
                         // Start downloading avatar if we have a URL
                         if (!string.IsNullOrEmpty(userInfo.avatarUrl))

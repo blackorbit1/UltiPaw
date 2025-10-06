@@ -132,7 +132,7 @@ public class MaterialService
         if (lowerShaderName.Contains("vrchat"))
             return true;
         
-        // Chack for the unity Standard shader (use equals to avoid match with other shaders)
+        // Check for the unity Standard shader (use equals to avoid match with other shaders)
         if (lowerShaderName.Equals("standard"))
             return true;
         

@@ -140,9 +140,9 @@ public class CustomVeinsDrawer
         var appliedVersion = editor.ultiPawTarget.appliedUltiPawVersion;
         if (appliedVersion == null) return;
 
-        // Construct the path to the veins normal map
-        string versionFolder = $"u{appliedVersion.version}d{appliedVersion.defaultAviVersion}";
-        string veinsNormalPath = $"Assets/UltiPaw/versions/{versionFolder}/veins normal.png";
+        // Construct the path to the veins normal map using the utility method
+        string versionFolder = UltiPawUtils.GetVersionDataPath(appliedVersion.version, appliedVersion.defaultAviVersion);
+        string veinsNormalPath = System.IO.Path.Combine(versionFolder, "veins normal.png").Replace("\\", "/");
 
         // Load the texture
         Texture2D veinsTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(veinsNormalPath);
@@ -170,10 +170,9 @@ public class CustomVeinsDrawer
             return;
         }
 
-        // Construct the path to the veins normal map
-        // Format: Assets/UltiPaw/versions/u{version}d{defaultAviVersion}/veins normal.png
-        string versionFolder = $"u{appliedVersion.version}d{appliedVersion.defaultAviVersion}";
-        string veinsNormalPath = $"Assets/UltiPaw/versions/{versionFolder}/veins normal.png";
+        // Construct the path to the veins normal map using the utility method
+        string versionFolder = UltiPawUtils.GetVersionDataPath(appliedVersion.version, appliedVersion.defaultAviVersion);
+        string veinsNormalPath = System.IO.Path.Combine(versionFolder, "veins normal.png").Replace("\\", "/");
 
         UltiPawLogger.Log($"[CustomVeinsDrawer] Applying custom veins from: {veinsNormalPath}");
 
