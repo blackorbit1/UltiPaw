@@ -270,9 +270,97 @@ public class VersionActions
             }
             
             editor.ultiPawTarget.appliedUltiPawVersion = version;
+            
+            // Apply or remove dynamic normals based on version feature flags
+            bool hasDynamicNormalBody = !isReset && version != null && (version.extraCustomization?.Contains("dynamicNormalBody") ?? false);
+            bool hasDynamicNormalFlexing = !isReset && version != null && (version.extraCustomization?.Contains("dynamicNormalFlexing") ?? false);
+            bool shouldApplyDynamicNormals = (hasDynamicNormalBody || hasDynamicNormalFlexing) && editor.ultiPawTarget.useDynamicNormals;
+            
+            var dynamicNormalsService = new DynamicNormalsService(editor);
+            
+            if (shouldApplyDynamicNormals)
+            {
+                // Apply dynamic normals when version has the feature and it's enabled globally
+                dynamicNormalsService.Apply(hasDynamicNormalBody, hasDynamicNormalFlexing);
+            }
+            else
+            {
+                // Remove dynamic normals when switching to a version without the feature or resetting
+                dynamicNormalsService.Remove();
+            }
+            
+            // Apply or remove custom veins based on version feature flag
+            bool hasCustomVeins = !isReset && version != null && (version.extraCustomization?.Contains("customVeins") ?? false);
+            var materialService = new MaterialService(root);
+            
+            if (hasCustomVeins)
+            {
+                // Apply custom veins
+                string versionFolder = UltiPawUtils.GetVersionDataPath(version.version, version.defaultAviVersion);
+                string veinsNormalPath = Path.Combine(versionFolder, "veins normal.png").Replace("\\", "/");
+                
+                if (File.Exists(veinsNormalPath))
+                {
+                    bool veinsApplied = materialService.SetDetailNormalMap("Body", veinsNormalPath);
+                    if (veinsApplied)
+                    {
+                        materialService.SetDetailNormalOpacity("Body", 1.0f);
+                        // Sync the toggle state with the applied state
+                        EditorPrefs.SetBool(CustomVeinsDrawer.CUSTOM_VEINS_PREF_KEY, true);
+                        UltiPawLogger.Log($"[VersionActions] Custom veins applied from version {version.version}");
+                    }
+                }
+                else
+                {
+                    UltiPawLogger.LogWarning($"[VersionActions] Custom veins file not found at: {veinsNormalPath}");
+                }
+            }
+            else
+            {
+                // Remove custom veins when switching to a version without the feature or resetting
+                materialService.RemoveDetailNormalMap("Body");
+                // Sync the toggle state - set to false when removing veins
+                EditorPrefs.SetBool(CustomVeinsDrawer.CUSTOM_VEINS_PREF_KEY, false);
+                UltiPawLogger.Log("[VersionActions] Custom veins removed");
+            }
+            
+            // Apply blendshape default values and clear custom overrides
+            if (!isReset && version != null && version.customBlendshapes != null && version.customBlendshapes.Length > 0)
+            {
+                // Clear all custom overrides when switching versions
+                editor.ultiPawTarget.customBlendshapeOverrideNames.Clear();
+                editor.ultiPawTarget.customBlendshapeOverrideValues.Clear();
+                
+                // Find the Body mesh
+                var bodyMesh = root.GetComponentsInChildren<SkinnedMeshRenderer>(true)
+                    .FirstOrDefault(s => s.gameObject.name.Equals("Body", System.StringComparison.OrdinalIgnoreCase));
+                
+                if (bodyMesh?.sharedMesh != null)
+                {
+                    // Apply default values from the version
+                    foreach (var entry in version.customBlendshapes)
+                    {
+                        int blendshapeIndex = bodyMesh.sharedMesh.GetBlendShapeIndex(entry.name);
+                        if (blendshapeIndex >= 0)
+                        {
+                            float defaultValue = float.TryParse(entry.defaultValue, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsed) ? parsed : 0f;
+                            bodyMesh.SetBlendShapeWeight(blendshapeIndex, defaultValue);
+                        }
+                    }
+                    
+                    EditorUtility.SetDirty(bodyMesh);
+                    UltiPawLogger.Log($"[VersionActions] Applied {version.customBlendshapes.Length} blendshape default values");
+                }
+            }
+            else if (isReset)
+            {
+                // Clear custom overrides when resetting
+                editor.ultiPawTarget.customBlendshapeOverrideNames.Clear();
+                editor.ultiPawTarget.customBlendshapeOverrideValues.Clear();
+            }
         }
         
-        UpdateCurrentBaseFbxHash(); 
+        UpdateCurrentBaseFbxHash();
 
         EditorUtility.SetDirty(editor.ultiPawTarget);
         editor.Repaint();

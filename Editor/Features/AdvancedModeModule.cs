@@ -10,10 +10,13 @@ public class AdvancedModeModule
     private bool advancedModeFoldout = true; // Opened by default when advanced mode is on
     private bool addArmatureToggle = false;
     private GameObject debugPrefabInstance;
+    private DynamicNormalsService dynamicNormalsService;
+    private bool dynamicNormalsFoldout = false; // Folded by default
     
     public AdvancedModeModule(UltiPawEditor editor)
     {
         this.editor = editor;
+        dynamicNormalsService = new DynamicNormalsService(editor);
         // Ensure issue reporter subscribes according to current settings
         EditorIssueReporter.RefreshListener();
     }
@@ -89,6 +92,59 @@ public class AdvancedModeModule
                 if (newMin != currentMin)
                 {
                     EditorIssueReporter.MinSeverityLevel = newMin;
+                }
+                
+                // Dynamic Normals section
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Dynamic Normals", EditorStyles.boldLabel);
+                
+                if (editor.ultiPawTarget != null)
+                {
+                    EditorGUI.BeginChangeCheck();
+                    bool useDynamicNormals = EditorGUILayout.Toggle(new GUIContent("Enable Dynamic Normals", "Applies dynamic normals to blendshapes containing 'muscle' or 'flex' on the Body mesh"), editor.ultiPawTarget.useDynamicNormals);
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        editor.ultiPawTarget.useDynamicNormals = useDynamicNormals;
+                        EditorUtility.SetDirty(editor.ultiPawTarget);
+                        
+                        if (useDynamicNormals)
+                        {
+                            dynamicNormalsService.Apply();
+                        }
+                        else
+                        {
+                            dynamicNormalsService.Remove();
+                        }
+                    }
+                    
+                    // Flush cache button
+                    EditorGUILayout.BeginHorizontal();
+                    GUILayout.Space(EditorGUI.indentLevel * 15);
+                    if (GUILayout.Button(new GUIContent("Flush Cache", "Clear the cached original mesh references"), GUILayout.Width(100)))
+                    {
+                        dynamicNormalsService.FlushOriginalMeshes();
+                    }
+                    EditorGUILayout.EndHorizontal();
+                    
+                    // Foldout to show active blendshapes
+                    var activeBlendshapes = dynamicNormalsService.GetActiveBlendshapes();
+                    if (activeBlendshapes.Count > 0)
+                    {
+                        dynamicNormalsFoldout = EditorGUILayout.Foldout(dynamicNormalsFoldout, $"Active Blendshapes ({activeBlendshapes.Count})", true);
+                        if (dynamicNormalsFoldout)
+                        {
+                            EditorGUI.indentLevel++;
+                            foreach (var blendshape in activeBlendshapes)
+                            {
+                                EditorGUILayout.LabelField("• " + blendshape);
+                            }
+                            EditorGUI.indentLevel--;
+                        }
+                    }
+                }
+                else
+                {
+                    EditorGUILayout.HelpBox("No UltiPaw target found.", MessageType.Info);
                 }
                 
                 // Debug Tools section

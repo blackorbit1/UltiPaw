@@ -33,6 +33,8 @@ public class CreatorModeModule
     private UltiPawVersion selectedParentVersionObject = null;
     private UltiPawVersion previouslySelectedVersion = null;
     private const string CustomVeinsKey = "customVeins";
+    private const string DynamicNormalBodyKey = "dynamicNormalBody";
+    private const string DynamicNormalFlexingKey = "dynamicNormalFlexing";
     private string autoAssignedVeinsTexturePath;
     private UltiPawVersion lastParentVersionForVeins;
     private bool isRestoringFromVersionState;
@@ -109,6 +111,7 @@ public class CreatorModeModule
             EditorGUILayout.PropertyField(editor.ultipawAvatarForCreatorProp, new GUIContent("UltiPaw Avatar (Transformed)"));
             EditorGUILayout.PropertyField(editor.avatarLogicPrefabProp, new GUIContent("Avatar Logic Prefab"));
             DrawCustomVeinsSection();
+            DrawDynamicNormalsSection();
             
             EditorGUILayout.Space();
             
@@ -303,6 +306,40 @@ public class CreatorModeModule
         EditorGUILayout.EndVertical();
     }
 
+    private void DrawDynamicNormalsSection()
+    {
+        var includeBodyProp = editor.includeDynamicNormalsBodyForCreatorProp;
+        var includeFlexingProp = editor.includeDynamicNormalsFlexingForCreatorProp;
+
+        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+        // Enable dynamic normals for body checkbox
+        EditorGUI.BeginChangeCheck();
+        bool includeBody = EditorGUILayout.Toggle(new GUIContent("Enable dynamic normals for body"), includeBodyProp.boolValue);
+        if (EditorGUI.EndChangeCheck())
+        {
+            includeBodyProp.boolValue = includeBody;
+        }
+
+        // Info bubble under first checkbox
+        EditorGUILayout.HelpBox("Don't use if muscles normal is already baked in the mesh.\nWill apply to all blendshapes containing \"muscle\" in the name.", MessageType.Info);
+
+        EditorGUILayout.Space(5);
+
+        // Enable dynamic normals for flexings checkbox
+        EditorGUI.BeginChangeCheck();
+        bool includeFlexing = EditorGUILayout.Toggle(new GUIContent("Enable dynamic normals for flexings"), includeFlexingProp.boolValue);
+        if (EditorGUI.EndChangeCheck())
+        {
+            includeFlexingProp.boolValue = includeFlexing;
+        }
+
+        // Info bubble under second checkbox
+        EditorGUILayout.HelpBox("Allows for the flexed muscles to be more visible.\nWill apply to all blendshapes containing \"flex\" in the name.", MessageType.Info);
+
+        EditorGUILayout.EndVertical();
+    }
+
     private void DrawVeinsTextureField(SerializedProperty textureProp)
     {
         UnityEngine.Object currentTexture = textureProp.objectReferenceValue;
@@ -374,6 +411,26 @@ public class CreatorModeModule
             }
         }
         // If parent doesn't support custom veins, don't uncheck or clear - just leave it as is
+        
+        // Auto-populate dynamic normals checkboxes from parent version
+        var includeBodyProp = editor.includeDynamicNormalsBodyForCreatorProp;
+        var includeFlexingProp = editor.includeDynamicNormalsFlexingForCreatorProp;
+        
+        if (newParent?.extraCustomization != null && !isRestoringFromVersionState)
+        {
+            bool parentHasBody = newParent.extraCustomization.Contains(DynamicNormalBodyKey);
+            bool parentHasFlexing = newParent.extraCustomization.Contains(DynamicNormalFlexingKey);
+            
+            // Auto-check the checkboxes if parent has the features
+            if (parentHasBody && !includeBodyProp.boolValue)
+            {
+                includeBodyProp.boolValue = true;
+            }
+            if (parentHasFlexing && !includeFlexingProp.boolValue)
+            {
+                includeFlexingProp.boolValue = true;
+            }
+        }
         
         // Auto-populate custom blendshapes from parent version
         if (newParent?.customBlendshapes != null && newParent.customBlendshapes.Length > 0 && !isRestoringFromVersionState)
@@ -455,6 +512,8 @@ public class CreatorModeModule
         var logicPrefab = editor.avatarLogicPrefabProp.objectReferenceValue as GameObject;
         bool shouldIncludeCustomVeins = editor.includeCustomVeinsForCreatorProp.boolValue;
         var customVeinsTexture = editor.customVeinsNormalMapProp.objectReferenceValue as Texture2D;
+        bool shouldIncludeDynamicNormalsBody = editor.includeDynamicNormalsBodyForCreatorProp.boolValue;
+        bool shouldIncludeDynamicNormalsFlexing = editor.includeDynamicNormalsFlexingForCreatorProp.boolValue;
 
         if (shouldIncludeCustomVeins)
         {
@@ -505,6 +564,32 @@ public class CreatorModeModule
             extraCustomization.RemoveAll(value => value == CustomVeinsKey);
         }
 
+        // Handle dynamic normals for body
+        if (shouldIncludeDynamicNormalsBody)
+        {
+            if (!extraCustomization.Contains(DynamicNormalBodyKey))
+            {
+                extraCustomization.Add(DynamicNormalBodyKey);
+            }
+        }
+        else
+        {
+            extraCustomization.RemoveAll(value => value == DynamicNormalBodyKey);
+        }
+
+        // Handle dynamic normals for flexing
+        if (shouldIncludeDynamicNormalsFlexing)
+        {
+            if (!extraCustomization.Contains(DynamicNormalFlexingKey))
+            {
+                extraCustomization.Add(DynamicNormalFlexingKey);
+            }
+        }
+        else
+        {
+            extraCustomization.RemoveAll(value => value == DynamicNormalFlexingKey);
+        }
+
         string customVeinsAssetPath = shouldIncludeCustomVeins ? AssetDatabase.GetAssetPath(customVeinsTexture) : null;
 
         // Convert CreatorBlendshapeEntry list to CustomBlendshapeEntry array
@@ -523,6 +608,8 @@ public class CreatorModeModule
             extraCustomization = extraCustomization.Count > 0 ? extraCustomization.Distinct().ToArray() : null,
             includeCustomVeins = shouldIncludeCustomVeins ? true : (bool?)null,
             customVeinsTexturePath = customVeinsAssetPath,
+            includeDynamicNormalsBody = shouldIncludeDynamicNormalsBody ? true : (bool?)null,
+            includeDynamicNormalsFlexing = shouldIncludeDynamicNormalsFlexing ? true : (bool?)null,
             // Local-only data for repopulating fields
             baseFbxHash = fileManagerService.CalculateFileHash(originalFbxPath),
             customFbxPath = customFbxPath,

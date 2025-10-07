@@ -52,6 +52,8 @@ public class UltiPawVersion
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)] public string logicPrefabPath;
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)] public bool? includeCustomVeins;
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)] public string customVeinsTexturePath;
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)] public bool? includeDynamicNormalsBody;
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)] public bool? includeDynamicNormalsFlexing;
 
     [JsonIgnore] public bool isUnsubmitted; // Runtime flag, not saved to JSON
 

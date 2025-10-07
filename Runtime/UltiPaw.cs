@@ -40,6 +40,9 @@ public class UltiPaw : MonoBehaviour
     [Tooltip("Stores user-customized blendshape values that override defaults (values: custom values).")]
     [HideInInspector] [SerializeField] public List<float> customBlendshapeOverrideValues = new List<float>();
 
+    [Tooltip("Enable/disable dynamic normals recalculation for blendshapes.")]
+    [HideInInspector] public bool useDynamicNormals = true;
+
     // --- CREATOR MODE PERSISTENT DATA ---
     [HideInInspector] public bool isCreatorMode = false;
     [HideInInspector] public GameObject customFbxForCreator;
@@ -47,5 +50,7 @@ public class UltiPaw : MonoBehaviour
     [HideInInspector] public GameObject avatarLogicPrefab;
     [HideInInspector] public bool includeCustomVeinsForCreator = false;
     [HideInInspector] public Texture2D customVeinsNormalMap;
+    [HideInInspector] public bool includeDynamicNormalsBodyForCreator = false;
+    [HideInInspector] public bool includeDynamicNormalsFlexingForCreator = false;
     [HideInInspector] public List<CreatorBlendshapeEntry> customBlendshapesForCreator = new List<CreatorBlendshapeEntry>();
 }

@@ -18,7 +18,8 @@ public class UltiPawEditor : UnityEditor.Editor
     // --- Serialized Properties ---
     public SerializedProperty specifyCustomBaseFbxProp, baseFbxFilesProp, blendShapeValuesProp, isCreatorModeProp,
                               customFbxForCreatorProp, ultipawAvatarForCreatorProp, avatarLogicPrefabProp, customBlendshapesForCreatorProp,
-                              includeCustomVeinsForCreatorProp, customVeinsNormalMapProp;
+                              includeCustomVeinsForCreatorProp, customVeinsNormalMapProp,
+                              includeDynamicNormalsBodyForCreatorProp, includeDynamicNormalsFlexingForCreatorProp;
 
     // --- Services and Modules ---
     private NetworkService networkService;
@@ -427,6 +428,8 @@ public class UltiPawEditor : UnityEditor.Editor
         customBlendshapesForCreatorProp = serializedObject.FindProperty("customBlendshapesForCreator");
         includeCustomVeinsForCreatorProp = serializedObject.FindProperty("includeCustomVeinsForCreator");
         customVeinsNormalMapProp = serializedObject.FindProperty("customVeinsNormalMap");
+        includeDynamicNormalsBodyForCreatorProp = serializedObject.FindProperty("includeDynamicNormalsBodyForCreator");
+        includeDynamicNormalsFlexingForCreatorProp = serializedObject.FindProperty("includeDynamicNormalsFlexingForCreator");
     }
 
     public void LoadUnsubmittedVersions()
