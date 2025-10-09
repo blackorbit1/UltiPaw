@@ -35,8 +35,8 @@ public class VersionActions
         editor.fetchAttempted = true;
         editor.Repaint();
 
-        UltiPawLogger.Log("[VersionActions] ApplyOrResetCoroutine completed. Updating hash.");
         UpdateCurrentBaseFbxHash();
+        UltiPawLogger.Log("[VersionActions] ApplyOrResetCoroutine completed. Updating hash.");
 
         if (string.IsNullOrEmpty(editor.currentBaseFbxHash))
         {
@@ -148,7 +148,8 @@ public class VersionActions
             {
                 yield return null;
             }
-            UltiPawLogger.Log("[VersionActions] Editor finished pending compilation/import work.");            if (applyAfter) 
+            UltiPawLogger.Log("[VersionActions] Editor finished pending compilation/import work.");            
+            if (applyAfter) 
             {
                 editor.selectedVersionForAction = version;
                 // Start the coroutine but don't yield return it (since it returns void)
