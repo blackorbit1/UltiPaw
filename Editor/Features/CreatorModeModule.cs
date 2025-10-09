@@ -777,6 +777,95 @@ public class CreatorModeModule
         editor.Repaint();
     }
     
+    public IEnumerator UploadUnsubmittedVersionCoroutine(UltiPawVersion unsubmittedVersion)
+    {
+        editor.isSubmitting = true;
+        editor.submitError = "";
+        editor.Repaint();
+
+        string zipPath = null;
+        Exception error = null;
+        System.Threading.Tasks.Task<(bool success, string response, string error)> uploadTask = null;
+
+        try
+        {
+            // Load the assets from the stored paths
+            var customFbxGO = AssetDatabase.LoadAssetAtPath<GameObject>(unsubmittedVersion.customFbxPath);
+            var ultipawAvatar = AssetDatabase.LoadAssetAtPath<Avatar>(unsubmittedVersion.ultipawAvatarPath);
+            var logicPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(unsubmittedVersion.logicPrefabPath);
+            var customVeinsTexture = !string.IsNullOrEmpty(unsubmittedVersion.customVeinsTexturePath) 
+                ? AssetDatabase.LoadAssetAtPath<Texture2D>(unsubmittedVersion.customVeinsTexturePath) 
+                : null;
+
+            string originalFbxPath = new VersionActions(editor, networkService, fileManagerService).GetCurrentFBXPath() + FileManagerService.OriginalSuffix;
+            if (!File.Exists(originalFbxPath))
+                throw new Exception("Original FBX backup (.old) not found.");
+
+            // Get parent version
+            var parentVersion = editor.serverVersions.FirstOrDefault(v => v.version == unsubmittedVersion.parentVersion);
+            if (parentVersion == null)
+                throw new Exception("Parent version not found.");
+
+            EditorUtility.DisplayProgressBar("Preparing Upload", "Creating version package...", 0.3f);
+
+            // Re-create the zip from existing files
+            zipPath = fileManagerService.CreateVersionPackageForUpload(
+                unsubmittedVersion.version,
+                unsubmittedVersion.defaultAviVersion,
+                originalFbxPath,
+                customFbxGO,
+                ultipawAvatar,
+                logicPrefab,
+                parentVersion,
+                unsubmittedVersion.includeCustomVeins ?? false,
+                customVeinsTexture
+            );
+
+            EditorUtility.DisplayProgressBar("Uploading", "Sending package to server...", 0.7f);
+            string metadataJson = JsonConvert.SerializeObject(unsubmittedVersion, new StringEnumConverter());
+            string uploadUrl = $"{UltiPawUtils.getServerUrl()}{UltiPawUtils.NEW_VERSION_ENDPOINT}?t={editor.authToken}";
+            uploadTask = networkService.SubmitNewVersionAsync(uploadUrl, editor.authToken, zipPath, metadataJson);
+        }
+        catch (Exception ex)
+        {
+            error = ex;
+        }
+
+        if (uploadTask != null)
+        {
+            while (!uploadTask.IsCompleted) { yield return null; }
+        }
+
+        try
+        {
+            if (error != null) throw error;
+
+            if (uploadTask != null)
+            {
+                var (success, response, uploadError) = uploadTask.Result;
+                if (!success) throw new Exception(uploadError);
+
+                EditorUtility.DisplayDialog("Upload Successful", $"UltiPaw version {unsubmittedVersion.version} has been uploaded.", "OK");
+                RemoveUnsubmittedVersion(unsubmittedVersion);
+                new VersionActions(editor, networkService, fileManagerService).StartVersionFetch();
+            }
+        }
+        catch (Exception ex)
+        {
+            editor.submitError = ex.Message;
+            UltiPawLogger.LogError($"[CreatorMode] Upload failed: {ex}");
+        }
+        finally
+        {
+            EditorUtility.ClearProgressBar();
+            if (!string.IsNullOrEmpty(zipPath) && File.Exists(zipPath))
+                File.Delete(zipPath);
+            
+            editor.isSubmitting = false;
+            editor.Repaint();
+        }
+    }
+
     private IEnumerator SubmitNewVersionCoroutine()
     {
         editor.isSubmitting = true;
