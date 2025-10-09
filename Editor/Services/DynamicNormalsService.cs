@@ -132,6 +132,9 @@ public class DynamicNormalsService
             bodyMesh.sharedMesh = originalMesh;
             Debug.Log($"[DynamicNormals] Restored original mesh from cached reference: {originalMesh.name}");
             
+            // Delete the dynamic normals asset file if it exists
+            DeleteDynamicNormalsAsset(originalMesh);
+            
             // Remove from tracking dictionary since we've restored it
             originalMeshes.Remove(bodyMesh);
             activeBlendshapes.Clear();
@@ -157,6 +160,10 @@ public class DynamicNormalsService
             {
                 bodyMesh.sharedMesh = originalMesh;
                 Debug.Log($"[DynamicNormals] Successfully restored original mesh from assets: {originalMesh.name}");
+                
+                // Delete the dynamic normals asset file if it exists
+                DeleteDynamicNormalsAsset(originalMesh);
+                
                 EditorUtility.SetDirty(bodyMesh);
                 activeBlendshapes.Clear();
                 return;
@@ -246,6 +253,43 @@ public class DynamicNormalsService
         
         Debug.LogWarning($"[DynamicNormals] Could not find mesh '{meshName}' in asset database.");
         return null;
+    }
+
+    private void DeleteDynamicNormalsAsset(Mesh originalMesh)
+    {
+        if (originalMesh == null) return;
+
+        // Get the original mesh asset path
+        string originalMeshPath = AssetDatabase.GetAssetPath(originalMesh);
+        if (string.IsNullOrEmpty(originalMeshPath))
+        {
+            Debug.Log("[DynamicNormals] Original mesh has no asset path, no dynamic normals asset to delete.");
+            return;
+        }
+
+        // Construct the expected dynamic normals asset path (same logic as in DynamicNormals.cs)
+        string directory = System.IO.Path.GetDirectoryName(originalMeshPath);
+        string meshNameSafe = originalMesh.name.Replace(" ", "_").Replace("(", "").Replace(")", "");
+        string assetPath = System.IO.Path.Combine(directory, $"{meshNameSafe}_DynamicNormals.asset").Replace("\\", "/");
+
+        // Delete the asset if it exists
+        if (AssetDatabase.LoadAssetAtPath<Mesh>(assetPath) != null)
+        {
+            bool deleted = AssetDatabase.DeleteAsset(assetPath);
+            if (deleted)
+            {
+                Debug.Log($"[DynamicNormals] Deleted dynamic normals asset at: {assetPath}");
+                AssetDatabase.SaveAssets();
+            }
+            else
+            {
+                Debug.LogWarning($"[DynamicNormals] Failed to delete dynamic normals asset at: {assetPath}");
+            }
+        }
+        else
+        {
+            Debug.Log($"[DynamicNormals] No dynamic normals asset found at: {assetPath}");
+        }
     }
 }
 #endif

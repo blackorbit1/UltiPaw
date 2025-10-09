@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using UnityEditor;
 using Object = UnityEngine.Object;
 
 namespace UltiPawEditorUtils
@@ -11,6 +12,7 @@ namespace UltiPawEditorUtils
     /// </summary>
     public sealed class DynamicNormals
     {
+#if UNITY_EDITOR
         private readonly Transform _root;
         private bool _enabled = true;
         private bool _limitToMeshes;
@@ -256,9 +258,43 @@ namespace UltiPawEditorUtils
                         }
                     }
 
+                    // Get the original mesh asset path to determine where to save the dynamic normals mesh
+                    string originalMeshPath = AssetDatabase.GetAssetPath(originalMesh);
+                    string assetPath = null;
+                    
+                    // Only save as asset if the original mesh is an asset (not a scene-only mesh)
+                    if (!string.IsNullOrEmpty(originalMeshPath))
+                    {
+                        // Create asset path: same directory as original mesh, with "_DynamicNormals.asset" suffix
+                        string directory = System.IO.Path.GetDirectoryName(originalMeshPath);
+                        string meshNameSafe = originalMesh.name.Replace(" ", "_").Replace("(", "").Replace(")", "");
+                        assetPath = System.IO.Path.Combine(directory, $"{meshNameSafe}_DynamicNormals.asset").Replace("\\", "/");
+                        
+                        // Delete existing asset if it exists
+                        if (AssetDatabase.LoadAssetAtPath<Mesh>(assetPath) != null)
+                        {
+                            AssetDatabase.DeleteAsset(assetPath);
+                        }
+                    }
+                    
                     var newMesh = Object.Instantiate(originalMesh);
                     newMesh.name = $"{originalMesh.name} (DynamicNormals)";
                     RebuildBlendshapesOnCopy(newMesh, originalMesh, nameToFrameDeltaBakes);
+                    
+                    // Save as asset if we have a valid path
+                    if (!string.IsNullOrEmpty(assetPath))
+                    {
+                        AssetDatabase.CreateAsset(newMesh, assetPath);
+                        AssetDatabase.SaveAssets();
+                        // Reload the asset to ensure we're using the saved version
+                        newMesh = AssetDatabase.LoadAssetAtPath<Mesh>(assetPath);
+                        Debug.Log($"[DynamicNormals] Saved dynamic normals mesh as asset at: {assetPath}");
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"[DynamicNormals] Could not save mesh as asset (original mesh has no asset path). Mesh will be in-memory only.");
+                    }
+                    
                     smr.sharedMesh = newMesh;
                 }
                 finally
@@ -402,6 +438,7 @@ namespace UltiPawEditorUtils
             public Vector3[] normals;
             public Vector3[] tangents;
         }
+#endif
     }
 }
 
