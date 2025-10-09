@@ -368,6 +368,31 @@ public class VersionListDrawer
         GUILayout.FlexibleSpace();
         EditorGUILayout.BeginHorizontal();
         
+        // Upload button (only show for unsubmitted versions)
+        if (ver.isUnsubmitted)
+        {
+            var uploadIcon = EditorGUIUtility.IconContent("CloudConnect");
+            Rect uploadRect = GUILayoutUtility.GetRect(22, 22, GUILayout.Width(22), GUILayout.Height(22));
+            
+            if (Event.current.type == EventType.Repaint)
+            {
+                GUI.DrawTexture(uploadRect, uploadIcon.image);
+                if (uploadRect.Contains(Event.current.mousePosition))
+                {
+                    EditorGUIUtility.AddCursorRect(uploadRect, MouseCursor.Link);
+                }
+            }
+            
+            if (Event.current.type == EventType.MouseDown && Event.current.button == 0 && uploadRect.Contains(Event.current.mousePosition))
+            {
+                if (EditorUtility.DisplayDialog("Confirm Upload", $"Upload version {ver.version} to the server?\n\nThis action is irreversible.", "Upload", "Cancel"))
+                {
+                    EditorCoroutineUtility.StartCoroutineOwnerless(editor.creatorModule.UploadUnsubmittedVersionCoroutine(ver));
+                }
+                Event.current.Use();
+            }
+        }
+        
         // Changelog button (only show when not displaying all changelogs and changelog exists)
         if (!displayAllChangelogs && !string.IsNullOrEmpty(ver.changelog))
         {

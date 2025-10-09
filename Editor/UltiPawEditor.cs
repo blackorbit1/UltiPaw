@@ -25,7 +25,7 @@ public class UltiPawEditor : UnityEditor.Editor
     private NetworkService networkService;
     private AuthenticationModule authModule;
     public VersionManagementModule versionModule;
-    private CreatorModeModule creatorModule;
+    public CreatorModeModule creatorModule;
     private AdvancedModeModule advancedModule;
     private AccountModule accountModule;
     private AvatarOptionsModule avatarOptionsModule;
