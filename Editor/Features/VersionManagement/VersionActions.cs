@@ -1,6 +1,7 @@
 ﻿#if UNITY_EDITOR
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEditor;
@@ -35,6 +36,7 @@ public class VersionActions
         editor.Repaint();
 
         UpdateCurrentBaseFbxHash();
+        UltiPawLogger.Log("[VersionActions] ApplyOrResetCoroutine completed. Updating hash.");
 
         if (string.IsNullOrEmpty(editor.currentBaseFbxHash))
         {
@@ -146,6 +148,7 @@ public class VersionActions
             {
                 yield return null;
             }
+            UltiPawLogger.Log("[VersionActions] Editor finished pending compilation/import work.");            
             if (applyAfter) 
             {
                 editor.selectedVersionForAction = version;
@@ -183,6 +186,8 @@ public class VersionActions
     {
         var root = editor.ultiPawTarget.transform.root;
         fileManagerService.RemoveExistingLogic(root);
+
+        UltiPawLogger.Log($"[VersionActions] ApplyOrReset start (reset={isReset}, version={(version != null ? version.version : "null")})");
 
         string fbxPath = GetCurrentFBXPath();
         if (string.IsNullOrEmpty(fbxPath)) yield break;
@@ -225,36 +230,47 @@ public class VersionActions
         if (success)
         {
             // --- CRITICAL FIX FOR RE-IMPORT ---
-            // Force Unity to re-import the specific FBX we just changed.
-            AssetDatabase.ImportAsset(fbxPath, ImportAssetOptions.ForceUpdate);
+            // Force Unity to re-import the specific FBX we just changed synchronously.
+            // ForceSynchronousImport blocks until the import completes, preventing race conditions.
+            UltiPawLogger.Log($"[VersionActions] Importing modified FBX at {fbxPath}");
+            AssetDatabase.ImportAsset(fbxPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
+            UltiPawLogger.Log("[VersionActions] FBX import completed.");
             
-            // Wait until Unity has finished re-importing and compiling.
+            // Wait until Unity has finished compiling (if any compilation was triggered).
             // This is essential to prevent race conditions.
             while (EditorApplication.isCompiling || EditorApplication.isUpdating)
             {
                 yield return null;
             }
-            // --- END CRITICAL FIX ---
+            UltiPawLogger.Log("[VersionActions] Editor finished pending compilation/import work.");
+            //  --- END CRITICAL FIX ---
             
             var versionForAssets = isReset ? (editor.ultiPawTarget.appliedUltiPawVersion ?? editor.selectedVersionForAction) : version;
             if (versionForAssets != null)
             {
                 string dataPath = UltiPawUtils.GetVersionDataPath(versionForAssets.version, versionForAssets.defaultAviVersion);
                 string avatarName = isReset ? UltiPawUtils.DEFAULT_AVATAR_NAME : UltiPawUtils.ULTIPAW_AVATAR_NAME;
-                string avatarPath = Path.Combine(dataPath, avatarName);
+                string avatarPath = UltiPawUtils.CombineUnityPath(dataPath, avatarName);
                 
                 var fbxGameObject = editor.baseFbxFilesProp.arraySize > 0 ? editor.baseFbxFilesProp.GetArrayElementAtIndex(0).objectReferenceValue as GameObject : null;
+                UltiPawLogger.Log($"[VersionActions] Applying avatar import settings from {avatarPath}");
                 fileManagerService.ApplyAvatarToModel(root, fbxGameObject, avatarPath);
+                while (EditorApplication.isCompiling || EditorApplication.isUpdating)
+                {
+                    yield return null;
+                }
+                UltiPawLogger.Log("[VersionActions] Avatar import completed.");
 
                 if (!isReset)
                 {
-                    string packagePath = Path.Combine(dataPath, "ultipaw logic.unitypackage");
+                    string packagePath = UltiPawUtils.CombineUnityPath(dataPath, "ultipaw logic.unitypackage");
                     fileManagerService.InstantiateLogicPrefab(packagePath, root);
                 }
             }
             
-            string customLogicPath = Path.Combine(UltiPawUtils.GetVersionDataPath(versionForAssets.version, versionForAssets.defaultAviVersion), UltiPawUtils.CUSTOM_LOGIC_NAME);
-            if (File.Exists(customLogicPath))
+            string customLogicPath = UltiPawUtils.CombineUnityPath(UltiPawUtils.GetVersionDataPath(versionForAssets.version, versionForAssets.defaultAviVersion), UltiPawUtils.CUSTOM_LOGIC_NAME);
+            string customLogicAbsolutePath = Path.GetFullPath(customLogicPath);
+            if (File.Exists(customLogicAbsolutePath))
             {
                 GameObject customLogicPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(customLogicPath);
                 if (customLogicPrefab != null)
@@ -271,35 +287,63 @@ public class VersionActions
             
             editor.ultiPawTarget.appliedUltiPawVersion = version;
             
-            // Apply or remove dynamic normals based on version feature flags
+            // Check feature flags
+            bool hasCustomVeins = !isReset && version != null && (version.extraCustomization?.Contains("customVeins") ?? false);
             bool hasDynamicNormalBody = !isReset && version != null && (version.extraCustomization?.Contains("dynamicNormalBody") ?? false);
             bool hasDynamicNormalFlexing = !isReset && version != null && (version.extraCustomization?.Contains("dynamicNormalFlexing") ?? false);
             bool shouldApplyDynamicNormals = (hasDynamicNormalBody || hasDynamicNormalFlexing) && editor.ultiPawTarget.useDynamicNormals;
             
-            var dynamicNormalsService = new DynamicNormalsService(editor);
+            // FIX: Refresh Body mesh reference from the newly imported FBX BEFORE applying dynamic normals
+            // This ensures we're working with the correct mesh from the new FBX
+            if (!isReset && version != null)
+            {
+                RefreshBodyMeshFromFBX(root, fbxPath);
+            }
             
+            // Apply or remove dynamic normals based on version feature flags
+            // CRITICAL FIX: Execute INSIDE the coroutine (not via delayCall) with proper yield statements
+            var dynamicNormalsService = new DynamicNormalsService(editor);
+
             if (shouldApplyDynamicNormals)
             {
-                // Apply dynamic normals when version has the feature and it's enabled globally
-                dynamicNormalsService.Apply(hasDynamicNormalBody, hasDynamicNormalFlexing);
+                bool applyBody = hasDynamicNormalBody || hasCustomVeins;
+                bool applyFlex = hasDynamicNormalFlexing;
+                UltiPawLogger.Log("[VersionActions] Applying dynamic normals.");
+                dynamicNormalsService.Apply(applyBody, applyFlex);
+                
+                // Wait for any asset processing triggered by dynamic normals
+                yield return null;
+                while (EditorApplication.isCompiling || EditorApplication.isUpdating)
+                {
+                    yield return null;
+                }
+                UltiPawLogger.Log("[VersionActions] Dynamic normals application completed.");
             }
             else
             {
-                // Remove dynamic normals when switching to a version without the feature or resetting
+                UltiPawLogger.Log("[VersionActions] Removing dynamic normals.");
                 dynamicNormalsService.Remove();
+                
+                // Wait for any asset processing triggered by removal
+                yield return null;
+                while (EditorApplication.isCompiling || EditorApplication.isUpdating)
+                {
+                    yield return null;
+                }
+                UltiPawLogger.Log("[VersionActions] Dynamic normals removal completed.");
             }
             
             // Apply or remove custom veins based on version feature flag
-            bool hasCustomVeins = !isReset && version != null && (version.extraCustomization?.Contains("customVeins") ?? false);
             var materialService = new MaterialService(root);
             
             if (hasCustomVeins)
             {
                 // Apply custom veins
                 string versionFolder = UltiPawUtils.GetVersionDataPath(version.version, version.defaultAviVersion);
-                string veinsNormalPath = Path.Combine(versionFolder, "veins normal.png").Replace("\\", "/");
-                
-                if (File.Exists(veinsNormalPath))
+                string veinsNormalPath = UltiPawUtils.CombineUnityPath(versionFolder, "veins normal.png");
+                string veinsNormalAbsolutePath = Path.GetFullPath(veinsNormalPath);
+
+                if (File.Exists(veinsNormalAbsolutePath))
                 {
                     bool veinsApplied = materialService.SetDetailNormalMap("Body", veinsNormalPath);
                     if (veinsApplied)
@@ -360,10 +404,49 @@ public class VersionActions
             }
         }
         
+        UltiPawLogger.Log("[VersionActions] ApplyOrResetCoroutine completed. Updating hash.");
         UpdateCurrentBaseFbxHash();
 
         EditorUtility.SetDirty(editor.ultiPawTarget);
         editor.Repaint();
+    }
+    
+    private void RefreshBodyMeshFromFBX(Transform root, string fbxPath)
+    {
+        // Find the Body SkinnedMeshRenderer in the scene hierarchy
+        var bodyMesh = root.GetComponentsInChildren<SkinnedMeshRenderer>(true)
+            .FirstOrDefault(s => s.gameObject.name.Equals("Body", System.StringComparison.OrdinalIgnoreCase));
+        
+        if (bodyMesh == null)
+        {
+            UltiPawLogger.LogWarning("[VersionActions] Body SkinnedMeshRenderer not found in hierarchy.");
+            return;
+        }
+        
+        // Load the FBX GameObject
+        GameObject fbxObject = AssetDatabase.LoadAssetAtPath<GameObject>(fbxPath);
+        if (fbxObject == null)
+        {
+            UltiPawLogger.LogWarning($"[VersionActions] Could not load FBX at path: {fbxPath}");
+            return;
+        }
+        
+        // Find the Body mesh in the FBX
+        var fbxBodyMesh = fbxObject.GetComponentsInChildren<SkinnedMeshRenderer>(true)
+            .FirstOrDefault(s => s.gameObject.name.Equals("Body", System.StringComparison.OrdinalIgnoreCase));
+        
+        if (fbxBodyMesh?.sharedMesh == null)
+        {
+            UltiPawLogger.LogWarning("[VersionActions] Body mesh not found in FBX.");
+            return;
+        }
+        
+        // Assign the mesh from the FBX to the scene's Body SkinnedMeshRenderer
+        Undo.RecordObject(bodyMesh, "Refresh Body Mesh from FBX");
+        bodyMesh.sharedMesh = fbxBodyMesh.sharedMesh;
+        EditorUtility.SetDirty(bodyMesh);
+        
+        UltiPawLogger.Log($"[VersionActions] Refreshed Body mesh to: {fbxBodyMesh.sharedMesh.name}");
     }
     
     public void DisplayErrors()
@@ -440,7 +523,6 @@ public class VersionActions
     // FIX: Centralized and corrected state detection logic. This is the single source of truth.
     public void UpdateAppliedVersionAndState(string currentFileHash = null)
     {
-        // If currentFileHash isn't provided, try to get it from cache only (non-blocking)
         if (currentFileHash == null)
         {
             string path = GetCurrentFBXPath();
@@ -449,25 +531,27 @@ public class VersionActions
                 var hashService = AsyncHashService.Instance;
                 currentFileHash = hashService.GetHashIfCached(path);
             }
-            
-            // If we don't have a cached hash, skip state update for now
-            // The state will be updated later when the async hash calculation completes
+
             if (string.IsNullOrEmpty(currentFileHash))
             {
+                UltiPawLogger.Log("[VersionActions] UpdateAppliedVersionAndState deferred (hash not cached yet).");
                 return;
             }
         }
 
-        if (string.IsNullOrEmpty(currentFileHash) || editor.serverVersions == null)
+        var candidateVersions = editor.GetAllVersions() ?? new System.Collections.Generic.List<UltiPawVersion>();
+        UltiPawLogger.Log($"[VersionActions] UpdateAppliedVersionAndState hash={currentFileHash} candidates={candidateVersions.Count}");
+
+        if (string.IsNullOrEmpty(currentFileHash) || candidateVersions.Count == 0)
         {
+            UltiPawLogger.Log("[VersionActions] No hash or candidates available. Clearing applied version state.");
             editor.isUltiPaw = false;
             editor.ultiPawTarget.appliedUltiPawVersion = null;
             EditorUtility.SetDirty(editor.ultiPawTarget);
             return;
         }
-        
-        // Find the version from the server list that matches the current FBX's hash
-        var matchingVersion = editor.serverVersions.FirstOrDefault(v =>
+
+        var matchingVersion = candidateVersions.FirstOrDefault(v =>
             !string.IsNullOrEmpty(v.appliedCustomAviHash) &&
             v.appliedCustomAviHash.Equals(currentFileHash, StringComparison.OrdinalIgnoreCase));
 
@@ -475,42 +559,40 @@ public class VersionActions
 
         if (matchingVersion != null)
         {
-            // Match found! This is a known UltiPaw version.
+            UltiPawLogger.Log($"[VersionActions] Matched applied version: {matchingVersion.version}");
             editor.isUltiPaw = true;
             editor.ultiPawTarget.appliedUltiPawVersion = matchingVersion;
         }
         else
         {
-            // No match found in the server list. It's either the original FBX or an unknown state.
             editor.isUltiPaw = false;
-                editor.ultiPawTarget.appliedUltiPawVersion = null;
+            editor.ultiPawTarget.appliedUltiPawVersion = null;
+            UltiPawLogger.Log("[VersionActions] No matching version hash found. Marking state as non-UltiPaw.");
         }
-        
+
         EditorUtility.SetDirty(editor.ultiPawTarget);
     }
 
     private void SmartSelectVersion()
     {
+        var allVersions = editor.GetAllVersions() ?? new System.Collections.Generic.List<UltiPawVersion>();
         UltiPawVersion versionToSelect = null;
-        
-        // 1. Keep current UI selection if it's still valid in the new list.
-        if (editor.selectedVersionForAction != null && editor.serverVersions.Contains(editor.selectedVersionForAction))
+
+        if (editor.selectedVersionForAction != null && allVersions.Contains(editor.selectedVersionForAction))
         {
             versionToSelect = editor.selectedVersionForAction;
         }
-        // 2. Or, if no selection, select the *applied* version if it exists in the list.
-        else if (editor.ultiPawTarget.appliedUltiPawVersion != null && editor.serverVersions.Contains(editor.ultiPawTarget.appliedUltiPawVersion))
+        else if (editor.ultiPawTarget.appliedUltiPawVersion != null && allVersions.Contains(editor.ultiPawTarget.appliedUltiPawVersion))
         {
             versionToSelect = editor.ultiPawTarget.appliedUltiPawVersion;
         }
-        // 3. Or, select the recommended version IF it's an update and it's downloaded.
         else if (editor.recommendedVersion != null)
         {
-            bool isNewer = editor.ultiPawTarget.appliedUltiPawVersion == null || 
+            bool isNewer = editor.ultiPawTarget.appliedUltiPawVersion == null ||
                            editor.CompareVersions(editor.recommendedVersion.version, editor.ultiPawTarget.appliedUltiPawVersion.version) > 0;
             string binPath = UltiPawUtils.GetVersionBinPath(editor.recommendedVersion.version, editor.recommendedVersion.defaultAviVersion);
-            bool isDownloaded = !string.IsNullOrEmpty(binPath) && File.Exists(binPath);
-            
+            bool isDownloaded = !string.IsNullOrEmpty(binPath) && System.IO.File.Exists(binPath);
+
             if (isNewer && isDownloaded)
             {
                 versionToSelect = editor.recommendedVersion;
@@ -531,3 +613,10 @@ public class VersionActions
     }
 }
 #endif
+
+
+
+
+
+
+

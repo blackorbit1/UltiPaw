@@ -1,4 +1,4 @@
-#if UNITY_EDITOR
+﻿#if UNITY_EDITOR
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
@@ -100,11 +100,6 @@ public class CreatorModeModule
                 previouslySelectedVersion = editor.selectedVersionForAction;
             }
             
-            if (selectedParentVersionIndex == -1)
-            {
-                SetDefaultVersionNumbers(editor.ultiPawTarget.appliedUltiPawVersion);
-            }
-
             DrawParentVersionDropdown();
             
             EditorGUILayout.PropertyField(editor.customFbxForCreatorProp, new GUIContent("Custom FBX (Transformed)"));
@@ -257,7 +252,7 @@ public class CreatorModeModule
 
         EditorGUI.BeginChangeCheck();
         int newParentIndex = EditorGUILayout.Popup(currentParentPopupIndex, parentVersionDisplayOptions.ToArray());
-        if (EditorGUI.EndChangeCheck() || (selectedParentVersionIndex == -1 && defaultParentIndex != -1 && currentParentPopupIndex != newParentIndex))
+        if (EditorGUI.EndChangeCheck())
         {
             selectedParentVersionIndex = newParentIndex;
             if (selectedParentVersionIndex >= 0 && selectedParentVersionIndex < compatibleParentVersions.Count)
@@ -271,6 +266,13 @@ public class CreatorModeModule
                 SetDefaultVersionNumbers(null);
             }
         }
+        else if (selectedParentVersionIndex == -1 && defaultParentIndex != -1)
+        {
+            // Initialize on first draw only
+            selectedParentVersionIndex = defaultParentIndex;
+            selectedParentVersionObject = compatibleParentVersions[defaultParentIndex];
+            SetDefaultVersionNumbers(selectedParentVersionObject);
+        }
         EditorGUILayout.EndHorizontal();
         HandleParentVersionChanged(selectedParentVersionObject);
     }
@@ -283,7 +285,7 @@ public class CreatorModeModule
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
 
         EditorGUI.BeginChangeCheck();
-        bool includeVeins = EditorGUILayout.Toggle(new GUIContent("Include custom veins"), includeProp.boolValue);
+        bool includeVeins = EditorGUILayout.ToggleLeft(new GUIContent("Include custom veins"), includeProp.boolValue);
         if (EditorGUI.EndChangeCheck())
         {
             includeProp.boolValue = includeVeins;
@@ -315,7 +317,7 @@ public class CreatorModeModule
 
         // Enable dynamic normals for body checkbox
         EditorGUI.BeginChangeCheck();
-        bool includeBody = EditorGUILayout.Toggle(new GUIContent("Enable dynamic normals for body"), includeBodyProp.boolValue);
+        bool includeBody = EditorGUILayout.ToggleLeft(new GUIContent("Enable dynamic normals for body"), includeBodyProp.boolValue);
         if (EditorGUI.EndChangeCheck())
         {
             includeBodyProp.boolValue = includeBody;
@@ -328,7 +330,7 @@ public class CreatorModeModule
 
         // Enable dynamic normals for flexings checkbox
         EditorGUI.BeginChangeCheck();
-        bool includeFlexing = EditorGUILayout.Toggle(new GUIContent("Enable dynamic normals for flexings"), includeFlexingProp.boolValue);
+        bool includeFlexing = EditorGUILayout.ToggleLeft(new GUIContent("Enable dynamic normals for flexings"), includeFlexingProp.boolValue);
         if (EditorGUI.EndChangeCheck())
         {
             includeFlexingProp.boolValue = includeFlexing;
@@ -544,7 +546,7 @@ public class CreatorModeModule
         );
 
         EditorUtility.DisplayProgressBar("Preparing Build", "Calculating hashes and dependencies...", 0.5f);
-        string binPath = Path.Combine(UltiPawUtils.GetVersionDataPath(newVersionString, selectedParentVersionObject.defaultAviVersion), "ultipaw.bin");
+        string binPath = UltiPawUtils.CombineUnityPath(UltiPawUtils.GetVersionDataPath(newVersionString, selectedParentVersionObject.defaultAviVersion), "ultipaw.bin");
 
         var extraCustomization = new List<string>();
         if (selectedParentVersionObject.extraCustomization != null)

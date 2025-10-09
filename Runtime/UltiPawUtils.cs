@@ -1,4 +1,4 @@
-#if UNITY_EDITOR
+﻿#if UNITY_EDITOR
 using UnityEditor;
 using UnityEngine;
 using System.IO;
@@ -373,6 +373,33 @@ public static class UltiPawUtils
             UltiPawLogger.LogWarning(
                 $"[UltiPawUtils] EnsureDirectoryExists called with empty or invalid directory path: '{directoryPath}' (canBeFilePath: {canBeFilePath})");
         }
+    }
+    public static string ToUnityPath(string path)
+    {
+        if (string.IsNullOrEmpty(path)) return path;
+        return path.Replace("\\", "/");
+    }
+
+    public static string CombineUnityPath(params string[] segments)
+    {
+        if (segments == null || segments.Length == 0) return string.Empty;
+
+        string result = null;
+        foreach (var segment in segments)
+        {
+            if (string.IsNullOrEmpty(segment)) continue;
+
+            if (string.IsNullOrEmpty(result))
+            {
+                result = segment.TrimEnd('/', '\\');
+            }
+            else
+            {
+                result = $"{result.TrimEnd('/', '\\')}/{segment.TrimStart('/', '\\')}";
+            }
+        }
+
+        return ToUnityPath(result);
     }
 }
 #endif

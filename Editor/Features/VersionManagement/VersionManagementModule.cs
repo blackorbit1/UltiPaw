@@ -1,4 +1,4 @@
-#if UNITY_EDITOR
+﻿#if UNITY_EDITOR
 using UnityEditor;
 using UnityEngine;
 
@@ -168,9 +168,20 @@ public class VersionManagementModule
         
         if (editor.selectedVersionForAction == VersionListDrawer.RESET_VERSION) return ActionType.RESET;
 
-        if (!editor.isUltiPaw) return ActionType.INSTALL; 
+        var appliedVersion = editor.ultiPawTarget.appliedUltiPawVersion;
+
+        if (!editor.isUltiPaw)
+        {
+            if (appliedVersion != null)
+            {
+                var compareApplied = editor.CompareVersions(editor.selectedVersionForAction.version, appliedVersion.version);
+                if (compareApplied > 0) return ActionType.UPDATE;
+                if (compareApplied < 0) return ActionType.DOWNGRADE;
+            }
+            return ActionType.INSTALL;
+        }
         
-        var compare = editor.CompareVersions(editor.selectedVersionForAction.version, editor.ultiPawTarget.appliedUltiPawVersion?.version ?? "0.0.0");
+        var compare = editor.CompareVersions(editor.selectedVersionForAction.version, appliedVersion?.version ?? "0.0.0");
         if (compare > 0) return ActionType.UPDATE;
         if (compare < 0) return ActionType.DOWNGRADE;
         return ActionType.UNAVAILABLE;
@@ -196,3 +207,5 @@ public class VersionManagementModule
     }
 }
 #endif
+
+
