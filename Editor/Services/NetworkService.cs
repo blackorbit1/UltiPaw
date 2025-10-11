@@ -44,7 +44,14 @@ public class NetworkService
         {
             req.downloadHandler = new DownloadHandlerFile(destinationPath);
             await req.SendWebRequest();
-            return req.result == UnityWebRequest.Result.Success ? (true, null) : (false, $"Download failed: {req.error}");
+            if (req.result != UnityWebRequest.Result.Success)
+            {
+                var error = $"Download failed: {req.error}";
+                if (req.responseCode == 404) error += " - 404 Not Found";
+                UltiPawLogger.LogError($"[NetworkService] {error}");
+                return (false, error);
+            }
+            return (true, null);
         }
     }
     
