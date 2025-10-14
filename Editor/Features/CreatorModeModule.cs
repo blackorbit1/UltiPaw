@@ -523,9 +523,16 @@ public class CreatorModeModule
                 throw new Exception("Custom veins is enabled but no normal map texture is assigned.");
         }
 
-        string originalFbxPath = new VersionActions(editor, networkService, fileManagerService).GetCurrentFBXPath() + FileManagerService.OriginalSuffix;
+        string currentFbxPath = new VersionActions(editor, networkService, fileManagerService).GetCurrentFBXPath();
+        string originalFbxPath = currentFbxPath + FileManagerService.OriginalSuffix;
+        
+        // If .old backup doesn't exist, use the current FBX (first-time submission case)
         if (!File.Exists(originalFbxPath))
-            throw new Exception("Original FBX backup (.old) not found. Apply an UltiPaw version first to create the backup.");
+        {
+            originalFbxPath = currentFbxPath;
+            if (!File.Exists(originalFbxPath))
+                throw new Exception("FBX file not found. Cannot proceed with version creation.");
+        }
 
         if (selectedParentVersionObject == null)
             throw new Exception("A Parent Version must be selected.");
@@ -797,9 +804,16 @@ public class CreatorModeModule
                 ? AssetDatabase.LoadAssetAtPath<Texture2D>(unsubmittedVersion.customVeinsTexturePath) 
                 : null;
 
-            string originalFbxPath = new VersionActions(editor, networkService, fileManagerService).GetCurrentFBXPath() + FileManagerService.OriginalSuffix;
+            string currentFbxPath = new VersionActions(editor, networkService, fileManagerService).GetCurrentFBXPath();
+            string originalFbxPath = currentFbxPath + FileManagerService.OriginalSuffix;
+            
+            // If .old backup doesn't exist, use the current FBX (first-time submission case)
             if (!File.Exists(originalFbxPath))
-                throw new Exception("Original FBX backup (.old) not found.");
+            {
+                originalFbxPath = currentFbxPath;
+                if (!File.Exists(originalFbxPath))
+                    throw new Exception("FBX file not found. Cannot proceed with version creation.");
+            }
 
             // Get parent version
             var parentVersion = editor.serverVersions.FirstOrDefault(v => v.version == unsubmittedVersion.parentVersion);
