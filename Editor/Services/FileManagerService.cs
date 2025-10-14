@@ -125,6 +125,21 @@ public class FileManagerService
         if (string.IsNullOrEmpty(packagePath) || parent == null) return;
 
         string unityPackagePath = UltiPawUtils.ToUnityPath(packagePath);
+        string absolutePackagePath = Path.GetFullPath(unityPackagePath);
+        
+        // Import the unitypackage if it exists
+        if (File.Exists(absolutePackagePath))
+        {
+            UltiPawLogger.Log($"[FileManager] Importing unity package at {unityPackagePath}");
+            AssetDatabase.ImportPackage(unityPackagePath, false);
+            AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+            UltiPawLogger.Log("[FileManager] Unity package import completed.");
+        }
+        else
+        {
+            UltiPawLogger.LogWarning($"[FileManager] Unity package not found at '{absolutePackagePath}'.");
+        }
+        
         string versionDataFolderUnity = UltiPawUtils.ToUnityPath(Path.GetDirectoryName(unityPackagePath));
         string prefabPath = UltiPawUtils.CombineUnityPath(versionDataFolderUnity, "ultipaw logic.prefab");
         string absolutePrefabPath = Path.GetFullPath(prefabPath);
