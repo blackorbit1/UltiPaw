@@ -178,7 +178,22 @@ public class MaterialService
             {
                 if (!UnlockMaterial(material))
                 {
-                    UltiPawLogger.LogError("[MaterialService] Failed to unlock material, cannot apply custom veins");
+                    // Get the expected shader name to inform the user
+                    string expectedShaderName = material.GetTag("OriginalShader", false, string.Empty);
+                    if (string.IsNullOrEmpty(expectedShaderName))
+                    {
+                        expectedShaderName = "Unknown shader";
+                    }
+                    
+                    EditorUtility.DisplayDialog(
+                        "Shader Not Found",
+                        $"Failed to unlock the material because the required shader is not installed in your project.\n\n" +
+                        $"Expected shader: {expectedShaderName}\n\n" +
+                        "Please install the required shader package to use custom veins with this material.",
+                        "OK"
+                    );
+                    
+                    UltiPawLogger.LogError($"[MaterialService] Failed to unlock material, shader '{expectedShaderName}' not found in project");
                     return false;
                 }
                 UltiPawLogger.Log("[MaterialService] Material unlocked successfully");
