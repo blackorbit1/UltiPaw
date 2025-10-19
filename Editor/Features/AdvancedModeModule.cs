@@ -120,7 +120,7 @@ public class AdvancedModeModule
                     // Flush cache button
                     EditorGUILayout.BeginHorizontal();
                     GUILayout.Space(EditorGUI.indentLevel * 15);
-                    if (GUILayout.Button(new GUIContent("Flush Cache", "Clear the cached original mesh references"), GUILayout.Width(100)))
+                    if (GUILayout.Button(new GUIContent("Flush Dynamic Normals Cache", "Clear the cached original mesh references"), GUILayout.Width(100)))
                     {
                         dynamicNormalsService.FlushOriginalMeshes();
                     }

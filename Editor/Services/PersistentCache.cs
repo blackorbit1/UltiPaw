@@ -186,7 +186,7 @@ public class PersistentCache
         if (string.IsNullOrEmpty(baseFbxHash) || string.IsNullOrEmpty(authToken))
             return null;
 
-        string cacheKey = $"{baseFbxHash}_{authToken.GetHashCode()}";
+        string cacheKey = $"{baseFbxHash}_{authToken}";
         
         if (cacheData.versionCache.TryGetValue(cacheKey, out var cacheEntry))
         {
@@ -211,7 +211,7 @@ public class PersistentCache
         if (string.IsNullOrEmpty(baseFbxHash) || string.IsNullOrEmpty(authToken))
             return;
 
-        string cacheKey = $"{baseFbxHash}_{authToken.GetHashCode()}";
+        string cacheKey = $"{baseFbxHash}_{authToken}";
         var cacheEntry = new VersionCacheEntry(baseFbxHash, serverVersions, recommendedVersion, authToken);
         
         cacheData.versionCache[cacheKey] = cacheEntry;
