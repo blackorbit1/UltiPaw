@@ -83,6 +83,7 @@ public class CustomVeinsDrawer
             if (success)
             {
                 EditorPrefs.SetBool(CUSTOM_VEINS_PREF_KEY, newEnabled);
+                currentEnabled = newEnabled;
             }
         }
 
@@ -92,13 +93,18 @@ public class CustomVeinsDrawer
         // "Applied on detail normal map" label and texture preview
         DrawVeinsTexturePreview();
 
-        // Re-apply button below the image
-        using (new EditorGUI.DisabledScope(!currentEnabled))
+        materialService.TryGetMaterial("Body", out var bodyMaterial);
+        bool isLocked = bodyMaterial != null && materialService.IsMaterialLocked(bodyMaterial);
+        bool veinsApplied = bodyMaterial != null && materialService.HasDetailNormalMap(bodyMaterial);
+        bool shouldShowWarning = currentEnabled && !veinsApplied;
+
+        if (shouldShowWarning)
         {
-            if (GUILayout.Button("Re-apply", GUILayout.Width(100)))
-            {
-                ApplyCustomVeins();
-            }
+            DrawVeinsMissingWarning(bodyMaterial, isLocked);
+        }
+        else
+        {
+            DrawReapplyButton(currentEnabled, bodyMaterial, isLocked);
         }
         
         GUILayout.EndVertical();
@@ -178,6 +184,12 @@ public class CustomVeinsDrawer
             return false;
         }
 
+        materialService.TryGetMaterial("Body", out var bodyMaterial);
+        if (!EnsureUnlocked(bodyMaterial))
+        {
+            return false;
+        }
+
         // Construct the path to the veins normal map using the utility method
         string versionFolder = UltiPawUtils.GetVersionDataPath(appliedVersion.version, appliedVersion.defaultAviVersion);
         string veinsNormalPath = System.IO.Path.Combine(versionFolder, "veins normal.png").Replace("\\", "/");
@@ -203,6 +215,12 @@ public class CustomVeinsDrawer
     {
         UltiPawLogger.Log("[CustomVeinsDrawer] Removing custom veins");
 
+        materialService.TryGetMaterial("Body", out var bodyMaterial);
+        if (!EnsureUnlocked(bodyMaterial))
+        {
+            return false;
+        }
+
         bool success = materialService.RemoveDetailNormalMap("Body");
         if (success)
         {
@@ -213,6 +231,65 @@ public class CustomVeinsDrawer
             UltiPawLogger.LogError("[CustomVeinsDrawer] Failed to remove custom veins");
         }
         return success;
+    }
+
+    private void DrawReapplyButton(bool currentEnabled, Material bodyMaterial, bool isLocked)
+    {
+        using (new EditorGUI.DisabledScope(!currentEnabled))
+        {
+            string label = isLocked ? "Unlock and re-apply" : "Re-apply";
+            if (GUILayout.Button(label, GUILayout.Width(140)))
+            {
+                if (EnsureUnlocked(bodyMaterial))
+                {
+                    ApplyCustomVeins();
+                }
+            }
+        }
+    }
+
+    private void DrawVeinsMissingWarning(Material bodyMaterial, bool isLocked)
+    {
+        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+        EditorGUILayout.LabelField("the custom veins are not applied anymore.", EditorStyles.wordWrappedMiniLabel);
+        EditorGUILayout.Space(4f);
+
+        EditorGUILayout.BeginHorizontal();
+        string reapplyLabel = isLocked ? "Unlock and re-apply" : "Re-apply";
+        if (GUILayout.Button(reapplyLabel, GUILayout.Width(140)))
+        {
+            if (EnsureUnlocked(bodyMaterial))
+            {
+                ApplyCustomVeins();
+            }
+        }
+
+        if (GUILayout.Button("Disable custom veins", GUILayout.Width(160)))
+        {
+            EditorPrefs.SetBool(CUSTOM_VEINS_PREF_KEY, false);
+            RemoveCustomVeins();
+        }
+        EditorGUILayout.EndHorizontal();
+        EditorGUILayout.EndVertical();
+    }
+
+    private bool EnsureUnlocked(Material material)
+    {
+        if (material == null || !materialService.IsMaterialLocked(material))
+        {
+            return true;
+        }
+
+        if (materialService.UnlockMaterial(material))
+        {
+            return true;
+        }
+
+        EditorUtility.DisplayDialog(
+            "Unlock Failed",
+            "Could not unlock the material shader. Please unlock it manually from Poiyomi before trying again.",
+            "Ok");
+        return false;
     }
 }
 #endif

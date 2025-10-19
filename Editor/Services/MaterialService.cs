@@ -1,4 +1,5 @@
 ﻿#if UNITY_EDITOR
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
@@ -53,7 +54,6 @@ public class MaterialService
         "_EnableDetailNormals",
         "_EnableDetailNormalMap",
         "_DetailNormal",
-        "_DetailEnabled",
         "_DetailNormals",
         "_DetailNormToggle",
         "_DetailNormEnabled",
@@ -89,6 +89,20 @@ public class MaterialService
         "_DetailNormalsTex",
         "_DetailBumpMap",
         "_DetailNormalTex"
+    };
+
+    private const string LightingModeProperty = "_LightingMode";
+    private static readonly string[] LightingModeKeywords =
+    {
+        "_LIGHTINGMODE_TEXTURERAMP",
+        "_LIGHTINGMODE_MULTILAYER_MATH",
+        "_LIGHTINGMODE_WRAPPED",
+        "_LIGHTINGMODE_SKIN",
+        "_LIGHTINGMODE_SHADEMAP",
+        "_LIGHTINGMODE_FLAT",
+        "_LIGHTINGMODE_REALISTIC",
+        "_LIGHTINGMODE_CLOTH",
+        "_LIGHTINGMODE_SDF"
     };
 
     public MaterialService(Transform avatarRoot)
@@ -149,60 +163,44 @@ public class MaterialService
     }
 
     /// <summary>
+    /// Attempts to retrieve the shared material assigned to the specified slot.
+    /// </summary>
+    public bool TryGetMaterial(string materialSlot, out Material material)
+    {
+        material = GetMaterialForSlot(materialSlot);
+        return material != null;
+    }
+
+    /// <summary>
+    /// Attempts to retrieve both the renderer and shared material for the specified slot.
+    /// </summary>
+    public bool TryGetMaterialWithRenderer(string materialSlot, out Material material, out SkinnedMeshRenderer smr)
+    {
+        smr = GetSkinnedMeshRendererForSlot(materialSlot);
+        material = smr?.sharedMaterial;
+
+        if (smr == null || material == null)
+        {
+            material = null;
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// Sets the detail normal map texture for the specified material slot
     /// </summary>
     public bool SetDetailNormalMap(string materialSlot, string filePath)
     {
         var smr = GetSkinnedMeshRendererForSlot(materialSlot);
         if (smr == null) return false;
-
+        
         var material = smr.sharedMaterial;
         if (material == null)
         {
             UltiPawLogger.LogError($"[MaterialService] SkinnedMeshRenderer '{materialSlot}' has no material assigned");
             return false;
-        }
-
-        // Check if material is locked and ask user if they want to unlock it
-        if (IsMaterialLocked(material))
-        {
-            bool shouldUnlock = EditorUtility.DisplayDialog(
-                "Material Shader is Locked",
-                $"The material on '{materialSlot}' has a locked shader. Custom veins cannot be applied to locked shaders.\n\n" +
-                "Would you like to unlock the material to apply custom veins?",
-                "Unlock and Apply",
-                "Don't apply"
-            );
-
-            if (shouldUnlock)
-            {
-                if (!UnlockMaterial(material))
-                {
-                    // Get the expected shader name to inform the user
-                    string expectedShaderName = material.GetTag("OriginalShader", false, string.Empty);
-                    if (string.IsNullOrEmpty(expectedShaderName))
-                    {
-                        expectedShaderName = "Unknown shader";
-                    }
-                    
-                    EditorUtility.DisplayDialog(
-                        "Shader Not Found",
-                        $"Failed to unlock the material because the required shader is not installed in your project.\n\n" +
-                        $"Expected shader: {expectedShaderName}\n\n" +
-                        "Please install the required shader package to use custom veins with this material.",
-                        "OK"
-                    );
-                    
-                    UltiPawLogger.LogError($"[MaterialService] Failed to unlock material, shader '{expectedShaderName}' not found in project");
-                    return false;
-                }
-                UltiPawLogger.Log("[MaterialService] Material unlocked successfully");
-            }
-            else
-            {
-                UltiPawLogger.Log("[MaterialService] User cancelled custom veins application due to locked shader");
-                return false;
-            }
         }
 
         if (!IsShaderSupported(material.shader.name))
@@ -230,7 +228,7 @@ public class MaterialService
         FinalizeMaterialEdit(smr, material);
         AssetDatabase.SaveAssets(); // Force save to disk
         AssetDatabase.Refresh(); // Force asset refresh
-
+        
         UltiPawLogger.Log($"[MaterialService] Set detail normal map on {materialSlot} material to: {filePath}");
         return true;
     }
@@ -303,6 +301,75 @@ public class MaterialService
         AssetDatabase.Refresh(); // Force asset refresh
         
         UltiPawLogger.Log($"[MaterialService] Removed detail normal map from {materialSlot} material");
+        return true;
+    }
+
+    /// <summary>
+    /// Checks whether a detail normal map texture is currently assigned on the specified material slot.
+    /// </summary>
+    public bool HasDetailNormalMap(string materialSlot)
+    {
+        return TryGetMaterial(materialSlot, out var material) && HasDetailNormalMap(material);
+    }
+
+    /// <summary>
+    /// Checks whether a detail normal map texture is currently assigned on the provided material.
+    /// </summary>
+    public bool HasDetailNormalMap(Material material)
+    {
+        if (material == null)
+        {
+            return false;
+        }
+
+        foreach (var property in DetailNormalTextureProperties)
+        {
+            if (!material.HasProperty(property))
+            {
+                continue;
+            }
+
+            if (material.GetTexture(property) != null)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Sets the lighting mode keyword enum to the provided value and refreshes the renderer.
+    /// </summary>
+    public bool SetLightingMode(string materialSlot, int lightingModeIndex)
+    {
+        var smr = GetSkinnedMeshRendererForSlot(materialSlot);
+        if (smr == null)
+        {
+            return false;
+        }
+
+        var material = smr.sharedMaterial;
+        if (material == null)
+        {
+            UltiPawLogger.LogError($"[MaterialService] SkinnedMeshRenderer '{materialSlot}' has no material assigned");
+            return false;
+        }
+
+        if (!material.HasProperty(LightingModeProperty))
+        {
+            UltiPawLogger.LogError($"[MaterialService] Material on '{materialSlot}' does not expose property {LightingModeProperty}");
+            return false;
+        }
+
+        lightingModeIndex = Mathf.Clamp(lightingModeIndex, 0, LightingModeKeywords.Length - 1);
+
+        PrepareMaterialEdit(smr, material, "UltiPaw Set Lighting Mode");
+
+        material.SetFloat(LightingModeProperty, lightingModeIndex);
+        ApplyLightingModeKeywords(material, lightingModeIndex);
+
+        FinalizeMaterialEdit(smr, material);
         return true;
     }
 
@@ -618,8 +685,9 @@ public class MaterialService
         ForceRendererRefresh(smr);
     }
 
+
     /// <summary>
-    /// Checks if a material's shader is locked
+    /// Determines whether the provided material references a locked Poiyomi shader.
     /// </summary>
     public bool IsMaterialLocked(Material material)
     {
@@ -628,13 +696,12 @@ public class MaterialService
             return false;
         }
 
-        // Check if shader name starts with "Hidden/" and has the original shader tag
-        return material.shader.name.StartsWith("Hidden/", System.StringComparison.Ordinal) && !string.IsNullOrEmpty(material.GetTag("OriginalShader", false, ""));
+        return material.shader.name.StartsWith("Hidden/", StringComparison.Ordinal) &&
+               !string.IsNullOrEmpty(material.GetTag("OriginalShader", false, string.Empty));
     }
 
     /// <summary>
-    /// Unlocks a locked material by restoring its original shader
-    /// Based on the UnlockConcrete logic from ShaderOptimizer.cs with zero dependencies
+    /// Attempts to unlock a locked material by restoring its original shader reference.
     /// </summary>
     public bool UnlockMaterial(Material material)
     {
@@ -646,14 +713,12 @@ public class MaterialService
 
         Shader lockedShader = material.shader;
 
-        // Check if shader is locked
-        if (!lockedShader.name.StartsWith("Hidden/", System.StringComparison.Ordinal))
+        if (!lockedShader.name.StartsWith("Hidden/", StringComparison.Ordinal))
         {
             UltiPawLogger.LogWarning($"[MaterialService] Shader {lockedShader.name} is not locked");
-            return true; // Not locked, so consider it a success
+            return true;
         }
 
-        // Get original shader name from material tag
         string originalShaderName = material.GetTag("OriginalShader", false, string.Empty);
         if (string.IsNullOrEmpty(originalShaderName))
         {
@@ -661,15 +726,11 @@ public class MaterialService
             return false;
         }
 
-        // Try to find the original shader by exact name
         Shader originalShader = Shader.Find(originalShaderName);
 
-        // If exact match not found, try fallback matching strategies
         if (originalShader == null)
         {
             UltiPawLogger.LogWarning($"[MaterialService] Original shader '{originalShaderName}' could not be found by exact match, trying fallback strategies...");
-
-            // Strategy 1: Try to find by shader base name only (e.g., "Poiyomi Toon" from ".poiyomi/Poiyomi 8.1/Poiyomi Toon")
             originalShader = FindShaderByBaseName(originalShaderName);
 
             if (originalShader != null)
@@ -684,41 +745,55 @@ public class MaterialService
             return false;
         }
 
-        // Save render type and queue (they get reset when changing shaders)
-        string renderType = material.GetTag("RenderType", false, "");
+        string renderType = material.GetTag("RenderType", false, string.Empty);
         int renderQueue = material.renderQueue;
 
-        // Record undo
         Undo.RecordObject(material, "Unlock Material Shader");
 
-        // Switch back to original shader
         material.shader = originalShader;
-
-        // Restore render type and queue
         material.SetOverrideTag("RenderType", renderType);
         material.renderQueue = renderQueue;
 
-        // Restore keywords
         string originalKeywords = material.GetTag("OriginalKeywords", false, string.Empty);
         if (!string.IsNullOrEmpty(originalKeywords))
         {
             material.shaderKeywords = originalKeywords.Split(' ');
         }
 
-        // Mark as dirty
         EditorUtility.SetDirty(material);
 
         UltiPawLogger.Log($"[MaterialService] Successfully unlocked material shader from '{lockedShader.name}' to '{originalShader.name}'");
         return true;
     }
 
-    /// <summary>
-    /// Finds a shader by matching its base name (the part after the last '/')
-    /// For example, finds ".poiyomi/Poiyomi Toon" when looking for ".poiyomi/Poiyomi 8.1/Poiyomi Toon"
-    /// </summary>
+    private void ApplyLightingModeKeywords(Material material, int activeIndex)
+    {
+        if (material == null)
+        {
+            return;
+        }
+
+        for (int i = 0; i < LightingModeKeywords.Length; i++)
+        {
+            string keyword = LightingModeKeywords[i];
+            if (string.IsNullOrEmpty(keyword))
+            {
+                continue;
+            }
+
+            if (i == activeIndex)
+            {
+                material.EnableKeyword(keyword);
+            }
+            else
+            {
+                material.DisableKeyword(keyword);
+            }
+        }
+    }
+
     private Shader FindShaderByBaseName(string originalShaderName)
     {
-        // Extract the base name (part after the last '/')
         string baseName = originalShaderName;
         int lastSlashIndex = originalShaderName.LastIndexOf('/');
         if (lastSlashIndex >= 0 && lastSlashIndex < originalShaderName.Length - 1)
@@ -731,60 +806,64 @@ public class MaterialService
             return null;
         }
 
-        // Get all shaders in the project
-        ShaderVariantCollection.ShaderVariant[] allVariants = null;
-        List<Shader> allShaders = new List<Shader>();
-
-        // Use ShaderUtil to get all shader info
-        ShaderInfo[] shaderInfos = ShaderUtil.GetAllShaderInfo();
+        var shaderInfos = ShaderUtil.GetAllShaderInfo();
 
         foreach (var shaderInfo in shaderInfos)
         {
-            // Skip unsupported shaders
             if (!shaderInfo.supported)
+            {
                 continue;
+            }
 
-            // Skip hidden shaders (locked shaders)
-            if (shaderInfo.name.StartsWith("Hidden/", System.StringComparison.Ordinal))
+            if (shaderInfo.name.StartsWith("Hidden/", StringComparison.Ordinal))
+            {
                 continue;
+            }
 
             Shader shader = Shader.Find(shaderInfo.name);
-            if (shader != null)
+            if (shader == null)
             {
-                allShaders.Add(shader);
+                continue;
             }
-        }
 
-        // First pass: Try exact base name match
-        foreach (Shader shader in allShaders)
-        {
             string shaderBaseName = shader.name;
-            int shaderLastSlashIndex = shader.name.LastIndexOf('/');
-            if (shaderLastSlashIndex >= 0 && shaderLastSlashIndex < shader.name.Length - 1)
+            int shaderLastSlash = shader.name.LastIndexOf('/');
+            if (shaderLastSlash >= 0 && shaderLastSlash < shader.name.Length - 1)
             {
-                shaderBaseName = shader.name.Substring(shaderLastSlashIndex + 1);
+                shaderBaseName = shader.name.Substring(shaderLastSlash + 1);
             }
 
-            if (shaderBaseName.Equals(baseName, System.StringComparison.OrdinalIgnoreCase))
+            if (shaderBaseName.Equals(baseName, StringComparison.OrdinalIgnoreCase))
             {
                 return shader;
             }
         }
 
-        // Second pass: Try to find closest match by comparing full names
-        // This handles cases like "Poiyomi 8.1" vs "Poiyomi 9.0"
         Shader bestMatch = null;
-        int bestMatchScore = int.MaxValue;
+        int bestScore = int.MaxValue;
 
-        foreach (Shader shader in allShaders)
+        foreach (var shaderInfo in shaderInfos)
         {
-            // Calculate a simple distance score (lower is better)
-            int score = CalculateShaderNameDistance(originalShaderName, shader.name);
-
-            // Only consider it a match if the score is reasonable (less than half the original name length)
-            if (score < originalShaderName.Length / 2 && score < bestMatchScore)
+            if (!shaderInfo.supported)
             {
-                bestMatchScore = score;
+                continue;
+            }
+
+            if (shaderInfo.name.StartsWith("Hidden/", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            Shader shader = Shader.Find(shaderInfo.name);
+            if (shader == null)
+            {
+                continue;
+            }
+
+            int score = CalculateShaderNameDistance(originalShaderName, shader.name);
+            if (score < originalShaderName.Length / 2 && score < bestScore)
+            {
+                bestScore = score;
                 bestMatch = shader;
             }
         }
@@ -792,33 +871,31 @@ public class MaterialService
         return bestMatch;
     }
 
-    /// <summary>
-    /// Calculates a simple distance score between two shader names
-    /// Lower score means better match
-    /// </summary>
     private int CalculateShaderNameDistance(string name1, string name2)
     {
-        // Normalize names for comparison (lowercase, no spaces)
-        string normalized1 = name1.ToLowerInvariant().Replace(" ", "").Replace(".", "").Replace("/", "");
-        string normalized2 = name2.ToLowerInvariant().Replace(" ", "").Replace(".", "").Replace("/", "");
+        string normalized1 = name1.ToLowerInvariant().Replace(" ", string.Empty).Replace(".", string.Empty).Replace("/", string.Empty);
+        string normalized2 = name2.ToLowerInvariant().Replace(" ", string.Empty).Replace(".", string.Empty).Replace("/", string.Empty);
 
-        // Simple Levenshtein distance calculation
         int[,] distance = new int[normalized1.Length + 1, normalized2.Length + 1];
 
         for (int i = 0; i <= normalized1.Length; i++)
+        {
             distance[i, 0] = i;
+        }
 
         for (int j = 0; j <= normalized2.Length; j++)
+        {
             distance[0, j] = j;
+        }
 
         for (int i = 1; i <= normalized1.Length; i++)
         {
             for (int j = 1; j <= normalized2.Length; j++)
             {
-                int cost = (normalized1[i - 1] == normalized2[j - 1]) ? 0 : 1;
+                int cost = normalized1[i - 1] == normalized2[j - 1] ? 0 : 1;
 
-                distance[i, j] = System.Math.Min(
-                    System.Math.Min(distance[i - 1, j] + 1, distance[i, j - 1] + 1),
+                distance[i, j] = Math.Min(
+                    Math.Min(distance[i - 1, j] + 1, distance[i, j - 1] + 1),
                     distance[i - 1, j - 1] + cost);
             }
         }

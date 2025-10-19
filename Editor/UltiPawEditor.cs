@@ -29,6 +29,7 @@ public class UltiPawEditor : UnityEditor.Editor
     private AdvancedModeModule advancedModule;
     private AccountModule accountModule;
     private AvatarOptionsModule avatarOptionsModule;
+    private AdjustMaterialModule adjustMaterialModule;
     
     // --- Async Services ---
     private AsyncTaskManager taskManager;
@@ -80,6 +81,7 @@ public class UltiPawEditor : UnityEditor.Editor
         accountModule = new AccountModule(this, networkService);
         accountModule.Initialize();
         avatarOptionsModule = new AvatarOptionsModule(this);
+        adjustMaterialModule = new AdjustMaterialModule(this);
         
         // Load local versions first (synchronous, but fast)
         LoadUnsubmittedVersions();
@@ -254,6 +256,7 @@ public class UltiPawEditor : UnityEditor.Editor
                 SafeUiCall(() => creatorModule.Draw());
                 SafeUiCall(() => versionModule.Draw());
                 SafeUiCall(() => avatarOptionsModule?.Draw());
+                SafeUiCall(() => adjustMaterialModule?.Draw());
                 SafeUiCall(DrawHelpBox);
             }
 
