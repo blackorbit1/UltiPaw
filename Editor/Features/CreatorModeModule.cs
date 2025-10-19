@@ -793,6 +793,7 @@ public class CreatorModeModule
         string zipPath = null;
         Exception error = null;
         System.Threading.Tasks.Task<(bool success, string response, string error)> uploadTask = null;
+        string uploadUrl = null;
 
         try
         {
@@ -837,7 +838,7 @@ public class CreatorModeModule
 
             EditorUtility.DisplayProgressBar("Uploading", "Sending package to server...", 0.7f);
             string metadataJson = JsonConvert.SerializeObject(unsubmittedVersion, new StringEnumConverter());
-            string uploadUrl = $"{UltiPawUtils.getServerUrl()}{UltiPawUtils.NEW_VERSION_ENDPOINT}?t={editor.authToken}";
+            uploadUrl = $"{UltiPawUtils.getServerUrl()}{UltiPawUtils.NEW_VERSION_ENDPOINT}?t={editor.authToken}";
             uploadTask = networkService.SubmitNewVersionAsync(uploadUrl, editor.authToken, zipPath, metadataJson);
         }
         catch (Exception ex)
@@ -867,7 +868,7 @@ public class CreatorModeModule
         catch (Exception ex)
         {
             editor.submitError = ex.Message;
-            UltiPawLogger.LogError($"[CreatorMode] Upload failed: {ex}");
+            UltiPawLogger.LogError($"[CreatorMode] Upload failed: {ex}, url: {uploadUrl}");
         }
         finally
         {
@@ -889,13 +890,14 @@ public class CreatorModeModule
         (UltiPawVersion metadata, string zipPath) buildResult = default;
         Exception error = null;
         System.Threading.Tasks.Task<(bool success, string response, string error)> uploadTask = null;
-
+        string uploadUrl = null;
+            
         try
         {
             buildResult = BuildNewVersion();
             EditorUtility.DisplayProgressBar("Uploading", "Sending package to server...", 0.8f);
             string metadataJson = JsonConvert.SerializeObject(buildResult.metadata, new StringEnumConverter());
-            string uploadUrl = $"{UltiPawUtils.getServerUrl()}{UltiPawUtils.NEW_VERSION_ENDPOINT}?t={editor.authToken}";
+            uploadUrl = $"{UltiPawUtils.getServerUrl()}{UltiPawUtils.NEW_VERSION_ENDPOINT}?t={editor.authToken}";
             uploadTask = networkService.SubmitNewVersionAsync(uploadUrl, editor.authToken, buildResult.zipPath, metadataJson);
         }
         catch (Exception ex)
@@ -925,7 +927,7 @@ public class CreatorModeModule
         catch (Exception ex)
         {
             editor.submitError = ex.Message;
-            UltiPawLogger.LogError($"[CreatorMode] Submission failed: {ex}");
+            UltiPawLogger.LogError($"[CreatorMode] Submission failed: {ex}, url: {uploadUrl}");
         }
         finally
         {

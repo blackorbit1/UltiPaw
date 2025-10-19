@@ -50,7 +50,7 @@ public class AdvancedModeModule
                 }
 
                 // Refresh account state button
-                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.BeginHorizontal();  
                 GUILayout.Space(EditorGUI.indentLevel * 15);
                 if (GUILayout.Button("Refresh account state", GUILayout.Width(180)))
                 {

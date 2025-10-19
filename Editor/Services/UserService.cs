@@ -137,7 +137,7 @@ public class UserService
             else
             {
                 failedRequests.Add(userId);
-                UltiPawLogger.LogWarning($"[UltiPaw] Failed to fetch user info for ID {userId}: {request.error}");
+                UltiPawLogger.LogWarning($"[UltiPaw] Failed to fetch user info for ID {userId}: {request.error}, url: ");
             }
             
             onComplete?.Invoke();

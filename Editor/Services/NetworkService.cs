@@ -48,7 +48,7 @@ public class NetworkService
             {
                 var error = $"Download failed: {req.error}";
                 if (req.responseCode == 404) error += " - 404 Not Found";
-                UltiPawLogger.LogError($"[NetworkService] {error}");
+                UltiPawLogger.LogError($"[NetworkService] {error}, url = {url}");
                 return (false, error);
             }
             return (true, null);

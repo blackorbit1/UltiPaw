@@ -22,7 +22,23 @@ public static class UltiPawUtils
     public const string ULTIPAW_AVATAR_NAME = "ultipaw avatar.asset";
     public const string CUSTOM_LOGIC_NAME = "ultipaw logic.asset";
 
-    public static bool isDevEnvironment = false; // Set to true for development environment
+    // EditorPrefs key for Dev Environment setting
+    private const string DevEnvironmentPrefKey = "UltiPaw_DevEnvironment";
+    
+    // Dev Environment property with persistent storage
+    public static bool isDevEnvironment
+    {
+        get
+        {
+            try { return EditorPrefs.GetBool(DevEnvironmentPrefKey, false); }
+            catch { return false; }
+        }
+        set
+        {
+            try { EditorPrefs.SetBool(DevEnvironmentPrefKey, value); } catch { }
+        }
+    }
+    
     public const string SERVER_BASE_URL = "api.orbiters.cc/"; // Update with your server URL
     public const string VERSION_ENDPOINT = "/ultipaw/versions";
     public const string MODEL_ENDPOINT = "/ultipaw/model";
