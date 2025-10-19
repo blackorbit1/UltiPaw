@@ -6,7 +6,10 @@ using UnityEngine;
 
 public class BlendshapeDrawer
 {
+    private const float WeightEpsilon = 0.001f;
+
     private readonly UltiPawEditor editor;
+    private string lastAutoAppliedVersionKey;
 
     public BlendshapeDrawer(UltiPawEditor editor)
     {
@@ -32,13 +35,45 @@ public class BlendshapeDrawer
 
         while (values.arraySize < blendshapeEntries.Length) values.InsertArrayElementAtIndex(values.arraySize);
         while (values.arraySize > blendshapeEntries.Length) values.DeleteArrayElementAtIndex(values.arraySize - 1);
+
+        string versionKey = $"{appliedVersion.version}|{appliedVersion.defaultAviVersion}";
+        bool hasOverrides = editor.ultiPawTarget.customBlendshapeOverrideNames.Count > 0;
+        bool allWeightsZero = true;
+        bool anyDefaultAboveZero = false;
+
+        for (int i = 0; i < blendshapeEntries.Length; i++)
+        {
+            var entry = blendshapeEntries[i];
+            float defaultValue = ParseDefaultValue(entry.defaultValue);
+            if (defaultValue > WeightEpsilon) anyDefaultAboveZero = true;
+
+            int index = smr.sharedMesh.GetBlendShapeIndex(entry.name);
+            if (index < 0) continue;
+
+            if (smr.GetBlendShapeWeight(index) > WeightEpsilon)
+            {
+                allWeightsZero = false;
+            }
+        }
+
+        if (!hasOverrides && anyDefaultAboveZero && allWeightsZero && lastAutoAppliedVersionKey != versionKey)
+        {
+            ApplyDefaultBlendshapeValues(smr, values, blendshapeEntries);
+            allWeightsZero = false;
+            lastAutoAppliedVersionKey = versionKey;
+        }
+        else if (!allWeightsZero)
+        {
+            lastAutoAppliedVersionKey = versionKey;
+        }
+
+        
         
         for (int i = 0; i < blendshapeEntries.Length; i++)
         {
             var entry = blendshapeEntries[i];
             string shapeName = entry.name;
-            string defaultValueStr = entry.defaultValue;
-            float defaultValue = float.TryParse(defaultValueStr, NumberStyles.Float, CultureInfo.InvariantCulture, out float parsedDefault) ? parsedDefault : 0f;
+            float defaultValue = ParseDefaultValue(entry.defaultValue);
             
             int index = smr.sharedMesh.GetBlendShapeIndex(shapeName);
             if (index < 0) continue;
@@ -54,7 +89,7 @@ public class BlendshapeDrawer
                 values.GetArrayElementAtIndex(i).floatValue = newWeight;
                 
                 // Save custom override if different from default
-                if (!Mathf.Approximately(newWeight, defaultValue))
+                if (Mathf.Abs(newWeight - defaultValue) > WeightEpsilon)
                 {
                     SetCustomOverrideValue(shapeName, newWeight);
                 }
@@ -69,28 +104,16 @@ public class BlendshapeDrawer
             }
         }
         
+        if (allWeightsZero)
+        {
+            EditorGUILayout.HelpBox("All the sliders are at 0.0, turn some of them up to use the the custom UltiPaw blenshapes", MessageType.Warning);
+        }
+        
         EditorGUILayout.Space();
-        if (GUILayout.Button("Reset to Default Values"))
+        if (GUILayout.Button("Set to Default Values"))
         {
             ClearAllCustomOverrides();
-            
-            // Reapply default values
-            for (int i = 0; i < blendshapeEntries.Length; i++)
-            {
-                var entry = blendshapeEntries[i];
-                string defaultValueStr = entry.defaultValue;
-                
-                float defaultValue = float.TryParse(defaultValueStr, NumberStyles.Float, CultureInfo.InvariantCulture, out float parsedDefault) ? parsedDefault : 0f;
-                int index = smr.sharedMesh.GetBlendShapeIndex(entry.name);
-                if (index >= 0)
-                {
-                    smr.SetBlendShapeWeight(index, defaultValue);
-                    values.GetArrayElementAtIndex(i).floatValue = defaultValue;
-                }
-            }
-            
-            EditorUtility.SetDirty(smr);
-            EditorUtility.SetDirty(editor.ultiPawTarget);
+            ApplyDefaultBlendshapeValues(smr, values, blendshapeEntries);
         }
         
         EditorGUILayout.EndVertical();
@@ -144,6 +167,30 @@ public class BlendshapeDrawer
     {
         editor.ultiPawTarget.customBlendshapeOverrideNames.Clear();
         editor.ultiPawTarget.customBlendshapeOverrideValues.Clear();
+    }
+
+    private static float ParseDefaultValue(string defaultValueStr)
+    {
+        return float.TryParse(defaultValueStr, NumberStyles.Float, CultureInfo.InvariantCulture, out float parsedDefault)
+            ? parsedDefault
+            : 0f;
+    }
+
+    private void ApplyDefaultBlendshapeValues(SkinnedMeshRenderer smr, SerializedProperty values, CustomBlendshapeEntry[] blendshapeEntries)
+    {
+        for (int i = 0; i < blendshapeEntries.Length; i++)
+        {
+            var entry = blendshapeEntries[i];
+            float defaultValue = ParseDefaultValue(entry.defaultValue);
+            int index = smr.sharedMesh.GetBlendShapeIndex(entry.name);
+            if (index < 0) continue;
+
+            smr.SetBlendShapeWeight(index, defaultValue);
+            values.GetArrayElementAtIndex(i).floatValue = defaultValue;
+        }
+
+        EditorUtility.SetDirty(smr);
+        EditorUtility.SetDirty(editor.ultiPawTarget);
     }
 }
 #endif
