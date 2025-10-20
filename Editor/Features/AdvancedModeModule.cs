@@ -120,9 +120,9 @@ public class AdvancedModeModule
                     // Flush cache button
                     EditorGUILayout.BeginHorizontal();
                     GUILayout.Space(EditorGUI.indentLevel * 15);
-                    if (GUILayout.Button(new GUIContent("Flush Dynamic Normals Cache", "Clear the cached original mesh references"), GUILayout.Width(100)))
+                    if (GUILayout.Button(new GUIContent("Flush Dynamic Normals Cache", "Clear the cached original mesh references"), GUILayout.Width(220f)))
                     {
-                        dynamicNormalsService.FlushOriginalMeshes();
+                        dynamicNormalsService.FlushOriginalMeshes(); 
                     }
                     EditorGUILayout.EndHorizontal();
                     
@@ -146,6 +146,33 @@ public class AdvancedModeModule
                 {
                     EditorGUILayout.HelpBox("No UltiPaw target found.", MessageType.Info);
                 }
+
+                // Version cache controls
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Version Cache", EditorStyles.boldLabel);
+
+                EditorGUILayout.BeginHorizontal();
+                GUILayout.Space(EditorGUI.indentLevel * 15);
+                if (GUILayout.Button(new GUIContent("Flush Version Caches", "Clear cached version metadata and hash entries"), GUILayout.Width(220f)))
+                {
+                    var versionService = AsyncVersionService.Instance;
+                    versionService.ClearAllCache();
+                    editor.serverVersions.Clear();
+                    editor.recommendedVersion = null;
+                    editor.selectedVersionForAction = null;
+                    editor.fetchAttempted = false;
+                    editor.versionModule?.actions?.UpdateAppliedVersionAndState();
+                    editor.Repaint();
+                    UltiPawLogger.Log("[AdvancedMode] Cleared version caches from Advanced Mode module.");
+                }
+                EditorGUILayout.EndHorizontal();
+
+                var cacheStats = AsyncVersionService.Instance.GetCacheStats();
+                string cachedRecommended = editor.recommendedVersion != null ? editor.recommendedVersion.version : "None";
+                string cachedFbxHash = string.IsNullOrEmpty(editor.currentBaseFbxHash) ? "Unavailable" : editor.currentBaseFbxHash;
+                EditorGUILayout.HelpBox(
+                    $"Cached versions: {cacheStats.versionEntries} (hash entries: {cacheStats.hashEntries})\nRecommended version: {cachedRecommended}\nCurrent FBX hash: {cachedFbxHash}",
+                    MessageType.None);
                 
                 // Debug Tools section
                 EditorGUILayout.Space();
