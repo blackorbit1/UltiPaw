@@ -375,9 +375,9 @@ public class UltiPawEditor : UnityEditor.Editor
     {
         if (bannerTexture == null) return;
         float aspect = (float)bannerTexture.width / bannerTexture.height;
-        float desiredWidth = EditorGUIUtility.currentViewWidth - 40;
+        float desiredWidth = EditorGUIUtility.currentViewWidth;
         Rect rect = GUILayoutUtility.GetRect(desiredWidth, desiredWidth / aspect);
-        GUI.DrawTexture(rect, bannerTexture, ScaleMode.ScaleToFit);
+        GUI.DrawTexture(rect, bannerTexture, ScaleMode.StretchToFill);
         GUILayout.Space(5);
     }
     
