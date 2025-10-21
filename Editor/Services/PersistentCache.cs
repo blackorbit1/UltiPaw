@@ -183,23 +183,104 @@ public class PersistentCache
     // Version Cache Methods
     public VersionCacheEntry GetCachedVersions(string baseFbxHash, string authToken)
     {
-        if (string.IsNullOrEmpty(baseFbxHash) || string.IsNullOrEmpty(authToken))
+        if (string.IsNullOrEmpty(baseFbxHash))
             return null;
 
-        string cacheKey = $"{baseFbxHash}_{authToken}";
-        
-        if (cacheData.versionCache.TryGetValue(cacheKey, out var cacheEntry))
+        if (!string.IsNullOrEmpty(authToken))
         {
-            if (cacheEntry.IsValid(baseFbxHash, authToken, VERSION_CACHE_MAX_AGE))
+            string cacheKey = $"{baseFbxHash}_{authToken}";
+            
+            if (cacheData.versionCache.TryGetValue(cacheKey, out var cacheEntry))
             {
-                UltiPawLogger.Log($"[PersistentCache] Version cache hit for hash: {baseFbxHash}");
-                return cacheEntry;
+                if (cacheEntry.IsValid(baseFbxHash, authToken, VERSION_CACHE_MAX_AGE))
+                {
+                    UltiPawLogger.Log($"[PersistentCache] Version cache hit for hash: {baseFbxHash}");
+                    return cacheEntry;
+                }
+                else
+                {
+                    cacheData.versionCache.Remove(cacheKey);
+                    UltiPawLogger.Log($"[PersistentCache] Version cache invalidated for hash: {baseFbxHash}");
+                }
             }
-            else
+
+            // Fallback for legacy keys where the auth token hash was used
+            string legacyKey = null;
+            VersionCacheEntry legacyEntry = null;
+            foreach (var kvp in cacheData.versionCache)
             {
-                // Remove invalid entry
-                cacheData.versionCache.Remove(cacheKey);
-                UltiPawLogger.Log($"[PersistentCache] Version cache invalidated for hash: {baseFbxHash}");
+                var entry = kvp.Value;
+                if (entry == null)
+                {
+                    continue;
+                }
+
+                if (!string.Equals(entry.baseFbxHash, baseFbxHash, StringComparison.Ordinal) ||
+                    !string.Equals(entry.authToken, authToken, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                legacyKey = kvp.Key;
+                legacyEntry = entry;
+                break;
+            }
+
+            if (legacyEntry != null)
+            {
+                if (legacyEntry.IsValid(baseFbxHash, authToken, VERSION_CACHE_MAX_AGE))
+                {
+                    UltiPawLogger.Log($"[PersistentCache] Version cache fallback hit for hash: {baseFbxHash}");
+
+                    if (!string.Equals(legacyKey, cacheKey, StringComparison.Ordinal))
+                    {
+                        cacheData.versionCache[cacheKey] = legacyEntry;
+                        cacheData.versionCache.Remove(legacyKey);
+                        SaveCache();
+                        UltiPawLogger.Log($"[PersistentCache] Migrated version cache key for hash: {baseFbxHash}");
+                    }
+
+                    return legacyEntry;
+                }
+
+                cacheData.versionCache.Remove(legacyKey);
+                UltiPawLogger.Log($"[PersistentCache] Version cache invalidated for hash: {baseFbxHash} (fallback)");
+            }
+        }
+        else
+        {
+            // No auth token currently available (e.g., user not authenticated yet). Try best effort lookup.
+            string fallbackKey = null;
+            VersionCacheEntry fallbackEntry = null;
+
+            foreach (var kvp in cacheData.versionCache)
+            {
+                var entry = kvp.Value;
+                if (entry == null)
+                {
+                    continue;
+                }
+
+                if (!string.Equals(entry.baseFbxHash, baseFbxHash, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                fallbackKey = kvp.Key;
+                fallbackEntry = entry;
+                break;
+            }
+
+            if (fallbackEntry != null)
+            {
+                if (fallbackEntry.IsValid(baseFbxHash, fallbackEntry.authToken, VERSION_CACHE_MAX_AGE))
+                {
+                    UltiPawLogger.Log($"[PersistentCache] Version cache fallback hit without auth token for hash: {baseFbxHash}");
+                    return fallbackEntry;
+                }
+
+                cacheData.versionCache.Remove(fallbackKey);
+                UltiPawLogger.Log($"[PersistentCache] Version cache invalidated for hash: {baseFbxHash} (no auth token)");
             }
         }
 

@@ -55,6 +55,7 @@ public class UltiPawEditor : UnityEditor.Editor
     {
         ultiPawTarget = (UltiPaw)target;
         serializedObject = new SerializedObject(ultiPawTarget);
+        fetchAttempted = false;
         
         // Initialize async services first
         taskManager = AsyncTaskManager.Instance;
@@ -152,27 +153,29 @@ public class UltiPawEditor : UnityEditor.Editor
     private void TryLoadCachedVersionsAndRefetch()
     {
         string fbxPath = GetCurrentFBXPath();
-        if (!string.IsNullOrEmpty(fbxPath) && isAuthenticated)
+        if (string.IsNullOrEmpty(fbxPath))
         {
-            var cached = versionService.GetCachedVersions(fbxPath, authToken);
-            if (cached.versions.Count > 0)
-            {
-                serverVersions = cached.versions;
-                recommendedVersion = cached.recommended;
-                if (versionModule != null && versionModule.actions != null)
-                {
-                    versionModule.actions.UpdateAppliedVersionAndState();
-                }
-                Repaint();
-                UltiPawLogger.Log($"[UltiPawEditor] Loaded {cached.versions.Count} cached versions");
-            }
+            return;
+        }
 
-            // Start background version fetch (will update UI when complete)
-            if (!fetchAttempted)
+        var cached = versionService.GetCachedVersions(fbxPath, authToken);
+        if (cached.versions.Count > 0)
+        {
+            serverVersions = cached.versions;
+            recommendedVersion = cached.recommended;
+            if (versionModule != null && versionModule.actions != null)
             {
-                fetchAttempted = true;
-                versionService.StartVersionFetchInBackground(fbxPath, authToken, useCache: true);
+                versionModule.actions.UpdateAppliedVersionAndState();
             }
+            Repaint();
+            UltiPawLogger.Log($"[UltiPawEditor] Loaded {cached.versions.Count} cached versions");
+        }
+
+        // Start background version fetch (will update UI when complete)
+        if (isAuthenticated)
+        {
+            fetchAttempted = true;
+            versionService.StartVersionFetchInBackground(fbxPath, authToken, useCache: false);
         }
     }
 
@@ -190,7 +193,6 @@ public class UltiPawEditor : UnityEditor.Editor
     private void OnVersionFetchError(string error)
     {
         fetchError = error;
-        serverVersions.Clear();
         Repaint();
         UltiPawLogger.LogError($"[UltiPawEditor] Version fetch error: {error}");
     }
