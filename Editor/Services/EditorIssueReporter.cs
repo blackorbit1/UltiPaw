@@ -173,7 +173,7 @@ public static class EditorIssueReporter
             sb.Append('}');
             byte[] bodyRaw = Encoding.UTF8.GetBytes(sb.ToString());
 
-            string endpoint = UltiPawUtils.getServerUrl(scope: "bugs");
+            string endpoint = UltiPawUtils.getApiUrl(scope: "bugs");
             using (var req = new UnityWebRequest(endpoint, UnityWebRequest.kHttpVerbPOST))
             {
                 req.uploadHandler = new UploadHandlerRaw(bodyRaw);

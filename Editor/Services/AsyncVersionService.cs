@@ -100,7 +100,7 @@ public class AsyncVersionService
             // Step 3: Fetch from server
             taskManager.UpdateTaskProgress(taskId, 0.5f, "Fetching from server...");
             
-            string url = $"{UltiPawUtils.getServerUrl()}{UltiPawUtils.VERSION_ENDPOINT}?d={baseFbxHash}&t={authToken}";
+            string url = $"{UltiPawUtils.getApiUrl()}{UltiPawUtils.VERSION_ENDPOINT}?d={baseFbxHash}&t={authToken}";
             var fetchTask = taskManager.ExecuteOnMainThreadAsync(() => networkService.FetchVersionsAsync(url));
 
             // Wait for network request with progress updates
@@ -256,7 +256,7 @@ public class AsyncVersionService
         try
         {
             string tempZipPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"ultipaw_dl_{Guid.NewGuid()}.zip");
-            string url = $"{UltiPawUtils.getServerUrl()}{UltiPawUtils.MODEL_ENDPOINT}?version={version.version}&d={baseFbxHash}&t={authToken}";
+            string url = $"{UltiPawUtils.getApiUrl()}{UltiPawUtils.MODEL_ENDPOINT}?version={version.version}&d={baseFbxHash}&t={authToken}";
 
             taskManager.UpdateTaskProgress(taskId, 0.1f, "Starting download...");
 

@@ -187,7 +187,7 @@ public class AccountModule
                 return;
             }
 
-            string url = UltiPawUtils.getServerUrl() + UltiPawUtils.CHECK_CONNECTION_ENDPOINT + $"?t={authToken}";
+            string url = UltiPawUtils.getApiUrl() + UltiPawUtils.CHECK_CONNECTION_ENDPOINT + $"?t={authToken}";
             UltiPawLogger.Log("[UltiPaw] Refreshing account state...");
             string newState = await networkService.CheckConnectionAsync(url, authToken);
             if (string.IsNullOrEmpty(newState)) newState = "disconnected";

@@ -39,7 +39,8 @@ public static class UltiPawUtils
         }
     }
     
-    public const string SERVER_BASE_URL = "api.orbiters.cc/"; // Update with your server URL
+    public const string SERVER_BASE_URL = "orbiters.cc/"; // Update with your server URL
+    public const string API_BASE_URL = "api." + SERVER_BASE_URL + "/"; // Update with your server URL
     public const string VERSION_ENDPOINT = "/ultipaw/versions";
     public const string MODEL_ENDPOINT = "/ultipaw/model";
     private const string TOKEN_ENDPOINT = "/token"; // Replace with your actual API endpoint
@@ -51,16 +52,22 @@ public static class UltiPawUtils
     private const string AUTH_FILENAME = "auth.dat";
     private static HttpClient client = new HttpClient();
     
-    public static string getServerUrl(string scope = "unity-wizard")
+    public static string getApiUrl(string scope = "unity-wizard")
     {
         if (isDevEnvironment)
         {
             return "http://localhost:4100/" + scope;
         }
-        else
+        return "https://" + API_BASE_URL + scope;
+    }
+
+    public static string getWebsiteUrl()
+    {
+        if (isDevEnvironment)
         {
-            return "https://" + SERVER_BASE_URL + scope;
+            return "https://dev." + SERVER_BASE_URL;
         }
+        return "https://" + SERVER_BASE_URL;
     }
 
     // Calculates SHA256 hash of a file
@@ -117,7 +124,7 @@ public static class UltiPawUtils
             {
                 try
                 {
-                    var response = await client.GetAsync(getServerUrl() + TOKEN_ENDPOINT + "?token=" + tokenToUse);
+                    var response = await client.GetAsync(getApiUrl() + TOKEN_ENDPOINT + "?token=" + tokenToUse);
 
                     if (response.IsSuccessStatusCode)
                     {
@@ -214,7 +221,7 @@ public static class UltiPawUtils
     {
         try
         {
-            var response = await client.GetAsync(getServerUrl() + TOKEN_ENDPOINT + token);
+            var response = await client.GetAsync(getApiUrl() + TOKEN_ENDPOINT + token);
             return response.IsSuccessStatusCode;
         }
         catch (System.Exception e)

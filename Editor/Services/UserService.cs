@@ -104,7 +104,7 @@ public class UserService
             yield break;
         }
         
-        string url = $"{UltiPawUtils.getServerUrl()}/user?u={userId}&t={tokenToUse}";
+        string url = $"{UltiPawUtils.getApiUrl()}/user?u={userId}&t={tokenToUse}";
         
         using (UnityWebRequest request = UnityWebRequest.Get(url))
         {

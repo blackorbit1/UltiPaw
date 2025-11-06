@@ -47,7 +47,7 @@ public class VersionActions
             yield break;
         }
 
-        string url = $"{UltiPawUtils.getServerUrl()}{UltiPawUtils.VERSION_ENDPOINT}?d={editor.currentBaseFbxHash}&t={editor.authToken}";
+        string url = $"{UltiPawUtils.getApiUrl()}{UltiPawUtils.VERSION_ENDPOINT}?d={editor.currentBaseFbxHash}&t={editor.authToken}";
         var fetchTask = networkService.FetchVersionsAsync(url);
         
         while (!fetchTask.IsCompleted)
@@ -82,7 +82,7 @@ public class VersionActions
         editor.Repaint();
         
         string tempZipPath = Path.Combine(Path.GetTempPath(), $"ultipaw_dl_{Guid.NewGuid()}.zip");
-        string url = $"{UltiPawUtils.getServerUrl()}{UltiPawUtils.MODEL_ENDPOINT}?version={version.version}&d={editor.currentBaseFbxHash}&t={editor.authToken}";
+        string url = $"{UltiPawUtils.getApiUrl()}{UltiPawUtils.MODEL_ENDPOINT}?version={version.version}&d={editor.currentBaseFbxHash}&t={editor.authToken}";
         
         // --- Setup phase (no yield returns) ---
         var downloadTask = networkService.DownloadFileAsync(url, tempZipPath);

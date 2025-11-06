@@ -838,7 +838,7 @@ public class CreatorModeModule
 
             EditorUtility.DisplayProgressBar("Uploading", "Sending package to server...", 0.7f);
             string metadataJson = JsonConvert.SerializeObject(unsubmittedVersion, new StringEnumConverter());
-            uploadUrl = $"{UltiPawUtils.getServerUrl()}{UltiPawUtils.NEW_VERSION_ENDPOINT}?t={editor.authToken}";
+            uploadUrl = $"{UltiPawUtils.getApiUrl()}{UltiPawUtils.NEW_VERSION_ENDPOINT}?t={editor.authToken}";
             uploadTask = networkService.SubmitNewVersionAsync(uploadUrl, editor.authToken, zipPath, metadataJson);
         }
         catch (Exception ex)
@@ -897,7 +897,7 @@ public class CreatorModeModule
             buildResult = BuildNewVersion();
             EditorUtility.DisplayProgressBar("Uploading", "Sending package to server...", 0.8f);
             string metadataJson = JsonConvert.SerializeObject(buildResult.metadata, new StringEnumConverter());
-            uploadUrl = $"{UltiPawUtils.getServerUrl()}{UltiPawUtils.NEW_VERSION_ENDPOINT}?t={editor.authToken}";
+            uploadUrl = $"{UltiPawUtils.getApiUrl()}{UltiPawUtils.NEW_VERSION_ENDPOINT}?t={editor.authToken}";
             uploadTask = networkService.SubmitNewVersionAsync(uploadUrl, editor.authToken, buildResult.zipPath, metadataJson);
         }
         catch (Exception ex)
