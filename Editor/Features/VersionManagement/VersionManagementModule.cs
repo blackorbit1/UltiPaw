@@ -53,6 +53,20 @@ public class VersionManagementModule
         DrawFetchUpdatesButton();
         actions.DisplayErrors();
         
+        // Special UI when user doesn't have access to the asset
+        if (!string.IsNullOrEmpty(editor.accessDeniedAssetId))
+        {
+            EditorGUILayout.Space();
+            EditorGUILayout.HelpBox("You currently don't have access to the ultipaw. Click the button to get to the asset page with instructions to get it:", MessageType.Warning);
+            EditorGUILayout.Space();
+            if (GUILayout.Button("Get the Ultipaw", GUILayout.Height(30)))
+            {
+                string url = UltiPawUtils.getWebsiteUrl() + "assets/" + editor.accessDeniedAssetId;
+                Application.OpenURL(url);
+            }
+            return; // Skip the rest of the UI in this state
+        }
+        
         versionListDrawer.Draw();
         
         EditorGUILayout.Space();

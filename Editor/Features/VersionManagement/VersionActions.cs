@@ -32,6 +32,7 @@ public class VersionActions
         if (editor.isFetching) yield break;
         editor.isFetching = true;
         editor.fetchError = null;
+        editor.accessDeniedAssetId = null;
         editor.fetchAttempted = true;
         editor.Repaint();
 
@@ -65,9 +66,22 @@ public class VersionActions
         }
         else
         {
-            editor.fetchError = error;
-            editor.serverVersions.Clear();
-            UpdateAppliedVersionAndState(); // Clear state on error too
+            // Handle access denied specially (error encoded as ACCESS_DENIED:{assetId})
+            if (!string.IsNullOrEmpty(error) && error.StartsWith("ACCESS_DENIED:"))
+            {
+                editor.accessDeniedAssetId = error.Substring("ACCESS_DENIED:".Length);
+                editor.fetchError = null; // Do not show generic error box
+                editor.serverVersions.Clear();
+                editor.recommendedVersion = null;
+                UpdateAppliedVersionAndState(); // Clear state on error too
+            }
+            else
+            {
+                editor.fetchError = error;
+                editor.serverVersions.Clear();
+                editor.recommendedVersion = null;
+                UpdateAppliedVersionAndState(); // Clear state on error too
+            }
         }
         
         editor.isFetching = false;

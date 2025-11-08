@@ -42,6 +42,7 @@ public class UltiPawEditor : UnityEditor.Editor
     public bool fetchAttempted;
     public bool isFetching, isDownloading, isDeleting, isSubmitting;
     public string fetchError, downloadError, deleteError, submitError;
+    public string accessDeniedAssetId;
     public string currentBaseFbxHash;
     public bool isUltiPaw;
     public List<UltiPawVersion> serverVersions = new List<UltiPawVersion>();
@@ -139,6 +140,7 @@ public class UltiPawEditor : UnityEditor.Editor
         serverVersions = versions;
         recommendedVersion = recommended;
         fetchError = null; // Clear any previous errors
+        accessDeniedAssetId = null; // Clear special access state on success
         
         // Update applied version state
         if (versionModule?.actions != null)
@@ -321,7 +323,7 @@ public class UltiPawEditor : UnityEditor.Editor
         {
             if (EditorUtility.DisplayDialog("Confirm Logout", "Are you sure you want to log out?", "Logout", "Cancel"))
             {
-                if (UltiPawUtils.RemoveAuth())
+                if (AuthenticationModule.RemoveAuth())
                 {
                     isAuthenticated = false;
                     authToken = null;
@@ -395,7 +397,7 @@ public class UltiPawEditor : UnityEditor.Editor
     
     public void CheckAuthentication()
     {
-        authToken = UltiPawUtils.GetAuth()?.token;
+        authToken = AuthenticationModule.GetAuth()?.token;
         isAuthenticated = !string.IsNullOrEmpty(authToken);
         accountModule?.Refresh();
     }

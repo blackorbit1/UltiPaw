@@ -43,14 +43,13 @@ public static class UltiPawUtils
     public const string API_BASE_URL = "api." + SERVER_BASE_URL + "/"; // Update with your server URL
     public const string VERSION_ENDPOINT = "/ultipaw/versions";
     public const string MODEL_ENDPOINT = "/ultipaw/model";
-    private const string TOKEN_ENDPOINT = "/token"; // Replace with your actual API endpoint
+    public const string TOKEN_ENDPOINT = "/token"; // Replace with your actual API endpoint
     
     public const string NEW_VERSION_ENDPOINT = "/ultipaw/newVersion";
     public const string CHECK_CONNECTION_ENDPOINT = "/check-connection";
     public static readonly string PACKAGE_BASE_FOLDER_FULL_PATH = Path.Combine(Application.dataPath, "UltiPaw");
 
-    private const string AUTH_FILENAME = "auth.dat";
-    private static HttpClient client = new HttpClient();
+    public static HttpClient client = new HttpClient();
     
     public static string getApiUrl(string scope = "unity-wizard")
     {
@@ -94,173 +93,9 @@ public static class UltiPawUtils
         }
     }
 
-    [JsonObject(MemberSerialization.OptIn)]
-    public class AuthData
-    {
-        [JsonProperty] public string token;
-        [JsonProperty] public string user;
-    }
-
-    public static async Task<bool> RegisterAuth()
-    {
-        try
-        {
-            string clipboardContent = EditorGUIUtility.systemCopyBuffer;
-            string tokenToUse = "notoken";
-
-            Regex tokenPattern = new Regex(@"orbit-\w{8}-\w{8}-\w{8}-\d{2}-\d{2}-\d{4}");
-            if (!string.IsNullOrEmpty(clipboardContent) && tokenPattern.IsMatch(clipboardContent))
-            {
-                tokenToUse = clipboardContent;
-                UltiPawLogger.Log("[UltiPawUtils] Found valid token pattern in clipboard");
-            }
-
-            AuthData authData = null;
-            bool isValid = false;
-            int retryCount = 0;
-            const int maxRetries = 10;
-
-            while (retryCount < maxRetries && !isValid)
-            {
-                try
-                {
-                    var response = await client.GetAsync(getApiUrl() + TOKEN_ENDPOINT + "?token=" + tokenToUse);
-
-                    if (response.IsSuccessStatusCode)
-                    {
-                        string jsonResponse = await response.Content.ReadAsStringAsync();
-                        authData = JsonConvert.DeserializeObject<AuthData>(jsonResponse);
-                        isValid = !string.IsNullOrEmpty(authData?.token);
-                        if (isValid) break;
-                    }
-                    else if ((int)response.StatusCode == 425)
-                    {
-                        retryCount++;
-                        UltiPawLogger.Log($"[UltiPawUtils] Server is processing request (Status 425). Retry {retryCount}/{maxRetries}");
-                        await Task.Delay(1000);
-                    }
-                    else
-                    {
-                        UltiPawLogger.LogWarning($"[UltiPawUtils] Authentication failed with status code {response.StatusCode}");
-                        return false;
-                    }
-                }
-                catch (System.Exception e)
-                {
-                    UltiPawLogger.LogError($"[UltiPawUtils] Error during authentication attempt {retryCount + 1}: {e.Message}");
-                    retryCount++;
-                    await Task.Delay(1000);
-                }
-            }
-
-            if (isValid && authData != null)
-            {
-                string authPath = GetAuthFilePath();
-                EnsureDirectoryExists(authPath);
-                string authJson = JsonConvert.SerializeObject(authData);
-                byte[] authBytes = Encoding.UTF8.GetBytes(authJson);
-                byte[] encryptedBytes = new byte[authBytes.Length];
-                byte[] key = Encoding.UTF8.GetBytes("UltiPawMagicSync");
-
-                for (int i = 0; i < authBytes.Length; i++)
-                {
-                    encryptedBytes[i] = (byte)(authBytes[i] ^ key[i % key.Length]);
-                }
-
-                File.WriteAllBytes(authPath, encryptedBytes);
-                UltiPawLogger.Log("[UltiPawUtils] Authentication data stored successfully");
-                return true;
-            }
-            else
-            {
-                UltiPawLogger.LogWarning("[UltiPawUtils] Authentication failed after maximum retries");
-                return false;
-            }
-        }
-        catch (System.Exception e)
-        {
-            UltiPawLogger.LogError($"[UltiPawUtils] Error registering authentication: {e.Message}");
-            return false;
-        }
-    }
-
-    public static AuthData GetAuth()
-    {
-        try
-        {
-            string authPath = GetAuthFilePath();
-            if (!File.Exists(authPath)) return null;
-
-            byte[] encryptedBytes = File.ReadAllBytes(authPath);
-            byte[] key = Encoding.UTF8.GetBytes("UltiPawMagicSync");
-            byte[] authBytes = new byte[encryptedBytes.Length];
-
-            for (int i = 0; i < encryptedBytes.Length; i++)
-            {
-                authBytes[i] = (byte)(encryptedBytes[i] ^ key[i % key.Length]);
-            }
-
-            string authJson = Encoding.UTF8.GetString(authBytes);
-            return JsonConvert.DeserializeObject<AuthData>(authJson);
-        }
-        catch (System.Exception e)
-        {
-            UltiPawLogger.LogError($"[UltiPawUtils] Error retrieving authentication: {e.Message}");
-            return null;
-        }
-    }
-
-    public static bool HasAuth()
-    {
-        AuthData auth = GetAuth();
-        return auth != null && !string.IsNullOrEmpty(auth.token);
-    }
-
     // Validates the token with the server
-    private static async Task<bool> ValidateTokenWithServer(string token)
-    {
-        try
-        {
-            var response = await client.GetAsync(getApiUrl() + TOKEN_ENDPOINT + token);
-            return response.IsSuccessStatusCode;
-        }
-        catch (System.Exception e)
-        {
-            UltiPawLogger.LogError($"[UltiPawUtils] Error validating token with server: {e.Message}");
-            return false;
-        }
-    }
 
     // Removes the authentication data file
-    public static bool RemoveAuth()
-    {
-        try
-        {
-            string authPath = GetAuthFilePath();
-            if (File.Exists(authPath))
-            {
-                File.Delete(authPath);
-                UltiPawLogger.Log("[UltiPawUtils] Authentication data removed successfully");
-                return true;
-            }
-            else
-            {
-                UltiPawLogger.Log("[UltiPawUtils] No authentication data found to remove");
-            return false;
-            }
-        }
-        catch (System.Exception e)
-        {
-            UltiPawLogger.LogError($"[UltiPawUtils] Error removing authentication data: {e.Message}");
-            return false;
-        }
-    }
-
-    private static string GetAuthFilePath()
-    {
-        string authFolder = Path.Combine(InternalEditorUtility.unityPreferencesFolder, "UltiPaw");
-        return Path.Combine(authFolder, AUTH_FILENAME);
-    }
 
     public static string GetVersionDataPath(string ultiPawVersion, string defaultFbxVersion)
     {

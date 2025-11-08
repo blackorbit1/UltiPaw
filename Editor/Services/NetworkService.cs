@@ -16,6 +16,29 @@ public class NetworkService
         using (var req = UnityWebRequest.Get(url))
         {
             await req.SendWebRequest();
+
+            // Special handling: access denied for asset (backend may return 203 or 204 with JSON { error, assetId })
+            long code = req.responseCode;
+            string body = null;
+            try { body = req.downloadHandler?.text; } catch { /* ignore */ }
+
+            if (code == 203 || code == 204)
+            {
+                try
+                {
+                    // Try to parse a minimal object with assetId
+                    var payload = JsonConvert.DeserializeObject<AccessDeniedPayload>(body ?? "{}");
+                    if (payload != null && !string.IsNullOrEmpty(payload.assetId))
+                    {
+                        // Encode a recognizable error token so callers can react specifically
+                        return (false, null, $"ACCESS_DENIED:{payload.assetId}");
+                    }
+                }
+                catch { /* ignore parse error and fall through to generic handling */ }
+                // If no assetId, return a generic message
+                return (false, null, "You do not seems to own the UltiPaw. Get the UltiPaw from the Orbiters website and try again.");
+            }
+
             if (req.result != UnityWebRequest.Result.Success)
             {
                 switch (req.responseCode)
@@ -28,15 +51,19 @@ public class NetworkService
                         return (false, null, "Server Error: An error occurred on the server.");
                 }
                 return (false, null, $"Request failed: {req.error}");
-            } 
+            }
+
             try
             {
-                var response = JsonConvert.DeserializeObject<UltiPawVersionResponse>(req.downloadHandler.text);
+                var response = JsonConvert.DeserializeObject<UltiPawVersionResponse>(body);
                 return (true, response, null);
             }
             catch (Exception e) { return (false, null, $"Failed to parse server response: {e.Message}"); }
         }
     }
+
+    // Minimal payload to read assetId from access denied responses
+    private class AccessDeniedPayload { public string error; public string assetId; }
 
     public async Task<(bool success, string error)> DownloadFileAsync(string url, string destinationPath)
     {

@@ -181,7 +181,7 @@ public static class EditorIssueReporter
                 req.SetRequestHeader("Content-Type", "application/json");
 
                 // Optional Authorization
-                var auth = UltiPawUtils.GetAuth();
+                var auth = AuthenticationModule.GetAuth();
                 if (auth != null && !string.IsNullOrEmpty(auth.token))
                 {
                     req.SetRequestHeader("Authorization", $"Bearer {auth.token}");

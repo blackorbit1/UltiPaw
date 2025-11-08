@@ -92,7 +92,7 @@ public class UserService
         string tokenToUse = overrideToken;
         if (string.IsNullOrEmpty(tokenToUse))
         {
-            var auth = UltiPawUtils.GetAuth();
+            var auth = AuthenticationModule.GetAuth();
             if (auth != null) tokenToUse = auth.token;
         }
         

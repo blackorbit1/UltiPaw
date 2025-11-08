@@ -126,7 +126,7 @@ public class AccountModule
         {
             if (EditorUtility.DisplayDialog("Confirm Logout", "Are you sure you want to log out?", "Logout", "Cancel"))
             {
-                if (UltiPawUtils.RemoveAuth())
+                if (AuthenticationModule.RemoveAuth())
                 {
                     editor.isAuthenticated = false;
                     editor.authToken = null;
@@ -207,7 +207,7 @@ public class AccountModule
 
     private void LoadAuthData()
     {
-        var auth = UltiPawUtils.GetAuth();
+        var auth = AuthenticationModule.GetAuth();
         if (auth == null)
         {
             // Fallback to editor state if available (e.g., auth loaded elsewhere)
