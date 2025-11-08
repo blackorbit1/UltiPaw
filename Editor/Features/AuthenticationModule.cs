@@ -86,6 +86,8 @@ public class AuthenticationModule
     {
         [JsonProperty] public string token;
         [JsonProperty] public string user;
+        [JsonProperty] public string username;
+        [JsonProperty] public string avatarUrl;
     }
 
     public static async Task<bool> RegisterAuth()
@@ -156,6 +158,20 @@ public class AuthenticationModule
 
                 File.WriteAllBytes(authPath, encryptedBytes);
                 UltiPawLogger.Log("[UltiPawUtils] Authentication data stored successfully");
+
+                // Update user cache with info from token response (username, avatar)
+                try
+                {
+                    if (!string.IsNullOrEmpty(authData.user) && int.TryParse(authData.user, out var parsedUserId))
+                    {
+                        UserService.UpdateUserInfo(parsedUserId, authData.username, authData.avatarUrl);
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    UltiPawLogger.LogWarning($"[UltiPaw] Could not update user info from auth response: {ex.Message}");
+                }
+
                 return true;
             }
             else

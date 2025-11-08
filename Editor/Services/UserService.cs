@@ -4,6 +4,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
+using UnityEditorInternal;
 using UnityEngine;
 using UnityEngine.Networking;
 using Newtonsoft.Json;
@@ -119,14 +120,7 @@ public class UserService
                     var userInfo = JsonConvert.DeserializeObject<UserInfo>(request.downloadHandler.text);
                     if (userInfo != null)
                     {
-                        userCache[userId] = userInfo;
-                        failedRequests.Remove(userId); // Remove from failed list on success
-                        
-                        // Start downloading avatar if we have a URL
-                        if (!string.IsNullOrEmpty(userInfo.avatarUrl))
-                        {
-                            EditorCoroutineUtility.StartCoroutineOwnerless(DownloadAvatar(userId, userInfo.avatarUrl));
-                        }
+                        UpdateUserInfo(userId, userInfo.username, userInfo.avatarUrl);
                     }
                 }
                 catch (Exception ex)
@@ -239,6 +233,40 @@ public class UserService
         return avatarCache.ContainsKey(uploaderId) ? avatarCache[uploaderId] : null;
     }
     
+    public static void UpdateUserInfo(int userId, string username, string avatarUrl)
+    {
+        try
+        {
+            UserInfo info = userCache.ContainsKey(userId) ? userCache[userId] : new UserInfo();
+            if (!string.IsNullOrEmpty(username)) info.username = username;
+            if (!string.IsNullOrEmpty(avatarUrl)) info.avatarUrl = avatarUrl;
+            userCache[userId] = info;
+
+            failedRequests.Remove(userId);
+
+            if (!string.IsNullOrEmpty(info.avatarUrl))
+            {
+                EditorCoroutineUtility.StartCoroutineOwnerless(DownloadAvatar(userId, info.avatarUrl));
+            }
+
+            // Refresh all editor views so UI (e.g., AccountModule) reflects the updated info
+            EditorApplication.delayCall += () =>
+            {
+                try { InternalEditorUtility.RepaintAllViews(); } catch { }
+            };
+        }
+        catch (Exception ex)
+        {
+            UltiPawLogger.LogError($"[UltiPaw] Failed to update user info for ID {userId}: {ex.Message}");
+        }
+    }
+
+    public static void UpdateUserInfo(int userId, UserInfo updated)
+    {
+        if (updated == null) return;
+        UpdateUserInfo(userId, updated.username, updated.avatarUrl);
+    }
+
     private static Texture2D MakeCircularAvatar(Texture2D texture)
     {
         if (texture == null)
