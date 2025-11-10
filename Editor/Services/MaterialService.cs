@@ -40,6 +40,7 @@ public class MaterialService
         "USE_DETAIL_MAPS",
         "USE_NORMAL_MAPS",
         "DETAIL_NORMALS_ON",
+        "_DetailEnabled"
     };
 
     private static readonly string[] DetailNormalToggleProperties =
@@ -66,6 +67,7 @@ public class MaterialService
         "USE_DETAIL_MAPS",
         "USE_NORMAL_MAPS",
         "DETAIL_NORMALS_ON",
+        "_DetailEnabled"
     };
 
     private static readonly string[] DetailNormalStrengthProperties =

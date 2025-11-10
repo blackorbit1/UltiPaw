@@ -1,6 +1,8 @@
 #if UNITY_EDITOR
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -8,6 +10,7 @@ using UnityEngine;
 public class AdjustMaterialModule
 {
     private const string MaterialSlotName = "Body";
+    private static readonly string[] AdditionalLightingSlots = { "Tail1", "Tail2" };
     private const string LightingModeProperty = "_LightingMode";
     private const string BumpMapProperty = "_BumpMap";
     private const int LightingModeTextureRampIndex = 0;
@@ -31,6 +34,11 @@ public class AdjustMaterialModule
             return;
         }
 
+        if (editor?.ultiPawTarget?.appliedUltiPawVersion == null)
+        {
+            return;
+        }
+
         if (!materialService.TryGetMaterialWithRenderer(MaterialSlotName, out var material, out var smr))
         {
             return;
@@ -41,21 +49,27 @@ public class AdjustMaterialModule
             return;
         }
 
-        bool hasLightingProperty = material.HasProperty(LightingModeProperty);
-        float lightingModeValue = 0f;
-        bool isLightingTextureRamp = false;
-        bool isLightingRealistic = false;
-
-        if (hasLightingProperty)
+        var lightingInfos = new List<LightingMaterialInfo>();
+        var bodyLightingInfo = CreateLightingMaterialInfo(MaterialSlotName, material);
+        if (bodyLightingInfo != null)
         {
-            lightingModeValue = material.GetFloat(LightingModeProperty);
-            isLightingTextureRamp = Mathf.Approximately(lightingModeValue, LightingModeTextureRampIndex);
-            isLightingRealistic = Mathf.Approximately(lightingModeValue, LightingModeRealisticIndex);
+            lightingInfos.Add(bodyLightingInfo);
         }
+
+        foreach (string slotName in AdditionalLightingSlots)
+        {
+            var slotInfo = CreateLightingMaterialInfo(slotName);
+            if (slotInfo != null)
+            {
+                lightingInfos.Add(slotInfo);
+            }
+        }
+
+        bool shouldShowLightingWarning = lightingInfos.Any(info => info.HasLightingProperty && info.IsTextureRamp);
 
         bool hasMuscleNormal = TryGetMuscleNormal(material, out var normalTexture, out var normalTexturePath);
 
-        bool shouldShowModule = (hasLightingProperty && isLightingTextureRamp) || hasMuscleNormal;
+        bool shouldShowModule = shouldShowLightingWarning || hasMuscleNormal;
         if (!shouldShowModule)
         {
             return;
@@ -70,9 +84,9 @@ public class AdjustMaterialModule
 
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
 
-        if (hasLightingProperty && !isLightingRealistic)
+        if (shouldShowLightingWarning)
         {
-            DrawLightingWarning(material, smr);
+            DrawLightingWarning(lightingInfos);
         }
 
         if (hasMuscleNormal)
@@ -106,29 +120,70 @@ public class AdjustMaterialModule
         return true;
     }
 
-    private void DrawLightingWarning(Material material, SkinnedMeshRenderer smr)
+    private void DrawLightingWarning(IReadOnlyList<LightingMaterialInfo> lightingInfos)
     {
-        EditorGUILayout.HelpBox(
-            "Your body material is set to a lighting type that won't show the muscles well, it is recommended to set the lighting mode to Realistic.",
-            MessageType.Warning);
-
-        bool isLocked = materialService.IsMaterialLocked(material);
-        string buttonLabel = isLocked ? "Unlock and set to Realistic" : "Set to Realistic";
-
-        using (new EditorGUI.DisabledScope(!material.HasProperty(LightingModeProperty)))
+        if (lightingInfos == null || lightingInfos.Count == 0)
         {
+            return;
+        }
+
+        List<string> textureRampSlots = lightingInfos
+            .Where(info => info.HasLightingProperty && info.IsTextureRamp)
+            .Select(info => info.SlotName)
+            .ToList();
+
+        if (textureRampSlots.Count == 0)
+        {
+            return;
+        }
+
+        string slotLabel = string.Join(", ", textureRampSlots);
+        string message = textureRampSlots.Count == 1
+            ? $"Your {slotLabel} material is set to a lighting type that won't show the muscles well, it is recommended to set the lighting mode to Realistic."
+            : $"Your {slotLabel} materials are set to a lighting type that won't show the muscles well, it is recommended to set their lighting mode to Realistic.";
+
+        EditorGUILayout.HelpBox(message, MessageType.Warning);
+
+        bool anyLocked = lightingInfos.Any(info =>
+            info.Material != null &&
+            info.HasLightingProperty &&
+            materialService.IsMaterialLocked(info.Material));
+
+        bool canUpdateLighting = lightingInfos.Any(info => info.HasLightingProperty);
+
+        using (new EditorGUI.DisabledScope(!canUpdateLighting))
+        {
+            string buttonLabel = anyLocked ? "Unlock and set to Realistic" : "Set to Realistic";
+
             if (GUILayout.Button(buttonLabel, GUILayout.Width(220f)))
             {
-                if (!EnsureUnlocked(material))
+                foreach (LightingMaterialInfo info in lightingInfos)
                 {
-                    EditorUtility.DisplayDialog(
-                        "Unlock Failed",
-                        "Could not unlock the material shader. Please unlock it manually from Poiyomi before trying again.",
-                        "Ok");
-                    return;
+                    if (!info.HasLightingProperty || info.Material == null)
+                    {
+                        continue;
+                    }
+
+                    if (!EnsureUnlocked(info.Material))
+                    {
+                        EditorUtility.DisplayDialog(
+                            "Unlock Failed",
+                            $"Could not unlock the material shader on {info.SlotName}. Please unlock it manually from Poiyomi before trying again.",
+                            "Ok");
+                        return;
+                    }
                 }
 
-                ApplyLightingMode();
+                List<string> slotsToUpdate = lightingInfos
+                    .Where(info => info.HasLightingProperty)
+                    .Select(info => info.SlotName)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                if (slotsToUpdate.Count > 0)
+                {
+                    ApplyLightingMode(slotsToUpdate);
+                }
             }
         }
     }
@@ -192,19 +247,66 @@ public class AdjustMaterialModule
         return !string.IsNullOrEmpty(shaderName) && shaderName.IndexOf("poiyomi", StringComparison.OrdinalIgnoreCase) >= 0;
     }
 
-    private void ApplyLightingMode()
+    private void ApplyLightingMode(IEnumerable<string> slotNames)
     {
-        if (!materialService.SetLightingMode(MaterialSlotName, LightingModeRealisticIndex))
+        if (slotNames == null)
+        {
+            return;
+        }
+
+        bool anyFailures = false;
+
+        foreach (string slotName in slotNames)
+        {
+            if (!materialService.SetLightingMode(slotName, LightingModeRealisticIndex))
+            {
+                anyFailures = true;
+                continue;
+            }
+
+            UltiPawLogger.Log($"[AdjustMaterial] Set {slotName} lighting mode to Realistic");
+        }
+
+        if (anyFailures)
         {
             EditorUtility.DisplayDialog(
                 "Lighting Mode Update Failed",
-                "UltiPaw could not switch the material to Realistic lighting. Please try updating the property manually.",
+                "UltiPaw could not switch one or more materials to Realistic lighting. Please try updating the property manually.",
                 "Ok");
         }
-        else
+    }
+
+    private LightingMaterialInfo CreateLightingMaterialInfo(string slotName, Material existingMaterial = null)
+    {
+        Material slotMaterial = existingMaterial;
+
+        if (slotMaterial == null)
         {
-            UltiPawLogger.Log("[AdjustMaterial] Set body lighting mode to Realistic");
+            if (!materialService.TryGetMaterialWithRenderer(slotName, out slotMaterial, out _))
+            {
+                return null;
+            }
         }
+
+        if (!IsPoiyomiShader(slotMaterial?.shader))
+        {
+            return null;
+        }
+
+        var info = new LightingMaterialInfo
+        {
+            SlotName = slotName,
+            Material = slotMaterial
+        };
+
+        if (slotMaterial.HasProperty(LightingModeProperty))
+        {
+            float lightingValue = slotMaterial.GetFloat(LightingModeProperty);
+            info.HasLightingProperty = true;
+            info.IsTextureRamp = Mathf.Approximately(lightingValue, LightingModeTextureRampIndex);
+        }
+
+        return info;
     }
 
     private static void RemoveNormalMap(Material material, SkinnedMeshRenderer smr)
@@ -260,6 +362,14 @@ public class AdjustMaterialModule
 
         texturePath = !string.IsNullOrEmpty(assetPath) ? assetPath : texture.name;
         return true;
+    }
+
+    private sealed class LightingMaterialInfo
+    {
+        public string SlotName;
+        public Material Material;
+        public bool HasLightingProperty;
+        public bool IsTextureRamp;
     }
 }
 #endif
