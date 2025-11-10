@@ -307,17 +307,28 @@ public class VersionActions
             bool hasDynamicNormalFlexing = !isReset && version != null && (version.extraCustomization?.Contains("dynamicNormalFlexing") ?? false);
             bool shouldApplyDynamicNormals = (hasDynamicNormalBody || hasDynamicNormalFlexing) && editor.ultiPawTarget.useDynamicNormals;
             
-            // FIX: Refresh Body mesh reference from the newly imported FBX BEFORE applying dynamic normals
-            // This ensures we're working with the correct mesh from the new FBX
-            if (!isReset && version != null)
-            {
-                RefreshBodyMeshFromFBX(root, fbxPath);
-            }
-            
             // Apply or remove dynamic normals based on version feature flags
             // CRITICAL FIX: Execute INSIDE the coroutine (not via delayCall) with proper yield statements
             var dynamicNormalsService = new DynamicNormalsService(editor);
 
+            if (!shouldApplyDynamicNormals)
+            {
+                UltiPawLogger.Log("[VersionActions] Removing dynamic normals.");
+                dynamicNormalsService.Remove();
+                
+                // Wait for any asset processing triggered by removal
+                yield return null;
+                while (EditorApplication.isCompiling || EditorApplication.isUpdating)
+                {
+                    yield return null;
+                }
+                UltiPawLogger.Log("[VersionActions] Dynamic normals removal completed.");
+            }
+
+            // Always detach the current Body mesh before reassigning from the newly imported FBX.
+            ClearBodyMeshAssignment(root);
+            RefreshBodyMeshFromFBX(root, fbxPath);
+            
             if (shouldApplyDynamicNormals)
             {
                 bool applyBody = hasDynamicNormalBody || hasCustomVeins;
@@ -332,19 +343,6 @@ public class VersionActions
                     yield return null;
                 }
                 UltiPawLogger.Log("[VersionActions] Dynamic normals application completed.");
-            }
-            else
-            {
-                UltiPawLogger.Log("[VersionActions] Removing dynamic normals.");
-                dynamicNormalsService.Remove();
-                
-                // Wait for any asset processing triggered by removal
-                yield return null;
-                while (EditorApplication.isCompiling || EditorApplication.isUpdating)
-                {
-                    yield return null;
-                }
-                UltiPawLogger.Log("[VersionActions] Dynamic normals removal completed.");
             }
             
             // Apply or remove custom veins based on version feature flag
@@ -425,6 +423,21 @@ public class VersionActions
         editor.Repaint();
     }
     
+    private void ClearBodyMeshAssignment(Transform root)
+    {
+        if (root == null) return;
+
+        var bodyMesh = root.GetComponentsInChildren<SkinnedMeshRenderer>(true)
+            .FirstOrDefault(s => s.gameObject.name.Equals("Body", System.StringComparison.OrdinalIgnoreCase));
+
+        if (bodyMesh?.sharedMesh == null) return;
+
+        Undo.RecordObject(bodyMesh, "Clear Body Mesh");
+        bodyMesh.sharedMesh = null;
+        EditorUtility.SetDirty(bodyMesh);
+        UltiPawLogger.Log("[VersionActions] Cleared Body mesh assignment prior to refresh.");
+    }
+
     private void RefreshBodyMeshFromFBX(Transform root, string fbxPath)
     {
         // Find the Body SkinnedMeshRenderer in the scene hierarchy
