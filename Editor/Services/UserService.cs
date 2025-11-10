@@ -329,6 +329,30 @@ public class UserService
     {
         failedRequests.Clear();
     }
+
+    // Flush all in-memory user-related caches to force fresh fetching on next requests
+    public static void FlushUserCache()
+    {
+        try
+        {
+            userCache.Clear();
+            avatarCache.Clear();
+            pendingRequests.Clear();
+            failedRequests.Clear();
+
+            // Trigger UI repaint so views reflect cleared state
+            EditorApplication.delayCall += () =>
+            {
+                try { InternalEditorUtility.RepaintAllViews(); } catch { }
+            };
+
+            UltiPawLogger.Log("[UltiPaw] Flushed user cache (user info, avatars, pending/failed requests)");
+        }
+        catch (System.Exception ex)
+        {
+            UltiPawLogger.LogError($"[UltiPaw] Failed to flush user cache: {ex.Message}");
+        }
+    }
     
     public static void PreloadUserInfo(List<UltiPawVersion> versions)
     {

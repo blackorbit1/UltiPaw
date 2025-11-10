@@ -58,6 +58,16 @@ public class AdvancedModeModule
                 }
                 EditorGUILayout.EndHorizontal();
 
+                // Flush user cache button
+                EditorGUILayout.BeginHorizontal();  
+                GUILayout.Space(EditorGUI.indentLevel * 15);
+                if (GUILayout.Button("Flush user cache", GUILayout.Width(180)))
+                {
+                    UserService.FlushUserCache();
+                    UltiPawLogger.Log("[UltiPaw] User cache flush requested from Advanced Settings");
+                }
+                EditorGUILayout.EndHorizontal();
+
                 // Logging checkbox (false by default via EditorPrefs)
                 bool currentLogging = UltiPawLogger.IsEnabled();
                 bool newLogging = EditorGUILayout.Toggle("Log in Console", currentLogging);
