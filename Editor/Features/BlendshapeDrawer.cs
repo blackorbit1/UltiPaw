@@ -21,9 +21,11 @@ public class BlendshapeDrawer
         var appliedVersion = editor.ultiPawTarget.appliedUltiPawVersion;
         if (!editor.isUltiPaw || appliedVersion?.customBlendshapes == null || !appliedVersion.customBlendshapes.Any()) return;
 
-        var smr = editor.ultiPawTarget.transform.root.GetComponentsInChildren<SkinnedMeshRenderer>(true)
-            .FirstOrDefault(s => s.gameObject.name.Equals("Body", System.StringComparison.OrdinalIgnoreCase));
-            
+        var allSmrs = editor.ultiPawTarget.transform.root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+        var smr = allSmrs.FirstOrDefault(s => s.gameObject.name.Equals("Body", System.StringComparison.OrdinalIgnoreCase));
+        var mohawkSmr = allSmrs.FirstOrDefault(s => s.gameObject.name.Equals("MohawkHair", System.StringComparison.OrdinalIgnoreCase));
+        var maneSmr = allSmrs.FirstOrDefault(s => s.gameObject.name.Equals("ManeHair", System.StringComparison.OrdinalIgnoreCase));
+        
         if (smr?.sharedMesh == null) return;
 
         EditorGUILayout.Space();
@@ -86,6 +88,27 @@ public class BlendshapeDrawer
             if (EditorGUI.EndChangeCheck())
             {
                 smr.SetBlendShapeWeight(index, newWeight);
+
+                // Also apply the same-named blendshape to MohawkHair and ManeHair if present
+                if (mohawkSmr != null && mohawkSmr.sharedMesh != null)
+                {
+                    int mhIndex = mohawkSmr.sharedMesh.GetBlendShapeIndex(shapeName);
+                    if (mhIndex >= 0)
+                    {
+                        mohawkSmr.SetBlendShapeWeight(mhIndex, newWeight);
+                        EditorUtility.SetDirty(mohawkSmr);
+                    }
+                }
+                if (maneSmr != null && maneSmr.sharedMesh != null)
+                {
+                    int maIndex = maneSmr.sharedMesh.GetBlendShapeIndex(shapeName);
+                    if (maIndex >= 0)
+                    {
+                        maneSmr.SetBlendShapeWeight(maIndex, newWeight);
+                        EditorUtility.SetDirty(maneSmr);
+                    }
+                }
+
                 values.GetArrayElementAtIndex(i).floatValue = newWeight;
                 
                 // Save custom override if different from default
