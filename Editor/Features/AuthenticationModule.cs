@@ -108,12 +108,13 @@ public class AuthenticationModule
             bool isValid = false;
             int retryCount = 0;
             const int maxRetries = 10;
+            string req = UltiPawUtils.getApiUrl() + UltiPawUtils.TOKEN_ENDPOINT + "?token=" + tokenToUse;
 
             while (retryCount < maxRetries && !isValid)
             {
                 try
                 {
-                    var response = await UltiPawUtils.client.GetAsync(UltiPawUtils.getApiUrl() + UltiPawUtils.TOKEN_ENDPOINT + "?token=" + tokenToUse);
+                    var response = await UltiPawUtils.client.GetAsync(req);
 
                     if (response.IsSuccessStatusCode)
                     {
@@ -125,18 +126,18 @@ public class AuthenticationModule
                     else if ((int)response.StatusCode == 425)
                     {
                         retryCount++;
-                        UltiPawLogger.Log($"[UltiPawUtils] Server is processing request (Status 425). Retry {retryCount}/{maxRetries}");
+                        UltiPawLogger.Log($"[UltiPawUtils] Server is processing request (Status 425). Retry {retryCount}/{maxRetries} (url: {req})");
                         await Task.Delay(1000);
                     }
                     else
                     {
-                        UltiPawLogger.LogWarning($"[UltiPawUtils] Authentication failed with status code {response.StatusCode}");
+                        UltiPawLogger.LogWarning($"[UltiPawUtils] Authentication failed with status code {response.StatusCode} (url: {req})");
                         return false;
                     }
                 }
                 catch (System.Exception e)
                 {
-                    UltiPawLogger.LogError($"[UltiPawUtils] Error during authentication attempt {retryCount + 1}: {e.Message}");
+                    UltiPawLogger.LogError($"[UltiPawUtils] Error during authentication attempt {retryCount + 1}: {e.Message} (url: {req})");
                     retryCount++;
                     await Task.Delay(1000);
                 }

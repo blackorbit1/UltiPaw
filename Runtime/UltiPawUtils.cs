@@ -40,7 +40,7 @@ public static class UltiPawUtils
     }
     
     public const string SERVER_BASE_URL = "orbiters.cc/"; // Update with your server URL
-    public const string API_BASE_URL = "api." + SERVER_BASE_URL + "/"; // Update with your server URL
+    public const string API_BASE_URL = "api." + SERVER_BASE_URL; // Update with your server URL
     public const string VERSION_ENDPOINT = "/ultipaw/versions";
     public const string MODEL_ENDPOINT = "/ultipaw/model";
     public const string TOKEN_ENDPOINT = "/token"; // Replace with your actual API endpoint
