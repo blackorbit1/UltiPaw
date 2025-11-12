@@ -211,7 +211,11 @@ public class VersionActions
         {
             if (isReset)
             {
-                fileManagerService.RestoreBackup(fbxPath);
+                // Force restore the original Winterpaw FBX regardless of current selection/state
+                string winterpawUnityPath = "Assets/MasculineCanine/FX/MasculineCanine.v1.5.fbx";
+                fileManagerService.ForceRestoreBackupAtPath(winterpawUnityPath);
+                // Ensure subsequent import/refresh uses the restored original FBX path
+                fbxPath = winterpawUnityPath;
             }
             else
             {

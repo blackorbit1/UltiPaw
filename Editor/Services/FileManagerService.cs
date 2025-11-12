@@ -47,6 +47,32 @@ public class FileManagerService
         if (File.Exists(fbxPath)) File.Delete(fbxPath);
         File.Move(backupPath, fbxPath);
     }
+
+    // Force-restore a specific FBX regardless of current selection/state.
+    // Always delete the .fbx (if present) and rename .fbx.old back to .fbx, then force re-import.
+    public void ForceRestoreBackupAtPath(string unityFbxPath)
+    {
+        if (string.IsNullOrEmpty(unityFbxPath)) throw new ArgumentNullException(nameof(unityFbxPath));
+        string unityPath = UltiPawUtils.ToUnityPath(unityFbxPath);
+        string fullFbxPath = Path.GetFullPath(unityPath);
+        string fullBackupPath = fullFbxPath + OriginalSuffix;
+
+        if (!File.Exists(fullBackupPath))
+        {
+            throw new FileNotFoundException($"Backup FBX not found: {fullBackupPath}");
+        }
+
+        if (File.Exists(fullFbxPath))
+        {
+            File.Delete(fullFbxPath);
+        }
+
+        File.Move(fullBackupPath, fullFbxPath);
+
+        // Force Unity to reimport the restored FBX
+        AssetDatabase.ImportAsset(unityPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
+        AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+    }
     
     public void DeleteVersionFolder(string path)
     {
@@ -99,10 +125,17 @@ public class FileManagerService
     
     public void RemoveExistingLogic(Transform root)
     {
-        Transform existingLogic = root.Find("ultipaw logic");
-        if (existingLogic != null)
+        if (root == null) return;
+        // Remove any instances named "ultipaw logic" or "debug" anywhere under the avatar root (case-insensitive)
+        var targets = root.GetComponentsInChildren<Transform>(true)
+            .Where(t => t != null && (string.Equals(t.name, "ultipaw logic", StringComparison.OrdinalIgnoreCase)
+                                      || string.Equals(t.name, "debug", StringComparison.OrdinalIgnoreCase)))
+            .Select(t => t.gameObject)
+            .Distinct()
+            .ToList();
+        foreach (var go in targets)
         {
-            Undo.DestroyObjectImmediate(existingLogic.gameObject);
+            Undo.DestroyObjectImmediate(go);
         }
     }
 
