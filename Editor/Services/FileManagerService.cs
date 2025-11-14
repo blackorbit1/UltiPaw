@@ -292,9 +292,10 @@ public class FileManagerService
             string ultipawAvatarSourcePath = AssetDatabase.GetAssetPath(ultipawAvatar);
             AssetDatabase.CopyAsset(ultipawAvatarSourcePath, UltiPawUtils.CombineUnityPath(newVersionDataPath, UltiPawUtils.ULTIPAW_AVATAR_NAME));
             
-            string defaultAvatarSourcePath = UltiPawUtils.GetVersionAvatarPath(parentVersion.version, parentVersion.defaultAviVersion, UltiPawUtils.DEFAULT_AVATAR_NAME);
-            if (string.IsNullOrEmpty(defaultAvatarSourcePath) || !File.Exists(defaultAvatarSourcePath))
-                throw new FileNotFoundException($"Could not find the required 'default avatar.asset' from the parent version '{parentVersion.version}'.");
+            string defaultAvatarSourcePath = "Packages/ultipaw/creator assets/default avatar.asset";
+            var defaultAvatarAsset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(defaultAvatarSourcePath);
+            if (defaultAvatarAsset == null)
+                throw new FileNotFoundException("Could not find the required 'default avatar.asset' in 'Packages/ultipaw/creator assets'.");
             AssetDatabase.CopyAsset(defaultAvatarSourcePath, UltiPawUtils.CombineUnityPath(newVersionDataPath, UltiPawUtils.DEFAULT_AVATAR_NAME));
 
             // 2. Create .bin file (Encrypt custom FBX against original base FBX)
