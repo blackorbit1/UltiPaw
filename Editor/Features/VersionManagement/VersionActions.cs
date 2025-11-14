@@ -392,25 +392,43 @@ public class VersionActions
                 editor.ultiPawTarget.customBlendshapeOverrideNames.Clear();
                 editor.ultiPawTarget.customBlendshapeOverrideValues.Clear();
                 
-                // Find the Body mesh
-                var bodyMesh = root.GetComponentsInChildren<SkinnedMeshRenderer>(true)
+                // Find the Body mesh (and optional hair meshes for sync)
+                var allSmrs = root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+                var bodyMesh = allSmrs
                     .FirstOrDefault(s => s.gameObject.name.Equals("Body", System.StringComparison.OrdinalIgnoreCase));
+                var mohawkMesh = allSmrs
+                    .FirstOrDefault(s => s.gameObject.name.Equals("MohawkHair", System.StringComparison.OrdinalIgnoreCase));
+                var maneMesh = allSmrs
+                    .FirstOrDefault(s => s.gameObject.name.Equals("ManeHair", System.StringComparison.OrdinalIgnoreCase));
                 
                 if (bodyMesh?.sharedMesh != null)
                 {
-                    // Apply default values from the version
+                    // Apply default values from the version and sync to hair meshes when they have the same-named blendshape
                     foreach (var entry in version.customBlendshapes)
                     {
-                        int blendshapeIndex = bodyMesh.sharedMesh.GetBlendShapeIndex(entry.name);
-                        if (blendshapeIndex >= 0)
+                        int bodyIndex = bodyMesh.sharedMesh.GetBlendShapeIndex(entry.name);
+                        if (bodyIndex >= 0)
                         {
                             float defaultValue = float.TryParse(entry.defaultValue, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsed) ? parsed : 0f;
-                            bodyMesh.SetBlendShapeWeight(blendshapeIndex, defaultValue);
+                            bodyMesh.SetBlendShapeWeight(bodyIndex, defaultValue);
+
+                            if (mohawkMesh?.sharedMesh != null)
+                            {
+                                int mhIndex = mohawkMesh.sharedMesh.GetBlendShapeIndex(entry.name);
+                                if (mhIndex >= 0) mohawkMesh.SetBlendShapeWeight(mhIndex, defaultValue);
+                            }
+                            if (maneMesh?.sharedMesh != null)
+                            {
+                                int maIndex = maneMesh.sharedMesh.GetBlendShapeIndex(entry.name);
+                                if (maIndex >= 0) maneMesh.SetBlendShapeWeight(maIndex, defaultValue);
+                            }
                         }
                     }
                     
                     EditorUtility.SetDirty(bodyMesh);
-                    UltiPawLogger.Log($"[VersionActions] Applied {version.customBlendshapes.Length} blendshape default values");
+                    if (mohawkMesh != null) EditorUtility.SetDirty(mohawkMesh);
+                    if (maneMesh != null) EditorUtility.SetDirty(maneMesh);
+                    UltiPawLogger.Log($"[VersionActions] Applied {version.customBlendshapes.Length} blendshape default values (synced to hair if present)");
                 }
             }
             else if (isReset)
