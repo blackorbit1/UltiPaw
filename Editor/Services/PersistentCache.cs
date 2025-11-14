@@ -166,6 +166,17 @@ public class PersistentCache
         return null;
     }
 
+    public void InvalidateHash(string filePath)
+    {
+        if (string.IsNullOrEmpty(filePath)) return;
+        string normalizedPath = Path.GetFullPath(filePath);
+        if (cacheData.hashCache.Remove(normalizedPath))
+        {
+            SaveCache();
+            UltiPawLogger.Log($"[PersistentCache] Manually invalidated hash for: {normalizedPath}");
+        }
+    }
+
     public void CacheHash(string filePath, string hash)
     {
         if (string.IsNullOrEmpty(filePath) || string.IsNullOrEmpty(hash) || !File.Exists(filePath))

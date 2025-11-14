@@ -183,6 +183,15 @@ public class AdvancedModeModule
                 EditorGUILayout.HelpBox(
                     $"Cached versions: {cacheStats.versionEntries} (hash entries: {cacheStats.hashEntries})\nRecommended version: {cachedRecommended}\nCurrent FBX hash: {cachedFbxHash}",
                     MessageType.None);
+
+                // Recalculate current FBX hash button (as requested)
+                EditorGUILayout.BeginHorizontal();
+                GUILayout.Space(EditorGUI.indentLevel * 15);
+                if (GUILayout.Button(new GUIContent("Recalculate current FBX hash", "Force recalculation of the currently applied and original FBX hashes, and refresh applied-version state"), GUILayout.Width(260f)))
+                {
+                    editor.versionModule?.actions?.StartRecalculateCurrentFbxHash();
+                }
+                EditorGUILayout.EndHorizontal();
                 
                 // Debug Tools section
                 EditorGUILayout.Space();

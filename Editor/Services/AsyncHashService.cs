@@ -227,8 +227,17 @@ public class AsyncHashService
 
     public void InvalidateHashCache(string filePath)
     {
-        // This will be handled automatically by the PersistentCache when file timestamp changes
-        UltiPawLogger.Log($"[AsyncHashService] Hash cache will be invalidated for: {Path.GetFileName(filePath)} on next access");
+        if (string.IsNullOrEmpty(filePath)) return;
+        try
+        {
+            string normalized = Path.GetFullPath(filePath);
+            PersistentCache.Instance.InvalidateHash(normalized);
+            UltiPawLogger.Log($"[AsyncHashService] Hash cache invalidated for: {Path.GetFileName(normalized)}");
+        }
+        catch (Exception ex)
+        {
+            UltiPawLogger.LogError($"[AsyncHashService] Failed to invalidate hash cache: {ex.Message}");
+        }
     }
 
     // Convenience method for immediate hash needs (checks cache first)

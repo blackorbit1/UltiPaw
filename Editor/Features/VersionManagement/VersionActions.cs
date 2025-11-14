@@ -26,6 +26,7 @@ public class VersionActions
     public void StartVersionDelete(UltiPawVersion ver) => EditorCoroutineUtility.StartCoroutineOwnerless(DeleteVersionCoroutine(ver));
     public void StartApplyVersion() => EditorCoroutineUtility.StartCoroutineOwnerless(ApplyOrResetCoroutine(editor.selectedVersionForAction, false));
     public void StartReset() => EditorCoroutineUtility.StartCoroutineOwnerless(ApplyOrResetCoroutine(null, true));
+    public void StartRecalculateCurrentFbxHash() => EditorCoroutineUtility.StartCoroutineOwnerless(RecalculateCurrentFbxHashCoroutine());
 
     private IEnumerator FetchVersionsCoroutine()
     {
@@ -421,7 +422,8 @@ public class VersionActions
         }
         
         UltiPawLogger.Log("[VersionActions] ApplyOrResetCoroutine completed. Updating hash.");
-        UpdateCurrentBaseFbxHash();
+        // Force a recalculation of the current FBX hash and applied state
+        EditorCoroutineUtility.StartCoroutineOwnerless(RecalculateCurrentFbxHashCoroutine());
 
         EditorUtility.SetDirty(editor.ultiPawTarget);
         editor.Repaint();
@@ -549,6 +551,42 @@ public class VersionActions
                 }
             });
         }
+    }
+    
+    private IEnumerator RecalculateCurrentFbxHashCoroutine()
+    {
+        string path = GetCurrentFBXPath();
+        if (string.IsNullOrEmpty(path)) yield break;
+
+        var hashService = AsyncHashService.Instance;
+
+        // Invalidate caches for current and backup FBX
+        hashService.InvalidateHashCache(path);
+        string originalPath = path + FileManagerService.OriginalSuffix;
+        bool hasBackup = File.Exists(originalPath);
+        if (hasBackup)
+        {
+            hashService.InvalidateHashCache(originalPath);
+        }
+
+        // Ensure any imports/updates are finished
+        while (EditorApplication.isCompiling || EditorApplication.isUpdating)
+        {
+            yield return null;
+        }
+
+        // Calculate hashes
+        var calcTask = hashService.CalculateFBXHashesAsync(Path.GetFullPath(path));
+        while (!calcTask.IsCompleted)
+        {
+            yield return null;
+        }
+        var (currentHash, originalHash) = calcTask.Result;
+
+        // Update editor state
+        editor.currentBaseFbxHash = hasBackup ? originalHash : currentHash;
+        UpdateAppliedVersionAndState(currentHash);
+        editor.Repaint();
     }
     
     // FIX: Centralized and corrected state detection logic. This is the single source of truth.

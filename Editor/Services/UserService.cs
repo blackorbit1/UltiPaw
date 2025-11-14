@@ -180,7 +180,7 @@ public class UserService
             }
             else
             {
-                UltiPawLogger.LogWarning($"[UltiPaw] Failed to download avatar for user {uploaderId}: {request.error}");
+                UltiPawLogger.LogWarning($"[UltiPaw] Failed to download avatar for user {uploaderId}: {request.error} (url: {avatarUrl})");
             }
         }
     }
