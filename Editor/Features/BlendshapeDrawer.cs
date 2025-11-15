@@ -136,7 +136,7 @@ public class BlendshapeDrawer
         if (GUILayout.Button("Set to Default Values"))
         {
             ClearAllCustomOverrides();
-            ApplyDefaultBlendshapeValues(smr, values, blendshapeEntries);
+            ApplyDefaultBlendshapeValuesWithHair(smr, mohawkSmr, maneSmr, values, blendshapeEntries);
         }
         
         EditorGUILayout.EndVertical();
@@ -213,6 +213,47 @@ public class BlendshapeDrawer
         }
 
         EditorUtility.SetDirty(smr);
+        EditorUtility.SetDirty(editor.ultiPawTarget);
+    }
+
+    private void ApplyDefaultBlendshapeValuesWithHair(SkinnedMeshRenderer smr, SkinnedMeshRenderer mohawkSmr, SkinnedMeshRenderer maneSmr, SerializedProperty values, CustomBlendshapeEntry[] blendshapeEntries)
+    {
+        if (smr == null || smr.sharedMesh == null || blendshapeEntries == null) return;
+
+        for (int i = 0; i < blendshapeEntries.Length; i++)
+        {
+            var entry = blendshapeEntries[i];
+            float defaultValue = ParseDefaultValue(entry.defaultValue);
+
+            int bodyIndex = smr.sharedMesh.GetBlendShapeIndex(entry.name);
+            if (bodyIndex >= 0)
+            {
+                smr.SetBlendShapeWeight(bodyIndex, defaultValue);
+                values.GetArrayElementAtIndex(i).floatValue = defaultValue;
+            }
+
+            if (mohawkSmr != null && mohawkSmr.sharedMesh != null)
+            {
+                int mhIndex = mohawkSmr.sharedMesh.GetBlendShapeIndex(entry.name);
+                if (mhIndex >= 0)
+                {
+                    mohawkSmr.SetBlendShapeWeight(mhIndex, defaultValue);
+                }
+            }
+
+            if (maneSmr != null && maneSmr.sharedMesh != null)
+            {
+                int maIndex = maneSmr.sharedMesh.GetBlendShapeIndex(entry.name);
+                if (maIndex >= 0)
+                {
+                    maneSmr.SetBlendShapeWeight(maIndex, defaultValue);
+                }
+            }
+        }
+
+        EditorUtility.SetDirty(smr);
+        if (mohawkSmr != null) EditorUtility.SetDirty(mohawkSmr);
+        if (maneSmr != null) EditorUtility.SetDirty(maneSmr);
         EditorUtility.SetDirty(editor.ultiPawTarget);
     }
 }
