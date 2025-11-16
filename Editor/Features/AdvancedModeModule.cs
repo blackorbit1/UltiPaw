@@ -12,6 +12,12 @@ public class AdvancedModeModule
     private GameObject debugPrefabInstance;
     private DynamicNormalsService dynamicNormalsService;
     private bool dynamicNormalsFoldout = false; // Folded by default
+
+    // FBX Hash checker state
+    private Object fbxAsset;
+    private string fbxHash;
+    private string fbxHashError;
+    private bool fbxHashBusy = false;
     
     public AdvancedModeModule(UltiPawEditor editor)
     {
@@ -192,6 +198,82 @@ public class AdvancedModeModule
                     editor.versionModule?.actions?.StartRecalculateCurrentFbxHash();
                 }
                 EditorGUILayout.EndHorizontal();
+
+                // FBX Hash Checker
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("FBX Hash Checker", EditorStyles.boldLabel);
+
+                EditorGUI.BeginChangeCheck();
+                fbxAsset = EditorGUILayout.ObjectField(new GUIContent("FBX Asset", "Drop a .fbx asset here"), fbxAsset, typeof(Object), false);
+                if (EditorGUI.EndChangeCheck())
+                {
+                    fbxHash = null;
+                    fbxHashError = null;
+                }
+
+                using (new EditorGUI.DisabledScope(fbxAsset == null || fbxHashBusy))
+                {
+                    EditorGUILayout.BeginHorizontal();
+                    GUILayout.Space(EditorGUI.indentLevel * 15);
+                    if (GUILayout.Button("Check Hash", GUILayout.Width(120)))
+                    {
+                        fbxHashBusy = true;
+                        fbxHash = null;
+                        fbxHashError = null;
+
+                        try
+                        {
+                            string assetPath = AssetDatabase.GetAssetPath(fbxAsset);
+                            if (string.IsNullOrEmpty(assetPath))
+                            {
+                                fbxHashError = "Could not resolve asset path.";
+                            }
+                            else if (!assetPath.ToLowerInvariant().EndsWith(".fbx"))
+                            {
+                                fbxHashError = "Selected asset is not a .fbx file.";
+                            }
+                            else
+                            {
+                                string absolutePath = GetAbsolutePath(assetPath);
+                                if (!File.Exists(absolutePath))
+                                {
+                                    fbxHashError = "File does not exist on disk: " + absolutePath;
+                                }
+                                else
+                                {
+                                    fbxHash = UltiPawUtils.CalculateFileHash(absolutePath);
+                                    if (string.IsNullOrEmpty(fbxHash))
+                                    {
+                                        fbxHashError = "Failed to compute hash.";
+                                    }
+                                }
+                            }
+                        }
+                        catch (System.Exception ex)
+                        {
+                            fbxHashError = "Error: " + ex.Message;
+                        }
+                        finally
+                        {
+                            fbxHashBusy = false;
+                        }
+                    }
+                    EditorGUILayout.EndHorizontal();
+                }
+
+                if (fbxHashBusy)
+                {
+                    EditorGUILayout.HelpBox("Calculating hash...", MessageType.Info);
+                }
+                else if (!string.IsNullOrEmpty(fbxHashError))
+                {
+                    EditorGUILayout.HelpBox(fbxHashError, MessageType.Error);
+                }
+                else if (!string.IsNullOrEmpty(fbxHash))
+                {
+                    EditorGUILayout.LabelField("SHA-256:");
+                    EditorGUILayout.SelectableLabel(fbxHash, EditorStyles.textField, GUILayout.Height(18));
+                }
                 
                 // Debug Tools section
                 EditorGUILayout.Space();
@@ -227,6 +309,32 @@ public class AdvancedModeModule
             
             EditorGUILayout.EndVertical();
         }
+    }
+
+    private static string GetAbsolutePath(string assetPath)
+    {
+        if (string.IsNullOrEmpty(assetPath)) return null;
+        // Handle Assets/ paths
+        if (assetPath.StartsWith("Assets/"))
+        {
+            string projectRoot = Application.dataPath.Substring(0, Application.dataPath.Length - "/Assets".Length);
+            return Path.Combine(projectRoot, assetPath).Replace("/", "\\");
+        }
+        // Handle Packages/ paths (Unity caches packages under project/Library/PackageCache)
+        if (assetPath.StartsWith("Packages/"))
+        {
+            // Try to resolve via AssetDatabase first (returns absolute path for some providers)
+            string maybeAbsolute = AssetDatabase.GetAssetPath(AssetDatabase.LoadMainAssetAtPath(assetPath));
+            if (!string.IsNullOrEmpty(maybeAbsolute) && (maybeAbsolute.Contains(":\\") || maybeAbsolute.StartsWith("/")))
+            {
+                return maybeAbsolute;
+            }
+            // Fallback: construct path under Library/PackageCache
+            string projectRoot = Application.dataPath.Substring(0, Application.dataPath.Length - "/Assets".Length);
+            string candidate = Path.Combine(projectRoot, assetPath).Replace("/", "\\");
+            return candidate;
+        }
+        return assetPath;
     }
     
     private void OnArmatureToggleChanged()
