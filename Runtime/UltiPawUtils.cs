@@ -18,6 +18,8 @@ public static class UltiPawUtils
     public const string ASSETS_BASE_FOLDER = "Assets/UltiPaw";
     public const string VERSIONS_FOLDER = ASSETS_BASE_FOLDER + "/versions";
     public const string UNSUBMITTED_VERSIONS_FILE = ASSETS_BASE_FOLDER + "/unsubmittedVersions.json";
+    public const string USER_VERSIONS_DIR = ASSETS_BASE_FOLDER + "/userVersions";
+    public const string USER_VERSIONS_FILE = ASSETS_BASE_FOLDER + "/userVersions.json";
     public const string DEFAULT_AVATAR_NAME = "default avatar.asset";
     public const string ULTIPAW_AVATAR_NAME = "ultipaw avatar.asset";
     public const string CUSTOM_LOGIC_NAME = "ultipaw logic.asset";

@@ -10,7 +10,7 @@ public class VersionManagementModule
     private readonly VersionListDrawer versionListDrawer;
     private readonly FileManagerService fileManagerService;
     
-    private enum ActionType { INSTALL, UPDATE, DOWNGRADE, RESET, UNAVAILABLE }
+    private enum ActionType { INSTALL, UPDATE, DOWNGRADE, RESET, SWITCH_TO_CUSTOM, UNAVAILABLE }
     
     private bool versionsFoldout = true;
     private bool hasShownMissingVersionWarning;
@@ -89,6 +89,13 @@ public class VersionManagementModule
     private void DrawActionButtons()
     {
         bool canInteract = !editor.isFetching && !editor.isDownloading && !editor.isDeleting;
+
+        // If feature disabled, ensure no custom selection is active
+        if (!FeatureFlags.IsEnabled(FeatureFlags.SUPPORT_USER_UNKNOWN_VERSION))
+        {
+            editor.selectedCustomVersionForAction = null;
+        }
+
         var selectedVersion = editor.selectedVersionForAction;
         bool recommendedIsNull = editor.recommendedVersion == null;
         if (editor.selectedVersionForAction != lastSelectionForWarning || recommendedIsNull != lastRecommendedWasNull)
@@ -98,21 +105,29 @@ public class VersionManagementModule
             lastRecommendedWasNull = recommendedIsNull;
         }
 
-
-        if (selectedVersion == null) // If no version is selected, select the recommended version
+        // If no version is selected, select the recommended version by default
+        // BUT if a custom version is selected (and feature enabled), do not auto-select recommended
+        if (selectedVersion == null)
         {
-            if (editor.recommendedVersion == null)
+            if (FeatureFlags.IsEnabled(FeatureFlags.SUPPORT_USER_UNKNOWN_VERSION) && editor.selectedCustomVersionForAction != null)
             {
-                if (!hasShownMissingVersionWarning)
-                {
-                    UltiPawLogger.LogWarning("[UltiPawEditor] No recommended version available. Please select a version from the list.");
-                    hasShownMissingVersionWarning = true;
-                }
-                return;
+                // Keep null so the main action uses SWITCH_TO_CUSTOM
             }
-            selectedVersion = editor.recommendedVersion;
-            editor.selectedVersionForAction = selectedVersion;
-            lastSelectionForWarning = editor.selectedVersionForAction;
+            else
+            {
+                if (editor.recommendedVersion == null)
+                {
+                    if (!hasShownMissingVersionWarning)
+                    {
+                        UltiPawLogger.LogWarning("[UltiPawEditor] No recommended version available. Please select a version from the list.");
+                        hasShownMissingVersionWarning = true;
+                    }
+                    return;
+                }
+                selectedVersion = editor.recommendedVersion;
+                editor.selectedVersionForAction = selectedVersion;
+                lastSelectionForWarning = editor.selectedVersionForAction;
+            }
         }
         
         bool selectionIsValid = selectedVersion != null;
@@ -120,21 +135,34 @@ public class VersionManagementModule
         
         using (new EditorGUI.DisabledScope(!canInteract))
         {
-            // Main Apply/Update/Downgrade/Reset Button
+            var action = GetActionType();
+
+            // Main Apply/Update/Downgrade/Reset/SWITCH_TO_CUSTOM Button
             bool canReset = fileManagerService.BackupExists(actions.GetCurrentFBXPath()) || editor.isUltiPaw;
-            bool buttonDisabled = !selectionIsValid ||
-                                   (!isResetSelected && selectedVersion.Equals(editor.ultiPawTarget.appliedUltiPawVersion)) ||
-                                   (isResetSelected && !canReset);
+            bool buttonDisabled;
+            if (action == ActionType.SWITCH_TO_CUSTOM)
+            {
+                buttonDisabled = editor.selectedCustomVersionForAction == null;
+            }
+            else
+            {
+                buttonDisabled = !selectionIsValid ||
+                                 (!isResetSelected && selectedVersion.Equals(editor.ultiPawTarget.appliedUltiPawVersion)) ||
+                                 (isResetSelected && !canReset);
+            }
             
             using (new EditorGUI.DisabledScope(buttonDisabled))
             {
-                var action = GetActionType();
                 string buttonText = GetActionButtonText(action, selectedVersion);
                 
                 // Set button color based on action type
                 if (action == ActionType.DOWNGRADE)
                 {
                     GUI.backgroundColor = EditorUIUtils.OrangeColor;
+                }
+                else if (action == ActionType.SWITCH_TO_CUSTOM)
+                {
+                    GUI.backgroundColor = new Color(1.0f, 0.5f, 0.5f); // red tint
                 }
                 else if (action != ActionType.RESET) // Keep default color for reset, green for others
                 {
@@ -144,11 +172,19 @@ public class VersionManagementModule
 
                 if (GUILayout.Button(buttonText, GUILayout.Height(40)))
                 {
-                    if (isResetSelected)
+                    if (action == ActionType.RESET)
                     {
                         if (EditorUtility.DisplayDialog("Confirm Reset", "This will restore the original FBX from its backup and reapply the default avatar configuration.", "Reset", "Cancel"))
                         {
                             actions.StartReset();
+                        }
+                    }
+                    else if (action == ActionType.SWITCH_TO_CUSTOM)
+                    {
+                        var cv = editor.selectedCustomVersionForAction;
+                        if (cv != null && EditorUtility.DisplayDialog("Apply Custom Version", $"This will replace your current FBX with your saved custom version from {cv.detectionDate}.", "Proceed", "Cancel"))
+                        {
+                            actions.StartApplyCustomVersion();
                         }
                     }
                     else
@@ -178,6 +214,10 @@ public class VersionManagementModule
 
     private ActionType GetActionType()
     {
+        // Custom switch has priority when selected and feature enabled
+        if (FeatureFlags.IsEnabled(FeatureFlags.SUPPORT_USER_UNKNOWN_VERSION) && editor.selectedCustomVersionForAction != null)
+            return ActionType.SWITCH_TO_CUSTOM;
+
         if (editor.selectedVersionForAction == null) return ActionType.UNAVAILABLE;
         
         if (editor.selectedVersionForAction == VersionListDrawer.RESET_VERSION) return ActionType.RESET;
@@ -203,6 +243,12 @@ public class VersionManagementModule
 
     private string GetActionButtonText(ActionType action, UltiPawVersion selectedVersion)
     {
+        if (action == ActionType.SWITCH_TO_CUSTOM)
+        {
+            var cv = editor.selectedCustomVersionForAction;
+            return cv != null ? $"Turn into Custom {cv.detectionDate}" : "Turn into Custom";
+        }
+        
         if (selectedVersion == null) return "Select a Version";
         
         if (action == ActionType.RESET) return "Reset to Original Avatar";
@@ -210,7 +256,7 @@ public class VersionManagementModule
         string binPath = UltiPawUtils.GetVersionBinPath(selectedVersion.version, selectedVersion.defaultAviVersion);
         bool isDownloaded = !string.IsNullOrEmpty(binPath) && System.IO.File.Exists(binPath);
         string downloadPrefix = isDownloaded ? "" : "Download and ";
-
+        
         return action switch
         {
             ActionType.INSTALL => $"{downloadPrefix}Turn into UltiPaw",

@@ -48,6 +48,16 @@ public class VersionListDrawer
     {
         DrawHeader();
         
+        // Warn about unsupported custom base (behind feature flag)
+        if (FeatureFlags.IsEnabled(FeatureFlags.SUPPORT_USER_UNKNOWN_VERSION))
+        {
+            if (editor.currentIsCustom && !editor.customWarningShown)
+            {
+                EditorGUILayout.HelpBox("The current custom version of your Winterpaw is not supported. If you update it to one of the UltiPaw versions, you may lose some custom features or blendshapes of your custom Winterpaw base.", MessageType.Warning);
+                editor.customWarningShown = true;
+            }
+        }
+        
         var allVersions = editor.GetAllVersions();
         
         if (allVersions.Any() || editor.isFetching)
@@ -78,8 +88,14 @@ public class VersionListDrawer
                     }
                 }
                 
+                // Draw user custom versions above reset row (behind feature flag)
+                if (FeatureFlags.IsEnabled(FeatureFlags.SUPPORT_USER_UNKNOWN_VERSION))
+                {
+                    DrawUserCustomRows();
+                }
+        
                 // Draw reset item as the last item
-                DrawResetVersionItem(allVersions.Count == 0);
+                DrawResetVersionItem(allVersions.Count == 0 && (!FeatureFlags.IsEnabled(FeatureFlags.SUPPORT_USER_UNKNOWN_VERSION) || editor.userCustomVersions == null || editor.userCustomVersions.Count == 0));
             }
             else
             {
@@ -207,6 +223,208 @@ public class VersionListDrawer
                 }
             }
         }
+    }
+    
+    private void DrawUserCustomRows()
+    {
+        if (editor.userCustomVersions == null || editor.userCustomVersions.Count == 0)
+            return;
+
+        var entries = editor.userCustomVersions;
+        var allVersions = editor.GetAllVersions();
+        for (int i = 0; i < entries.Count; i++)
+        {
+            var entry = entries[i];
+            bool isApplied = editor.currentIsCustom && !string.IsNullOrEmpty(editor.currentAppliedFbxHash) &&
+                             string.Equals(editor.currentAppliedFbxHash, entry.appliedUserAviHash, StringComparison.OrdinalIgnoreCase);
+            bool isSelected = editor.selectedCustomVersionForAction == entry;
+
+            bool isFirst = (allVersions == null || allVersions.Count == 0) && i == 0; // first overall if no normal versions drawn
+            bool isLast = false; // reset item follows after custom rows
+
+            System.Action onSelected = () =>
+            {
+                if (isSelected)
+                {
+                    editor.selectedCustomVersionForAction = null;
+                }
+                else
+                {
+                    editor.selectedCustomVersionForAction = entry;
+                    editor.selectedVersionForAction = null;
+                }
+            };
+
+            DrawVersionItemInternal(
+                ver: null,
+                isFirst: isFirst,
+                isLast: isLast,
+                isSelected: isSelected,
+                isApplied: isApplied,
+                drawContent: () =>
+                {
+                    // Match normal item layout: left title, middle chips, right actions
+                    // Title
+                    EditorGUILayout.BeginVertical();
+                    GUILayout.FlexibleSpace();
+                    EditorGUILayout.BeginHorizontal();
+                    GUILayout.Label($"Custom {entry.detectionDate}", GUILayout.Width(140));
+                    EditorGUILayout.EndHorizontal();
+                    GUILayout.FlexibleSpace();
+                    EditorGUILayout.EndVertical();
+
+                    GUILayout.FlexibleSpace();
+
+                    // Chips
+                    EditorGUILayout.BeginVertical();
+                    GUILayout.FlexibleSpace();
+                    EditorGUILayout.BeginHorizontal();
+                    if (isApplied)
+                    {
+                        DrawScopeLabel("Installed", new Color(0.33f, 0.79f, 0f));
+                        GUILayout.Space(5);
+                        DrawScopeLabel("Current", new Color(0.33f, 0.79f, 0f));
+                        GUILayout.Space(10);
+                    }
+                    DrawScopeLabel("Custom", Color.red);
+                    EditorGUILayout.EndHorizontal();
+                    GUILayout.FlexibleSpace();
+                    EditorGUILayout.EndVertical();
+
+                    // Right-side action icons (delete)
+                    using (new EditorGUI.DisabledScope(editor.isDownloading || editor.isDeleting))
+                    {
+                        EditorGUILayout.BeginVertical();
+                        GUILayout.FlexibleSpace();
+                        EditorGUILayout.BeginHorizontal();
+
+                        var deleteIcon = EditorGUIUtility.IconContent("TreeEditor.Trash");
+                        Rect deleteRect = GUILayoutUtility.GetRect(22, 22, GUILayout.Width(22), GUILayout.Height(22));
+
+                        if (Event.current.type == EventType.Repaint)
+                        {
+                            GUI.DrawTexture(deleteRect, deleteIcon.image);
+                            if (deleteRect.Contains(Event.current.mousePosition))
+                            {
+                                EditorGUIUtility.AddCursorRect(deleteRect, MouseCursor.Link);
+                            }
+                        }
+
+                        if (Event.current.type == EventType.MouseDown && Event.current.button == 0 && deleteRect.Contains(Event.current.mousePosition))
+                        {
+                            bool confirm = EditorUtility.DisplayDialog(
+                                "Delete Unknown Version",
+                                "Are you sure you want to delete this unknown version. This might be another unsupported edit that you might want to backup. This action is irreversible.",
+                                "Delete",
+                                "Cancel");
+                            if (confirm)
+                            {
+                                // Perform deletion
+                                bool ok = UserCustomVersionService.Instance.Delete(entry);
+                                if (ok)
+                                {
+                                    if (editor.selectedCustomVersionForAction == entry)
+                                        editor.selectedCustomVersionForAction = null;
+                                    // Reload entries from service cache
+                                    editor.userCustomVersions = UserCustomVersionService.Instance.GetAll();
+                                    editor.Repaint();
+                                }
+                            }
+                            Event.current.Use();
+                        }
+
+                        EditorGUILayout.EndHorizontal();
+                        GUILayout.FlexibleSpace();
+                        EditorGUILayout.EndVertical();
+                    }
+                },
+                disabledReason: null,
+                onSelected: onSelected,
+                changelogKeyOverride: null,
+                changelogTextOverride: null
+            );
+        }
+    }
+
+    private void DrawCustomItemInternal(UserCustomVersionEntry entry, bool isSelected, bool isApplied)
+    {
+        // Similar visuals to versions, but simpler
+        EditorGUILayout.BeginHorizontal();
+        Rect timelineRect = GUILayoutUtility.GetRect(20f, 20f, GUILayout.Width(20f));
+        EditorGUILayout.BeginVertical();
+
+        GUIStyle helpBoxStyle = new GUIStyle(EditorStyles.helpBox);
+        if (isSelected)
+        {
+            Color originalBg = GUI.backgroundColor;
+            GUI.backgroundColor = new Color(1.0f, 0.85f, 0.85f); // light red
+        }
+
+        EditorGUILayout.BeginVertical(helpBoxStyle);
+        EditorGUILayout.BeginHorizontal();
+
+        // Left content: label
+        EditorGUILayout.BeginVertical();
+        GUILayout.FlexibleSpace();
+        GUILayout.Label($"Custom {entry.detectionDate}", GUILayout.Width(160));
+        GUILayout.FlexibleSpace();
+        EditorGUILayout.EndVertical();
+
+        GUILayout.FlexibleSpace();
+
+        // Middle: status labels
+        EditorGUILayout.BeginVertical();
+        GUILayout.FlexibleSpace();
+        EditorGUILayout.BeginHorizontal();
+        if (isApplied)
+        {
+            DrawScopeLabel("Installed", new Color(0.9f, 0.2f, 0.2f));
+            GUILayout.Space(5);
+            DrawScopeLabel("Current", new Color(0.33f, 0.79f, 0f));
+            GUILayout.Space(10);
+        }
+        DrawScopeLabel("Custom", Color.red);
+        EditorGUILayout.EndHorizontal();
+        GUILayout.FlexibleSpace();
+        EditorGUILayout.EndVertical();
+
+        // Right: none
+        EditorGUILayout.EndHorizontal();
+        EditorGUILayout.EndVertical();
+
+        GUI.backgroundColor = Color.white;
+
+        EditorGUILayout.EndVertical();
+        EditorGUILayout.EndHorizontal();
+
+        // Interaction: select on click anywhere in the item
+        Rect itemEnd = GUILayoutUtility.GetRect(0, 0);
+        Rect fullRect = new Rect(timelineRect.x, timelineRect.y, timelineRect.width + (itemEnd.y - timelineRect.y), itemEnd.y - timelineRect.y);
+        Rect clickableRect = GUILayoutUtility.GetLastRect();
+        if (Event.current.type == EventType.MouseDown && Event.current.button == 0 && clickableRect.Contains(Event.current.mousePosition))
+        {
+            if (isSelected)
+            {
+                editor.selectedCustomVersionForAction = null;
+            }
+            else
+            {
+                editor.selectedCustomVersionForAction = entry;
+                editor.selectedVersionForAction = null;
+            }
+            Event.current.Use();
+            editor.Repaint();
+        }
+
+        // Draw the timeline dot
+        Handles.BeginGUI();
+        Color timelineColor = isApplied ? new Color(0.9f, 0.2f, 0.2f) : Color.gray;
+        Handles.color = timelineColor;
+        Vector2 center = new Vector2(timelineRect.center.x, timelineRect.center.y + (clickableRect.height - timelineRect.height) / 2f);
+        float dotRadius = 4f;
+        Handles.DrawSolidDisc(center, Vector3.forward, dotRadius);
+        Handles.color = Color.white;
+        Handles.EndGUI();
     }
     
     private void DrawDottedLine(Vector3 start, Vector3 end, float lineWidth)
@@ -455,7 +673,7 @@ public class VersionListDrawer
         bool isSelected = RESET_VERSION.Equals(editor.selectedVersionForAction);
         var fileManagerService = new FileManagerService();
         bool canReset = fileManagerService.BackupExists(actions.GetCurrentFBXPath()) || editor.isUltiPaw;
-        bool isApplied = !editor.isUltiPaw; // Reset is "applied" when we're not in UltiPaw state
+        bool isApplied = !editor.isUltiPaw && !editor.currentIsCustom; // Reset is "applied" when we're not in UltiPaw state and not in custom state
 
         DrawVersionItemInternal(RESET_VERSION, isFirst, true, isSelected, isApplied, () => {
             // Vertically center the reset label with the helpbox
@@ -512,7 +730,7 @@ public class VersionListDrawer
         }, canReset ? null : "No backup available");
     }
     
-    private void DrawVersionItemInternal(UltiPawVersion ver, bool isFirst, bool isLast, bool isSelected, bool isApplied, System.Action drawContent, string disabledReason = null)
+    private void DrawVersionItemInternal(UltiPawVersion ver, bool isFirst, bool isLast, bool isSelected, bool isApplied, System.Action drawContent, string disabledReason = null, System.Action onSelected = null, string changelogKeyOverride = null, string changelogTextOverride = null)
     {
         bool isDisabled = !string.IsNullOrEmpty(disabledReason);
         
@@ -561,23 +779,25 @@ public class VersionListDrawer
         // Reset background color
         GUI.backgroundColor = Color.white;
         
-        // Show changelog based on display mode
+        // Show changelog based on display mode (with optional overrides)
         bool shouldShowChangelog = false;
+        string effectiveChangelog = changelogTextOverride ?? ver?.changelog;
         if (displayAllChangelogs)
         {
-            shouldShowChangelog = !string.IsNullOrEmpty(ver.changelog);
+            shouldShowChangelog = !string.IsNullOrEmpty(effectiveChangelog);
         }
         else
         {
-            string changelogKey = ver == RESET_VERSION ? "reset_base" : $"{ver.version}_{ver.scope}";
-            shouldShowChangelog = individualChangelogStates.ContainsKey(changelogKey) && 
-                                individualChangelogStates[changelogKey] && 
-                                !string.IsNullOrEmpty(ver.changelog);
+            string changelogKey = changelogKeyOverride ?? (ver == RESET_VERSION ? "reset_base" : $"{ver?.version}_{ver?.scope}");
+            if (!string.IsNullOrEmpty(changelogKey))
+            {
+                shouldShowChangelog = individualChangelogStates.ContainsKey(changelogKey) && individualChangelogStates[changelogKey] && !string.IsNullOrEmpty(effectiveChangelog);
+            }
         }
 
         if (shouldShowChangelog)
         {
-            EditorGUILayout.LabelField(ver.changelog, EditorStyles.wordWrappedLabel);
+            EditorGUILayout.LabelField(effectiveChangelog, EditorStyles.wordWrappedLabel);
         }
         
         if (isDisabled && !string.IsNullOrEmpty(disabledReason))
@@ -613,13 +833,22 @@ public class VersionListDrawer
             
             if (clickedOnDot || clickedOnVersionArea)
             {
-                if (isSelected)
+                if (onSelected != null)
                 {
-                    editor.selectedVersionForAction = null;
+                    onSelected();
                 }
                 else
                 {
-                    editor.selectedVersionForAction = ver;
+                    if (isSelected)
+                    {
+                        editor.selectedVersionForAction = null;
+                        editor.selectedCustomVersionForAction = null;
+                    }
+                    else
+                    {
+                        editor.selectedVersionForAction = ver;
+                        editor.selectedCustomVersionForAction = null;
+                    }
                 }
                 Event.current.Use();
                 editor.Repaint();

@@ -183,11 +183,12 @@ public class AdvancedModeModule
                 }
                 EditorGUILayout.EndHorizontal();
 
+                
                 var cacheStats = AsyncVersionService.Instance.GetCacheStats();
                 string cachedRecommended = editor.recommendedVersion != null ? editor.recommendedVersion.version : "None";
                 string cachedFbxHash = string.IsNullOrEmpty(editor.currentBaseFbxHash) ? "Unavailable" : editor.currentBaseFbxHash;
                 EditorGUILayout.HelpBox(
-                    $"Cached versions: {cacheStats.versionEntries} (hash entries: {cacheStats.hashEntries})\nRecommended version: {cachedRecommended}\nCurrent FBX hash: {cachedFbxHash}",
+                    $"Cached versions: {cacheStats.versionEntries} (hash entries: {cacheStats.hashEntries})\nRecommended version: {cachedRecommended}\nCurrent base FBX hash: {cachedFbxHash}",
                     MessageType.None);
 
                 // Recalculate current FBX hash button (as requested)
@@ -274,6 +275,31 @@ public class AdvancedModeModule
                     EditorGUILayout.LabelField("SHA-256:");
                     EditorGUILayout.SelectableLabel(fbxHash, EditorStyles.textField, GUILayout.Height(18));
                 }
+                
+                // Experimental features
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Experimental features", EditorStyles.boldLabel);
+                EditorGUI.indentLevel++;
+                foreach (var (key, label, description) in FeatureFlags.All())
+                {
+                    EditorGUI.BeginChangeCheck();
+                    bool current = FeatureFlags.IsEnabled(key);
+                    bool next = EditorGUILayout.ToggleLeft(new GUIContent(label, description), current);
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        FeatureFlags.SetEnabled(key, next);
+                        // If user disables custom unknown version support, clear selection and warning
+                        if (key == FeatureFlags.SUPPORT_USER_UNKNOWN_VERSION && !next)
+                        {
+                            editor.selectedCustomVersionForAction = null;
+                            editor.customWarningShown = false;
+                            editor.currentIsCustom = false; // hide current custom UI marks
+                            editor.Repaint();
+                        }
+                    }
+                }
+                EditorGUI.indentLevel--;
+
                 
                 // Debug Tools section
                 EditorGUILayout.Space();

@@ -49,8 +49,17 @@ public class UltiPawEditor : UnityEditor.Editor
     public List<UltiPawVersion> unsubmittedVersions = new List<UltiPawVersion>();
     public UltiPawVersion recommendedVersion, selectedVersionForAction;
     
+    // User custom base tracking
+    public List<UserCustomVersionEntry> userCustomVersions = new List<UserCustomVersionEntry>();
+    public UserCustomVersionEntry selectedCustomVersionForAction;
+    public bool currentIsCustom;
+    
     public string uiRenderingError;
     private string lastUiRenderingExceptionSignature;
+
+    // Runtime state for detection
+    public string currentAppliedFbxHash;
+    public bool customWarningShown;
     
     private void OnEnable()
     {
@@ -87,6 +96,8 @@ public class UltiPawEditor : UnityEditor.Editor
         
         // Load local versions first (synchronous, but fast)
         LoadUnsubmittedVersions();
+        // Load user custom versions
+        userCustomVersions = UserCustomVersionService.Instance.GetAll();
         
         // Initialize modules
         creatorModule.Initialize();

@@ -27,6 +27,7 @@ public class VersionActions
     public void StartApplyVersion() => EditorCoroutineUtility.StartCoroutineOwnerless(ApplyOrResetCoroutine(editor.selectedVersionForAction, false));
     public void StartReset() => EditorCoroutineUtility.StartCoroutineOwnerless(ApplyOrResetCoroutine(null, true));
     public void StartRecalculateCurrentFbxHash() => EditorCoroutineUtility.StartCoroutineOwnerless(RecalculateCurrentFbxHashCoroutine());
+    public void StartApplyCustomVersion() => EditorCoroutineUtility.StartCoroutineOwnerless(ApplyCustomVersionCoroutine(editor.selectedCustomVersionForAction));
 
     private IEnumerator FetchVersionsCoroutine()
     {
@@ -513,6 +514,8 @@ public class VersionActions
         if (string.IsNullOrEmpty(path))
         {
             editor.currentBaseFbxHash = null;
+            editor.currentAppliedFbxHash = null;
+            editor.currentIsCustom = false;
             UpdateAppliedVersionAndState(null);
             return;
         }
@@ -534,6 +537,7 @@ public class VersionActions
         if (cachedCurrentHash != null && (!hasBackup || cachedOriginalHash != null))
         {
             // We have all needed cached hashes - use them immediately
+            editor.currentAppliedFbxHash = cachedCurrentHash;
             editor.currentBaseFbxHash = hasBackup ? cachedOriginalHash : cachedCurrentHash;
             UpdateAppliedVersionAndState(cachedCurrentHash);
         }
@@ -558,6 +562,7 @@ public class VersionActions
                     // Update on main thread when calculation completes
                     AsyncTaskManager.Instance.ExecuteOnMainThread(() =>
                     {
+                        editor.currentAppliedFbxHash = currentHash;
                         editor.currentBaseFbxHash = hasBackup ? originalHash : currentHash;
                         UpdateAppliedVersionAndState(currentHash);
                         editor.Repaint();
@@ -626,15 +631,17 @@ public class VersionActions
             }
         }
 
+        // Track applied hash consistently
+        editor.currentAppliedFbxHash = currentFileHash;
+
         var candidateVersions = editor.GetAllVersions() ?? new System.Collections.Generic.List<UltiPawVersion>();
         UltiPawLogger.Log($"[VersionActions] UpdateAppliedVersionAndState hash={currentFileHash} candidates={candidateVersions.Count}");
 
-        if (string.IsNullOrEmpty(currentFileHash) || candidateVersions.Count == 0)
+        // If we have no candidates yet, don't decide custom state prematurely
+        if (string.IsNullOrEmpty(currentFileHash) || (!editor.fetchAttempted && candidateVersions.Count == 0))
         {
-            UltiPawLogger.Log("[VersionActions] No hash or candidates available. Clearing applied version state.");
-            editor.isUltiPaw = false;
-            editor.ultiPawTarget.appliedUltiPawVersion = null;
-            EditorUtility.SetDirty(editor.ultiPawTarget);
+            UltiPawLogger.Log("[VersionActions] Deferring state detection (waiting for versions).\n" +
+                              $"fetchAttempted={editor.fetchAttempted}, candidates={candidateVersions.Count}");
             return;
         }
 
@@ -648,12 +655,43 @@ public class VersionActions
         {
             UltiPawLogger.Log($"[VersionActions] Matched applied version: {matchingVersion.version}");
             editor.isUltiPaw = true;
+            editor.currentIsCustom = false;
             editor.ultiPawTarget.appliedUltiPawVersion = matchingVersion;
         }
         else
         {
             editor.isUltiPaw = false;
             editor.ultiPawTarget.appliedUltiPawVersion = null;
+            
+            // Detect user-custom base only when feature is enabled and we have attempted fetching versions
+            string fbxPath = GetCurrentFBXPath();
+            bool hasBackup = !string.IsNullOrEmpty(fbxPath) && fileManagerService.BackupExists(fbxPath);
+            bool canTreatAsCustom = FeatureFlags.IsEnabled(FeatureFlags.SUPPORT_USER_UNKNOWN_VERSION) && editor.fetchAttempted && candidateVersions.Count > 0;
+            if (hasBackup && canTreatAsCustom)
+            {
+                editor.currentIsCustom = true;
+                // Persist the custom version entry (copy FBX and avatar) if not already present
+                try
+                {
+                    if (!UserCustomVersionService.Instance.ExistsByAppliedHash(currentFileHash))
+                    {
+                        var entry = UserCustomVersionService.Instance.CreateFromCurrent(fbxPath, currentFileHash, editor.ultiPawTarget.transform.root);
+                        if (entry != null)
+                        {
+                            editor.userCustomVersions = UserCustomVersionService.Instance.GetAll();
+                        }
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    UltiPawLogger.LogWarning($"[UltiPaw] Failed to persist custom base info: {ex.Message}");
+                }
+            }
+            else
+            {
+                editor.currentIsCustom = false;
+            }
+            
             UltiPawLogger.Log("[VersionActions] No matching version hash found. Marking state as non-UltiPaw.");
         }
 
@@ -696,14 +734,68 @@ public class VersionActions
             var fbx = editor.baseFbxFilesProp.GetArrayElementAtIndex(0).objectReferenceValue as GameObject;
             if(fbx != null) return AssetDatabase.GetAssetPath(fbx);
         }
+        // Fallback to default Winterpaw if none assigned (maintain behavior)
+        string defaultPath = "Assets/MasculineCanine/FX/MasculineCanine.v1.5.fbx";
+        if (File.Exists(defaultPath)) return defaultPath;
         return null;
+    }
+
+    private IEnumerator ApplyCustomVersionCoroutine(UserCustomVersionEntry entry)
+    {
+        if (entry == null) yield break;
+        if (!FeatureFlags.IsEnabled(FeatureFlags.SUPPORT_USER_UNKNOWN_VERSION)) yield break;
+        var root = editor.ultiPawTarget.transform.root;
+        fileManagerService.RemoveExistingLogic(root);
+
+        string fbxPath = GetCurrentFBXPath();
+        if (string.IsNullOrEmpty(fbxPath)) yield break;
+
+        bool success = false;
+        try
+        {
+            // Ensure original backup exists; if not, create one now from current file
+            if (!fileManagerService.BackupExists(fbxPath))
+            {
+                fileManagerService.CreateBackup(fbxPath);
+            }
+
+            // Copy saved custom FBX over the current FBX
+            string srcUnity = UltiPawUtils.ToUnityPath(entry.backupFbxPath);
+            string srcAbs = System.IO.Path.GetFullPath(srcUnity);
+            string dstUnity = UltiPawUtils.ToUnityPath(fbxPath);
+            string dstAbs = System.IO.Path.GetFullPath(dstUnity);
+            if (!System.IO.File.Exists(srcAbs)) throw new System.IO.FileNotFoundException("Saved custom FBX not found", srcAbs);
+
+            System.IO.File.Copy(srcAbs, dstAbs, true);
+            success = true;
+        }
+        catch (Exception ex)
+        {
+            UltiPawLogger.LogError($"[UltiPaw] Failed to apply custom version: {ex.Message}");
+        }
+
+        if (success)
+        {
+            // Force reimport
+            AssetDatabase.ImportAsset(fbxPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
+            while (EditorApplication.isCompiling || EditorApplication.isUpdating) { yield return null; }
+
+            // Apply avatar if we saved one
+            var fbxGameObject = editor.baseFbxFilesProp.arraySize > 0 ? editor.baseFbxFilesProp.GetArrayElementAtIndex(0).objectReferenceValue as GameObject : null;
+            if (!string.IsNullOrEmpty(entry.appliedAvatarAsset))
+            {
+                fileManagerService.ApplyAvatarToModel(root, fbxGameObject, entry.appliedAvatarAsset);
+                while (EditorApplication.isCompiling || EditorApplication.isUpdating) { yield return null; }
+            }
+
+            // Update state flags
+            editor.isUltiPaw = false;
+            editor.ultiPawTarget.appliedUltiPawVersion = null;
+            editor.currentIsCustom = true;
+
+            // Recalculate hashes and update state
+            StartRecalculateCurrentFbxHash();
+        }
     }
 }
 #endif
-
-
-
-
-
-
-
