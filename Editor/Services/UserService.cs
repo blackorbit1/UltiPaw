@@ -35,57 +35,57 @@ public class UserService
         }
     }
     
-    public static void RequestUserInfo(int uploaderId, System.Action onComplete = null)
+    public static void RequestUserInfo(int userId, System.Action onComplete = null)
     {
         // Don't request if already cached
-        if (userCache.ContainsKey(uploaderId))
+        if (userCache.ContainsKey(userId))
         {
             onComplete?.Invoke();
             return;
         }
         
         // Don't request if already pending
-        if (pendingRequests.Contains(uploaderId))
+        if (pendingRequests.Contains(userId))
         {
             return;
         }
         
         // Don't request if previously failed (unless explicitly cleared)
-        if (failedRequests.Contains(uploaderId))
+        if (failedRequests.Contains(userId))
         {
             onComplete?.Invoke();
             return;
         }
         
-        pendingRequests.Add(uploaderId);
-        EditorCoroutineUtility.StartCoroutineOwnerless(FetchUserInfo(uploaderId, null, onComplete));
+        pendingRequests.Add(userId);
+        EditorCoroutineUtility.StartCoroutineOwnerless(FetchUserInfo(userId, null, onComplete));
     }
     
     // Overload allowing an explicit auth token when auth.dat is not available yet
-    public static void RequestUserInfo(int uploaderId, string authToken, System.Action onComplete)
+    public static void RequestUserInfo(int userId, string authToken, System.Action onComplete)
     {
         // Don't request if already cached
-        if (userCache.ContainsKey(uploaderId))
+        if (userCache.ContainsKey(userId))
         {
             onComplete?.Invoke();
             return;
         }
         
         // Don't request if already pending
-        if (pendingRequests.Contains(uploaderId))
+        if (pendingRequests.Contains(userId))
         {
             return;
         }
         
         // Don't request if previously failed (unless explicitly cleared)
-        if (failedRequests.Contains(uploaderId))
+        if (failedRequests.Contains(userId))
         {
             onComplete?.Invoke();
             return;
         }
         
-        pendingRequests.Add(uploaderId);
-        EditorCoroutineUtility.StartCoroutineOwnerless(FetchUserInfo(uploaderId, authToken, onComplete));
+        pendingRequests.Add(userId);
+        EditorCoroutineUtility.StartCoroutineOwnerless(FetchUserInfo(userId, authToken, onComplete));
     }
     
     private static IEnumerator FetchUserInfo(int userId, string overrideToken, System.Action onComplete)

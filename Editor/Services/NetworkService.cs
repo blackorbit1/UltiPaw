@@ -4,6 +4,7 @@ using System.IO;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using System.Net.Http;
 using Newtonsoft.Json;
 using UnityEditor;
 using UnityEngine;
@@ -41,6 +42,18 @@ public class NetworkService
 
             if (req.result != UnityWebRequest.Result.Success)
             {
+                // Try to extract specific error message from JSON body
+                if (!string.IsNullOrEmpty(body))
+                {
+                    try
+                    {
+                        var errorObj = JsonConvert.DeserializeObject<AccessDeniedPayload>(body);
+                        if (!string.IsNullOrEmpty(errorObj.errorMessage)) return (false, null, errorObj.errorMessage);
+                        if (!string.IsNullOrEmpty(errorObj.error)) return (false, null, errorObj.error);
+                    }
+                    catch { /* ignore JSON parse errors */ }
+                }
+
                 switch (req.responseCode)
                 {
                     case 401:
@@ -63,22 +76,50 @@ public class NetworkService
     }
 
     // Minimal payload to read assetId from access denied responses
-    private class AccessDeniedPayload { public string error; public string assetId; }
+    private class AccessDeniedPayload { public string error; public string assetId; public string errorMessage; }
 
     public async Task<(bool success, string error)> DownloadFileAsync(string url, string destinationPath)
     {
-        using (var req = new UnityWebRequest(url, UnityWebRequest.kHttpVerbGET))
+        try
         {
-            req.downloadHandler = new DownloadHandlerFile(destinationPath);
-            await req.SendWebRequest();
-            if (req.result != UnityWebRequest.Result.Success)
+            using (var client = new HttpClient())
             {
-                var error = $"Download failed: {req.error}";
-                if (req.responseCode == 404) error += " - 404 Not Found";
-                UltiPawLogger.LogError($"[NetworkService] {error}, url = {url}");
-                return (false, error);
+                using (var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead))
+                {
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        string errorBody = await response.Content.ReadAsStringAsync();
+                        string errorMsg = $"Download failed: {(int)response.StatusCode} {response.ReasonPhrase}";
+
+                        if (!string.IsNullOrEmpty(errorBody))
+                        {
+                            try
+                            {
+                                var errorObj = JsonConvert.DeserializeObject<AccessDeniedPayload>(errorBody);
+                                if (!string.IsNullOrEmpty(errorObj.errorMessage)) errorMsg = errorObj.errorMessage;
+                                else if (!string.IsNullOrEmpty(errorObj.error)) errorMsg = errorObj.error;
+                            }
+                            catch { /* ignore JSON parse error */ }
+                        }
+                        
+                        UltiPawLogger.LogError($"[NetworkService] {errorMsg}, url = {url}");
+                        return (false, errorMsg);
+                    }
+
+                    using (var fs = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                    using (var stream = await response.Content.ReadAsStreamAsync())
+                    {
+                        await stream.CopyToAsync(fs);
+                    }
+                    
+                    return (true, null);
+                }
             }
-            return (true, null);
+        }
+        catch (Exception ex)
+        {
+             UltiPawLogger.LogError($"[NetworkService] Download exception: {ex.Message}, url = {url}");
+             return (false, $"Download exception: {ex.Message}");
         }
     }
     

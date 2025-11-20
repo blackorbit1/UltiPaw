@@ -33,7 +33,7 @@ public class VersionActions
     {
         if (editor.isFetching) yield break;
         editor.isFetching = true;
-        editor.fetchError = null;
+        editor.warningsModule.Clear();
         editor.accessDeniedAssetId = null;
         editor.fetchAttempted = true;
         editor.Repaint();
@@ -72,14 +72,14 @@ public class VersionActions
             if (!string.IsNullOrEmpty(error) && error.StartsWith("ACCESS_DENIED:"))
             {
                 editor.accessDeniedAssetId = error.Substring("ACCESS_DENIED:".Length);
-                editor.fetchError = null; // Do not show generic error box
+                editor.warningsModule.Clear(); // Do not show generic error box
                 editor.serverVersions.Clear();
                 editor.recommendedVersion = null;
                 UpdateAppliedVersionAndState(); // Clear state on error too
             }
             else
             {
-                editor.fetchError = error;
+                editor.warningsModule.AddWarning(error, MessageType.Error, "Fetch failed");
                 editor.serverVersions.Clear();
                 editor.recommendedVersion = null;
                 UpdateAppliedVersionAndState(); // Clear state on error too
@@ -94,7 +94,7 @@ public class VersionActions
     {
         if (editor.isDownloading) yield break;
         editor.isDownloading = true;
-        editor.downloadError = null;
+        editor.warningsModule.Clear();
         editor.Repaint();
         
         string tempZipPath = Path.Combine(Path.GetTempPath(), $"ultipaw_dl_{Guid.NewGuid()}.zip");
@@ -106,7 +106,7 @@ public class VersionActions
         
         if (!setupSucceeded)
         {
-            editor.downloadError = "Failed to start download task";
+            editor.warningsModule.AddWarning("Failed to start download task", MessageType.Error, "Download failed");
             editor.isDownloading = false;
             editor.Repaint();
             yield break;
@@ -128,7 +128,7 @@ public class VersionActions
         {
             if (!success)
             {
-                editor.downloadError = error;
+                editor.warningsModule.AddWarning(error, MessageType.Error, "Download failed");
             }
             else
             {
@@ -144,7 +144,7 @@ public class VersionActions
         }
         catch (Exception e) 
         { 
-            editor.downloadError = $"Extraction failed: {e.Message}"; 
+            editor.warningsModule.AddWarning($"Extraction failed: {e.Message}", MessageType.Error, "Extraction failed"); 
         }
         finally
         {
@@ -178,7 +178,7 @@ public class VersionActions
     {
         if (editor.isDeleting) yield break;
         editor.isDeleting = true;
-        editor.deleteError = null;
+        editor.warningsModule.Clear();
         editor.Repaint();
 
         string path = UltiPawUtils.GetVersionDataPath(version.version, version.defaultAviVersion);
@@ -188,7 +188,7 @@ public class VersionActions
             fileManagerService.DeleteVersionFolder(path);
             deleted = true;
         }
-        catch (Exception e) { editor.deleteError = $"Failed to delete folder: {e.Message}"; }
+        catch (Exception e) { editor.warningsModule.AddWarning($"Failed to delete folder: {e.Message}", MessageType.Error, "Deletion failed"); }
 
         yield return null;
 
@@ -503,9 +503,7 @@ public class VersionActions
     
     public void DisplayErrors()
     {
-        if (!string.IsNullOrEmpty(editor.fetchError)) EditorGUILayout.HelpBox(editor.fetchError, MessageType.Error);
-        if (!string.IsNullOrEmpty(editor.downloadError)) EditorGUILayout.HelpBox(editor.downloadError, MessageType.Warning);
-        if (!string.IsNullOrEmpty(editor.deleteError)) EditorGUILayout.HelpBox(editor.deleteError, MessageType.Warning);
+        // Deprecated: Errors are now handled by WarningsModule
     }
     
     public void UpdateCurrentBaseFbxHash()

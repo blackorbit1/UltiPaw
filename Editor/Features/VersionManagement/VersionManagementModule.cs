@@ -51,7 +51,6 @@ public class VersionManagementModule
     {
         // TODO fileConfigDrawer.Draw();
         DrawFetchUpdatesButton();
-        actions.DisplayErrors();
         
         // Special UI when user doesn't have access to the asset
         if (!string.IsNullOrEmpty(editor.accessDeniedAssetId))
