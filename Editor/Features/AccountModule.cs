@@ -112,7 +112,18 @@ public class AccountModule
         var loggedAsStyle = new GUIStyle(EditorStyles.miniLabel);
         loggedAsStyle.normal.textColor = new Color(0.6f, 0.6f, 0.6f); // gray label
         GUILayout.Label("logged as", loggedAsStyle);
+
+        EditorGUILayout.BeginHorizontal();
         GUILayout.Label(string.IsNullOrEmpty(userName) ? "(unknown)" : userName, EditorStyles.boldLabel);
+
+        // Environment chip
+        if (UltiPawUtils.isDevEnvironment)
+        {
+            GUILayout.Space(6);
+            EditorUIUtils.DrawChipLabel("dev", EditorUIUtils.OrangeColor, Color.white, Color.black, 40, 16, 6f, 1f);
+        }
+        EditorGUILayout.EndHorizontal();
+
         GUILayout.FlexibleSpace();
         EditorGUILayout.EndVertical();
 
@@ -126,7 +137,7 @@ public class AccountModule
         {
             if (EditorUtility.DisplayDialog("Confirm Logout", "Are you sure you want to log out?", "Logout", "Cancel"))
             {
-                if (AuthenticationModule.RemoveAuth())
+                if (AuthenticationService.RemoveAuth())
                 {
                     editor.isAuthenticated = false;
                     editor.authToken = null;
@@ -207,7 +218,7 @@ public class AccountModule
 
     private void LoadAuthData()
     {
-        var auth = AuthenticationModule.GetAuth();
+        var auth = AuthenticationService.GetAuth();
         if (auth == null)
         {
             // Fallback to editor state if available (e.g., auth loaded elsewhere)

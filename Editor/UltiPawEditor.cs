@@ -334,7 +334,7 @@ public class UltiPawEditor : UnityEditor.Editor
         {
             if (EditorUtility.DisplayDialog("Confirm Logout", "Are you sure you want to log out?", "Logout", "Cancel"))
             {
-                if (AuthenticationModule.RemoveAuth())
+                if (AuthenticationService.RemoveAuth())
                 {
                     isAuthenticated = false;
                     authToken = null;
@@ -408,7 +408,7 @@ public class UltiPawEditor : UnityEditor.Editor
     
     public void CheckAuthentication()
     {
-        authToken = AuthenticationModule.GetAuth()?.token;
+        authToken = AuthenticationService.GetAuth()?.token;
         isAuthenticated = !string.IsNullOrEmpty(authToken);
         accountModule?.Refresh();
     }

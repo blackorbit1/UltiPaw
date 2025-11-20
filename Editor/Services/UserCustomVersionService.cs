@@ -128,7 +128,7 @@ public class UserCustomVersionService
             }
         }
 
-        var auth = AuthenticationModule.GetAuth();
+        var auth = AuthenticationService.GetAuth();
 
         var entry = new UserCustomVersionEntry
         {

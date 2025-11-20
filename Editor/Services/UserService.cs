@@ -93,7 +93,7 @@ public class UserService
         string tokenToUse = overrideToken;
         if (string.IsNullOrEmpty(tokenToUse))
         {
-            var auth = AuthenticationModule.GetAuth();
+            var auth = AuthenticationService.GetAuth();
             if (auth != null) tokenToUse = auth.token;
         }
         

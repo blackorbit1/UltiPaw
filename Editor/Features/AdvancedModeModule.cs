@@ -46,14 +46,47 @@ public class AdvancedModeModule
             {
                 EditorGUI.indentLevel++;
                 
-                // Dev Environment checkbox
+                // Dev Environment checkbox + Magic Sync per environment
                 bool currentDevEnvironment = UltiPawUtils.isDevEnvironment;
                 bool newDevEnvironment = EditorGUILayout.Toggle("Dev Environment", currentDevEnvironment);
                 
                 if (newDevEnvironment != currentDevEnvironment)
                 {
                     UltiPawUtils.isDevEnvironment = newDevEnvironment;
+                    editor.CheckAuthentication(); // Refresh auth token for the selected environment
                 }
+
+                // Magic Sync buttons for each environment
+                EditorGUILayout.BeginHorizontal();
+                GUILayout.Space(EditorGUI.indentLevel * 15);
+                if (GUILayout.Button("Magic Sync Prod", GUILayout.Width(140)))
+                {
+                    AuthenticationService.RegisterAuthForEnv(false).ContinueWith(task =>
+                    {
+                        UnityEditor.EditorApplication.delayCall += () =>
+                        {
+                            if (!UltiPawUtils.isDevEnvironment)
+                            {
+                                editor.CheckAuthentication();
+                            }
+                        };
+                    });
+                }
+
+                if (GUILayout.Button("Magic Sync Dev", GUILayout.Width(140)))
+                {
+                    AuthenticationService.RegisterAuthForEnv(true).ContinueWith(task =>
+                    {
+                        UnityEditor.EditorApplication.delayCall += () =>
+                        {
+                            if (UltiPawUtils.isDevEnvironment)
+                            {
+                                editor.CheckAuthentication();
+                            }
+                        };
+                    });
+                }
+                EditorGUILayout.EndHorizontal();
 
                 // Refresh account state button
                 EditorGUILayout.BeginHorizontal();  
