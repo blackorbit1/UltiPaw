@@ -109,6 +109,7 @@ public class UserService
         
         using (UnityWebRequest request = UnityWebRequest.Get(url))
         {
+            request.timeout = NetworkService.GetTimeoutSeconds(NetworkRequestType.UserInfo);
             yield return request.SendWebRequest();
             
             pendingRequests.Remove(userId);
@@ -131,7 +132,7 @@ public class UserService
             else
             {
                 failedRequests.Add(userId);
-                UltiPawLogger.LogWarning($"[UltiPaw] Failed to fetch user info for ID {userId}: {request.error}, url: ");
+                UltiPawLogger.LogWarning($"[UltiPaw] Failed to fetch user info for ID {userId}: {request.error}, url: {url}");
             }
             
             onComplete?.Invoke();
@@ -151,6 +152,7 @@ public class UserService
 
         using (UnityWebRequest request = UnityWebRequestTexture.GetTexture(avatarUrl))
         {
+            request.timeout = NetworkService.GetTimeoutSeconds(NetworkRequestType.AvatarDownload);
             yield return request.SendWebRequest();
 
             if (request.result == UnityWebRequest.Result.Success)
@@ -351,6 +353,29 @@ public class UserService
         catch (System.Exception ex)
         {
             UltiPawLogger.LogError($"[UltiPaw] Failed to flush user cache: {ex.Message}");
+        }
+    }
+
+    public static void ClearUserCache(int userId)
+    {
+        try
+        {
+            if (userCache.ContainsKey(userId)) userCache.Remove(userId);
+            if (avatarCache.ContainsKey(userId)) avatarCache.Remove(userId);
+            if (pendingRequests.Contains(userId)) pendingRequests.Remove(userId);
+            if (failedRequests.Contains(userId)) failedRequests.Remove(userId);
+            
+            // Delete local file
+            string localPath = Path.Combine(AVATARS_FOLDER, $"avatar_{userId}.png");
+            if (File.Exists(localPath))
+            {
+                File.Delete(localPath);
+                UltiPawLogger.Log($"[UltiPaw] Deleted cached avatar file for user {userId}");
+            }
+        }
+        catch (Exception ex)
+        {
+            UltiPawLogger.LogError($"[UltiPaw] Failed to clear cache for user {userId}: {ex.Message}");
         }
     }
     

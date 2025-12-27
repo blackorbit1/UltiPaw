@@ -290,6 +290,14 @@ public class AccountModule
     {
         if (!accountUserId.HasValue) return;
 
+        // If forcing, clear the cache (memory + disk) immediately so we re-fetch everything
+        if (force)
+        {
+            UserService.ClearUserCache(accountUserId.Value);
+            avatarTexture = null; 
+            userInfoRequested = false; // Reset request flag so we can request again
+        }
+
         ApplyUserInfoFromCache();
 
         bool hasInfo = UserService.IsUserInfoAvailable(accountUserId.Value);

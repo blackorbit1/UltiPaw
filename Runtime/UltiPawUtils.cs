@@ -51,7 +51,7 @@ public static class UltiPawUtils
     public const string CHECK_CONNECTION_ENDPOINT = "/check-connection";
     public static readonly string PACKAGE_BASE_FOLDER_FULL_PATH = Path.Combine(Application.dataPath, "UltiPaw");
 
-    public static HttpClient client = new HttpClient();
+    public static HttpClient client = new HttpClient() { Timeout = System.TimeSpan.FromSeconds(30) };
     
     public static string getApiUrl(string scope = "unity-wizard")
     {

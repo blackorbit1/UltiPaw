@@ -116,6 +116,14 @@ public static class EditorCoroutineUtility
                 return coroutine.MoveNext();
             }
 
+            if (yielded is AsyncOperation asyncOp)
+            {
+                if (!asyncOp.isDone)
+                {
+                    return true;
+                }
+            }
+
             if (yielded is not Coroutine) return coroutine.MoveNext();
             UltiPawLogger.LogWarning(
                 "EditorCoroutineUtility: Yielding on 'UnityEngine.Coroutine' is not supported in the editor. Use 'yield return null' or another IEnumerator.");

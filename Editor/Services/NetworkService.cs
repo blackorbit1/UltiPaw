@@ -10,12 +10,37 @@ using UnityEditor;
 using UnityEngine;
 using UnityEngine.Networking;
 
+public enum NetworkRequestType
+{
+    UserInfo,
+    AvatarDownload,
+    VersionFetch,
+    ModelDownload,
+    Upload,
+    ConnectionCheck
+}
+
 public class NetworkService
 {
+    public static int GetTimeoutSeconds(NetworkRequestType type)
+    {
+        switch (type)
+        {
+            case NetworkRequestType.UserInfo: return 2;
+            case NetworkRequestType.AvatarDownload: return 10;
+            case NetworkRequestType.VersionFetch: return 5;
+            case NetworkRequestType.ModelDownload: return 180;
+            case NetworkRequestType.Upload: return 300;
+            case NetworkRequestType.ConnectionCheck: return 3;
+            default: return 30;
+        }
+    }
+
     public async Task<(bool success, UltiPawVersionResponse response, string error)> FetchVersionsAsync(string url)
     {
         using (var req = UnityWebRequest.Get(url))
         {
+            req.timeout = GetTimeoutSeconds(NetworkRequestType.VersionFetch);
             await req.SendWebRequest();
 
             // Special handling: access denied for asset (backend may return 203 or 204 with JSON { error, assetId })
@@ -162,13 +187,14 @@ public class NetworkService
 
             try
             {
+                req.timeout = GetTimeoutSeconds(NetworkRequestType.ConnectionCheck);
                 await req.SendWebRequest();
                 if (req.result != UnityWebRequest.Result.Success)
                 {
                     long code = req.responseCode;
                     string body = null;
                     try { body = req.downloadHandler?.text; } catch { /* ignore */ }
-                    UltiPawLogger.LogWarning($"[UltiPaw] Connection check failed: [{code}] {req.error} {(string.IsNullOrEmpty(body) ? string.Empty : "- " + body)}");
+                    UltiPawLogger.LogWarning($"[UltiPaw] Connection check failed: [{code}] [url: {url}] {req.error} {(string.IsNullOrEmpty(body) ? string.Empty : "- " + body)}");
                     return "disconnected";
                 }
 
