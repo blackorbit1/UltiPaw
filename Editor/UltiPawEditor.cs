@@ -282,7 +282,6 @@ public class UltiPawEditor : UnityEditor.Editor
                 SafeUiCall(() => versionModule.Draw());
                 SafeUiCall(() => avatarOptionsModule?.Draw());
                 SafeUiCall(() => adjustMaterialModule?.Draw());
-                SafeUiCall(DrawHelpBox);
             }
 
             // Logout moved to AccountModule
@@ -404,16 +403,6 @@ public class UltiPawEditor : UnityEditor.Editor
         Rect rect = GUILayoutUtility.GetRect(desiredWidth, desiredWidth / aspect);
         GUI.DrawTexture(rect, bannerTexture, ScaleMode.StretchToFill);
         GUILayout.Space(5);
-    }
-    
-    private void DrawHelpBox()
-    {
-        EditorGUILayout.Space();
-        EditorGUILayout.HelpBox(
-            "1. Ensure Base FBX is detected/assigned correctly.\n" +
-            "2. Click 'Check for Updates' to find compatible versions.\n" +
-            "3. Select a version and use the action buttons to apply or reset.",
-            MessageType.Info);
     }
     
     public void CheckAuthentication()
