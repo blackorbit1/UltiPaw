@@ -105,6 +105,9 @@ public class UltiPawEditor : UnityEditor.Editor
         creatorModule.Initialize();
         CheckAuthentication();
         
+        // Ensure modules are enabled
+        versionModule.OnEnable();
+        
         // Start async initialization
         StartAsyncInitialization();
         
@@ -244,8 +247,12 @@ public class UltiPawEditor : UnityEditor.Editor
         if (baseFbxFilesProp.arraySize > 0)
         {
             var fbx = baseFbxFilesProp.GetArrayElementAtIndex(0).objectReferenceValue as GameObject;
-            return fbx != null ? AssetDatabase.GetAssetPath(fbx) : null;
+            if (fbx != null) return AssetDatabase.GetAssetPath(fbx);
         }
+        
+        // Fallback to default Winterpaw if none assigned (maintain consistency with VersionActions)
+        string defaultPath = "Assets/MasculineCanine/FX/MasculineCanine.v1.5.fbx";
+        if (File.Exists(defaultPath)) return defaultPath;
         return null;
     }
 
