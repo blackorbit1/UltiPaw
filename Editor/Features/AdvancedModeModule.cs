@@ -165,6 +165,23 @@ public class AdvancedModeModule
                             dynamicNormalsService.Remove();
                         }
                     }
+
+                    if (editor.ultiPawTarget.useDynamicNormals)
+                    {
+                        EditorGUI.indentLevel++;
+                        EditorGUI.BeginChangeCheck();
+                        bool useAPose = EditorGUILayout.Toggle(new GUIContent("Use A-Pose for Calculation", "Spreads the legs during calculation to prevent clipping artifacts on the inner thighs. Recommended for muscle blendshapes."), editor.ultiPawTarget.useAPoseForDynamicNormals);
+                        if (EditorGUI.EndChangeCheck())
+                        {
+                            editor.ultiPawTarget.useAPoseForDynamicNormals = useAPose;
+                            EditorUtility.SetDirty(editor.ultiPawTarget);
+                            
+                            // Re-apply to take the new pose into account
+                            dynamicNormalsService.Remove();
+                            dynamicNormalsService.Apply();
+                        }
+                        EditorGUI.indentLevel--;
+                    }
                     
                     // Flush cache button
                     EditorGUILayout.BeginHorizontal();

@@ -92,11 +92,40 @@ public class DynamicNormalsService
                 Debug.Log($"[DynamicNormals] Stored original mesh reference: {bodyMesh.sharedMesh.name}");
             }
             
-            DynamicNormals.ForRoot(root)
+            var dn = DynamicNormals.ForRoot(root)
                 .limitToMeshes(new[] { bodyMesh })
                 .applyToBlendshapes(targetBlendshapes)
-                .enable(true)
-                .Apply();
+                .enable(true);
+
+            if (editor.ultiPawTarget.useAPoseForDynamicNormals)
+            {
+                var rotations = new Dictionary<string, Quaternion>(System.StringComparer.OrdinalIgnoreCase);
+                // Common leg bone names for spreading legs (A-pose)
+                string[] leftLegs = { "L_Thigh", "LeftUpperLeg", "thigh.L", "Leg_L", "L_UpperLeg", "Left leg" };
+                string[] rightLegs = { "R_Thigh", "RightUpperLeg", "thigh.R", "Leg_R", "R_UpperLeg", "Right leg" };
+                
+                // Find actual bone names in the SMR and apply spread
+                foreach (var bone in bodyMesh.bones)
+                {
+                    if (bone == null) continue;
+                    if (leftLegs.Any(n => bone.name.Equals(n, System.StringComparison.OrdinalIgnoreCase)))
+                        rotations[bone.name] = Quaternion.Euler(0, 0, 40f); // Spread left outward
+                    if (rightLegs.Any(n => bone.name.Equals(n, System.StringComparison.OrdinalIgnoreCase)))
+                        rotations[bone.name] = Quaternion.Euler(0, 0, -40f); // Spread right outward
+                }
+                
+                if (rotations.Count > 0)
+                {
+                    dn.withBoneRotations(rotations);
+                    Debug.Log($"[DynamicNormals] Applied A-pose spread to {rotations.Count} leg bones for calculation.");
+                }
+                else
+                {
+                    Debug.LogWarning("[DynamicNormals] A-pose enabled but no leg bones were identified by name.");
+                }
+            }
+
+            dn.Apply();
 
             activeBlendshapes = targetBlendshapes;
             Debug.Log($"[DynamicNormals] Applied to {targetBlendshapes.Count} blendshapes on Body mesh: {string.Join(", ", targetBlendshapes)}");

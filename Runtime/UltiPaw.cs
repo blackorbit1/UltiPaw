@@ -43,6 +43,9 @@ public class UltiPaw : MonoBehaviour
     [Tooltip("Enable/disable dynamic normals recalculation for blendshapes.")]
     [HideInInspector] public bool useDynamicNormals = true;
 
+    [Tooltip("Use an A-Pose instead of T-Pose for dynamic normal calculations to prevent thigh clipping.")]
+    [HideInInspector] public bool useAPoseForDynamicNormals = true;
+
     // --- CREATOR MODE PERSISTENT DATA ---
     [HideInInspector] public bool isCreatorMode = false;
     [HideInInspector] public GameObject customFbxForCreator;

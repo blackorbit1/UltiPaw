@@ -19,6 +19,7 @@ namespace UltiPawEditorUtils
         private readonly HashSet<SkinnedMeshRenderer> _limitedMeshes = new HashSet<SkinnedMeshRenderer>();
         private readonly HashSet<string> _targetBlendshapes = new HashSet<string>(StringComparer.Ordinal);
         private readonly HashSet<string> _eraseCustomSplitBlendshapes = new HashSet<string>(StringComparer.Ordinal);
+        private readonly Dictionary<string, Quaternion> _boneRotations = new Dictionary<string, Quaternion>(StringComparer.OrdinalIgnoreCase);
 
         public DynamicNormals(Transform root)
         {
@@ -76,6 +77,18 @@ namespace UltiPawEditorUtils
             return this;
         }
 
+        public DynamicNormals withBoneRotations(IDictionary<string, Quaternion> rotations)
+        {
+            if (rotations != null)
+            {
+                foreach (var kvp in rotations)
+                {
+                    _boneRotations[kvp.Key] = kvp.Value;
+                }
+            }
+            return this;
+        }
+
         public DynamicNormals eraseCustomSplitNormalsFor(IEnumerable<string> blendshapes)
         {
             _eraseCustomSplitBlendshapes.Clear();
@@ -130,11 +143,11 @@ namespace UltiPawEditorUtils
                         .Distinct()
                         .ToList();
 
-                RecalculateNormalsOf(smr, blendShapeNames, applicableBlendShapes, eraseCustom);
+                RecalculateNormalsOf(smr, blendShapeNames, applicableBlendShapes, eraseCustom, _boneRotations);
             }
         }
 
-        private static void RecalculateNormalsOf(SkinnedMeshRenderer smr, List<string> smrBlendShapes, List<string> applicableBlendShapes, List<string> eraseCustomSplitNormalsBlendShapes)
+        private static void RecalculateNormalsOf(SkinnedMeshRenderer smr, List<string> smrBlendShapes, List<string> applicableBlendShapes, List<string> eraseCustomSplitNormalsBlendShapes, Dictionary<string, Quaternion> boneRotations)
         {
             var originalMesh = smr.sharedMesh;
             if (originalMesh == null) return;
@@ -151,7 +164,7 @@ namespace UltiPawEditorUtils
                 }
 
                 var bindPoseBones = originalMesh.bindposes
-                    .Select(bindPose =>
+                    .Select((bindPose, index) =>
                     {
                         var inverse = Matrix4x4.Inverse(bindPose);
                         var go = new GameObject { hideFlags = HideFlags.HideAndDontSave };
@@ -160,6 +173,16 @@ namespace UltiPawEditorUtils
                         go.transform.localPosition = pos;
                         go.transform.localRotation = rot;
                         go.transform.localScale = scale;
+
+                        if (boneRotations != null && index < smr.bones.Length)
+                        {
+                            var bone = smr.bones[index];
+                            if (bone != null && boneRotations.TryGetValue(bone.name, out var offset))
+                            {
+                                go.transform.localRotation *= offset;
+                            }
+                        }
+
                         return go.transform;
                     })
                     .ToArray();
