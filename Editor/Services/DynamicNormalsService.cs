@@ -99,29 +99,40 @@ public class DynamicNormalsService
 
             if (editor.ultiPawTarget.useAPoseForDynamicNormals)
             {
-                var rotations = new Dictionary<string, Quaternion>(System.StringComparer.OrdinalIgnoreCase);
-                // Common leg bone names for spreading legs (A-pose)
-                string[] leftLegs = { "L_Thigh", "LeftUpperLeg", "thigh.L", "Leg_L", "L_UpperLeg", "Left leg" };
-                string[] rightLegs = { "R_Thigh", "RightUpperLeg", "thigh.R", "Leg_R", "R_UpperLeg", "Right leg" };
+                var translations = new Dictionary<string, Vector3>(System.StringComparer.OrdinalIgnoreCase);
                 
-                // Find actual bone names in the SMR and apply spread
+                // Identify the root thigh bones
+                string[] leftThighNames = { "L_Thigh", "LeftUpperLeg", "thigh.L", "Leg_L", "L_UpperLeg", "Left leg" };
+                string[] rightThighNames = { "R_Thigh", "RightUpperLeg", "thigh.R", "Leg_R", "R_UpperLeg", "Right leg" };
+
+                // We want to find the thigh bones and all their children in the SMR's bone array
+                var leftLegBones = new HashSet<Transform>();
+                var rightLegBones = new HashSet<Transform>();
+
                 foreach (var bone in bodyMesh.bones)
                 {
                     if (bone == null) continue;
-                    if (leftLegs.Any(n => bone.name.Equals(n, System.StringComparison.OrdinalIgnoreCase)))
-                        rotations[bone.name] = Quaternion.Euler(0, 0, 40f); // Spread left outward
-                    if (rightLegs.Any(n => bone.name.Equals(n, System.StringComparison.OrdinalIgnoreCase)))
-                        rotations[bone.name] = Quaternion.Euler(0, 0, -40f); // Spread right outward
+
+                    bool isLeftThigh = leftThighNames.Any(n => bone.name.Equals(n, System.StringComparison.OrdinalIgnoreCase));
+                    bool isRightThigh = rightThighNames.Any(n => bone.name.Equals(n, System.StringComparison.OrdinalIgnoreCase));
+
+                    if (isLeftThigh) AddHierarchyToSet(bone, leftLegBones);
+                    if (isRightThigh) AddHierarchyToSet(bone, rightLegBones);
                 }
-                
-                if (rotations.Count > 0)
+
+                // Apply massive translation to ensure no overlap
+                // This doesn't affect normals because it's pure translation
+                foreach (var bone in leftLegBones) translations[bone.name] = new Vector3(-0.15f, 0, 0);
+                foreach (var bone in rightLegBones) translations[bone.name] = new Vector3(0.15f, 0, 0);
+
+                if (translations.Count > 0)
                 {
-                    dn.withBoneRotations(rotations);
-                    Debug.Log($"[DynamicNormals] Applied A-pose spread to {rotations.Count} leg bones for calculation.");
+                    dn.withBoneTranslations(translations);
+                    Debug.Log($"[DynamicNormals] Applied leg separation translation to {translations.Count} bones.");
                 }
                 else
                 {
-                    Debug.LogWarning("[DynamicNormals] A-pose enabled but no leg bones were identified by name.");
+                    Debug.LogWarning("[DynamicNormals] Leg separation enabled but no leg bones were identified by name.");
                 }
             }
 
@@ -318,6 +329,16 @@ public class DynamicNormalsService
         else
         {
             Debug.Log($"[DynamicNormals] No dynamic normals asset found at: {assetPath}");
+        }
+    }
+
+    private void AddHierarchyToSet(Transform root, HashSet<Transform> set)
+    {
+        if (root == null) return;
+        set.Add(root);
+        foreach (Transform child in root)
+        {
+            AddHierarchyToSet(child, set);
         }
     }
 }

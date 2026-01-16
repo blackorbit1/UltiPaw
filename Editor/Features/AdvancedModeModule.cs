@@ -170,7 +170,7 @@ public class AdvancedModeModule
                     {
                         EditorGUI.indentLevel++;
                         EditorGUI.BeginChangeCheck();
-                        bool useAPose = EditorGUILayout.Toggle(new GUIContent("Use A-Pose for Calculation", "Spreads the legs during calculation to prevent clipping artifacts on the inner thighs. Recommended for muscle blendshapes."), editor.ultiPawTarget.useAPoseForDynamicNormals);
+                        bool useAPose = EditorGUILayout.Toggle(new GUIContent("Use Leg Separation", "Separates the legs during calculation to prevent clipping artifacts on the inner thighs. Uses pure translation to avoid deforming the knees."), editor.ultiPawTarget.useAPoseForDynamicNormals);
                         if (EditorGUI.EndChangeCheck())
                         {
                             editor.ultiPawTarget.useAPoseForDynamicNormals = useAPose;

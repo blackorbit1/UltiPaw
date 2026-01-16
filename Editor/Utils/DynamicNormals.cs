@@ -20,6 +20,7 @@ namespace UltiPawEditorUtils
         private readonly HashSet<string> _targetBlendshapes = new HashSet<string>(StringComparer.Ordinal);
         private readonly HashSet<string> _eraseCustomSplitBlendshapes = new HashSet<string>(StringComparer.Ordinal);
         private readonly Dictionary<string, Quaternion> _boneRotations = new Dictionary<string, Quaternion>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, Vector3> _boneTranslations = new Dictionary<string, Vector3>(StringComparer.OrdinalIgnoreCase);
 
         public DynamicNormals(Transform root)
         {
@@ -89,6 +90,18 @@ namespace UltiPawEditorUtils
             return this;
         }
 
+        public DynamicNormals withBoneTranslations(IDictionary<string, Vector3> translations)
+        {
+            if (translations != null)
+            {
+                foreach (var kvp in translations)
+                {
+                    _boneTranslations[kvp.Key] = kvp.Value;
+                }
+            }
+            return this;
+        }
+
         public DynamicNormals eraseCustomSplitNormalsFor(IEnumerable<string> blendshapes)
         {
             _eraseCustomSplitBlendshapes.Clear();
@@ -143,11 +156,11 @@ namespace UltiPawEditorUtils
                         .Distinct()
                         .ToList();
 
-                RecalculateNormalsOf(smr, blendShapeNames, applicableBlendShapes, eraseCustom, _boneRotations);
+                RecalculateNormalsOf(smr, blendShapeNames, applicableBlendShapes, eraseCustom, _boneRotations, _boneTranslations);
             }
         }
 
-        private static void RecalculateNormalsOf(SkinnedMeshRenderer smr, List<string> smrBlendShapes, List<string> applicableBlendShapes, List<string> eraseCustomSplitNormalsBlendShapes, Dictionary<string, Quaternion> boneRotations)
+        private static void RecalculateNormalsOf(SkinnedMeshRenderer smr, List<string> smrBlendShapes, List<string> applicableBlendShapes, List<string> eraseCustomSplitNormalsBlendShapes, Dictionary<string, Quaternion> boneRotations, Dictionary<string, Vector3> boneTranslations)
         {
             var originalMesh = smr.sharedMesh;
             if (originalMesh == null) return;
@@ -180,6 +193,15 @@ namespace UltiPawEditorUtils
                             if (bone != null && boneRotations.TryGetValue(bone.name, out var offset))
                             {
                                 go.transform.localRotation *= offset;
+                            }
+                        }
+
+                        if (boneTranslations != null && index < smr.bones.Length)
+                        {
+                            var bone = smr.bones[index];
+                            if (bone != null && boneTranslations.TryGetValue(bone.name, out var offset))
+                            {
+                                go.transform.localPosition += offset;
                             }
                         }
 

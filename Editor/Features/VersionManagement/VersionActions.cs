@@ -337,7 +337,7 @@ public class VersionActions
             
             if (shouldApplyDynamicNormals)
             {
-                bool applyBody = hasDynamicNormalBody || hasCustomVeins;
+                bool applyBody = hasDynamicNormalBody;
                 bool applyFlex = hasDynamicNormalFlexing;
                 UltiPawLogger.Log("[VersionActions] Applying dynamic normals.");
                 dynamicNormalsService.Apply(applyBody, applyFlex);
