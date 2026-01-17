@@ -190,9 +190,14 @@ public class VersionActions
         }
         catch (Exception e) { editor.warningsModule.AddWarning($"Failed to delete folder: {e.Message}", MessageType.Error, "Deletion failed"); }
 
-        yield return null;
-
-        if (deleted) AssetDatabase.Refresh();
+        if (deleted)
+        {
+            if (version.isUnsubmitted)
+            {
+                editor.creatorModule.RemoveUnsubmittedVersion(version);
+            }
+            AssetDatabase.Refresh();
+        }
 
         editor.isDeleting = false;
         editor.Repaint();

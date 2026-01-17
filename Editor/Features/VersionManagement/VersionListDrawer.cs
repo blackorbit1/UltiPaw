@@ -637,7 +637,8 @@ public class VersionListDrawer
         }
         
         // Download/Delete button
-        var actionIcon = isDownloaded ? EditorGUIUtility.IconContent("TreeEditor.Trash") : EditorGUIUtility.IconContent("Download-Available");
+        bool showTrashIcon = isDownloaded || ver.isUnsubmitted;
+        var actionIcon = showTrashIcon ? EditorGUIUtility.IconContent("TreeEditor.Trash") : EditorGUIUtility.IconContent("Download-Available");
         Rect actionRect = GUILayoutUtility.GetRect(22, 22, GUILayout.Width(22), GUILayout.Height(22));
         
         if (Event.current.type == EventType.Repaint)
@@ -651,9 +652,10 @@ public class VersionListDrawer
         
         if (Event.current.type == EventType.MouseDown && Event.current.button == 0 && actionRect.Contains(Event.current.mousePosition))
         {
-            if (isDownloaded)
+            if (showTrashIcon)
             {
-                if (EditorUtility.DisplayDialog("Confirm Delete", $"Delete local files for version {ver.version}?", "Delete", "Cancel"))
+                string confirmMsg = ver.isUnsubmitted ? $"Delete unsubmitted version {ver.version}? This will remove it from the list." : $"Delete local files for version {ver.version}?";
+                if (EditorUtility.DisplayDialog("Confirm Delete", confirmMsg, "Delete", "Cancel"))
                     actions.StartVersionDelete(ver);
             }
             else

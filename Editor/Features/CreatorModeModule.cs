@@ -652,7 +652,7 @@ public class CreatorModeModule
         editor.Repaint();
     }
 
-    private void RemoveUnsubmittedVersion(UltiPawVersion versionToRemove)
+    public void RemoveUnsubmittedVersion(UltiPawVersion versionToRemove)
     {
         string path = UltiPawUtils.UNSUBMITTED_VERSIONS_FILE;
         if (!File.Exists(path)) return;
@@ -748,46 +748,58 @@ public class CreatorModeModule
     {
         editor.isSubmitting = true;
         editor.submitError = "";
+        editor.warningsModule.Clear();
         editor.Repaint();
 
         (UltiPawVersion metadata, string zipPath) buildResult = default;
         Exception buildError = null;
 
-        try { buildResult = BuildNewVersion(); }
-        catch (Exception ex) { buildError = ex; }
-
-        if (buildError != null)
+        try
         {
-            editor.submitError = buildError.Message;
-            UltiPawLogger.LogError($"[CreatorMode] Test Build failed: {buildError}");
+            try { buildResult = BuildNewVersion(); }
+            catch (Exception ex) { buildError = ex; }
+
+            if (buildError != null)
+            {
+                editor.submitError = buildError.Message;
+                editor.warningsModule.AddWarning(buildError.Message, MessageType.Error, "Test Build Failed");
+                UltiPawLogger.LogError($"[CreatorMode] Test Build failed: {buildError}");
+            }
+            else
+            {
+                SaveUnsubmittedVersion(buildResult.metadata);
+                var versionActions = new VersionActions(editor, networkService, fileManagerService);
+                
+                AssetDatabase.Refresh();
+                while(EditorApplication.isCompiling || EditorApplication.isUpdating) { yield return null; }
+
+                // Apply the newly built version
+                yield return versionActions.ApplyOrResetCoroutine(buildResult.metadata, false);
+            }
         }
-        else
+        finally
         {
-            SaveUnsubmittedVersion(buildResult.metadata);
-            var versionActions = new VersionActions(editor, networkService, fileManagerService);
+            if (!string.IsNullOrEmpty(buildResult.zipPath) && File.Exists(buildResult.zipPath))
+            {
+                File.Delete(buildResult.zipPath);
+            }
             
-            AssetDatabase.Refresh();
-            while(EditorApplication.isCompiling || EditorApplication.isUpdating) { yield return null; }
+            editor.isSubmitting = false;
+            EditorUtility.ClearProgressBar();
+            editor.Repaint();
+        }
 
-            // Apply the newly built version
-            yield return versionActions.ApplyOrResetCoroutine(buildResult.metadata, false);
-            
+        if (buildError == null)
+        {
             EditorUtility.DisplayDialog("Test Build Complete", $"Version {buildResult.metadata.version} has been built and applied locally. You can find it in the version list.", "OK");
         }
-
-        if (!string.IsNullOrEmpty(buildResult.zipPath) && File.Exists(buildResult.zipPath))
-        {
-            File.Delete(buildResult.zipPath);
-        }
-        editor.isSubmitting = false;
-        EditorUtility.ClearProgressBar();
-        editor.Repaint();
     }
     
     public IEnumerator UploadUnsubmittedVersionCoroutine(UltiPawVersion unsubmittedVersion)
     {
         editor.isSubmitting = true;
         editor.submitError = "";
+        editor.warningsModule.Clear();
         editor.Repaint();
 
         string zipPath = null;
@@ -851,6 +863,7 @@ public class CreatorModeModule
             while (!uploadTask.IsCompleted) { yield return null; }
         }
 
+        bool uploadSucceeded = false;
         try
         {
             if (error != null) throw error;
@@ -860,7 +873,7 @@ public class CreatorModeModule
                 var (success, response, uploadError) = uploadTask.Result;
                 if (!success) throw new Exception(uploadError);
 
-                EditorUtility.DisplayDialog("Upload Successful", $"UltiPaw version {unsubmittedVersion.version} has been uploaded.", "OK");
+                uploadSucceeded = true;
                 RemoveUnsubmittedVersion(unsubmittedVersion);
                 new VersionActions(editor, networkService, fileManagerService).StartVersionFetch();
             }
@@ -868,6 +881,7 @@ public class CreatorModeModule
         catch (Exception ex)
         {
             editor.submitError = ex.Message;
+            editor.warningsModule.AddWarning(ex.Message, MessageType.Error, "Upload Failed");
             UltiPawLogger.LogError($"[CreatorMode] Upload failed: {ex}, url: {uploadUrl}");
         }
         finally
@@ -879,12 +893,18 @@ public class CreatorModeModule
             editor.isSubmitting = false;
             editor.Repaint();
         }
+
+        if (uploadSucceeded)
+        {
+            EditorUtility.DisplayDialog("Upload Successful", $"UltiPaw version {unsubmittedVersion.version} has been uploaded.", "OK");
+        }
     }
 
     private IEnumerator SubmitNewVersionCoroutine()
     {
         editor.isSubmitting = true;
         editor.submitError = "";
+        editor.warningsModule.Clear();
         editor.Repaint();
 
         (UltiPawVersion metadata, string zipPath) buildResult = default;
@@ -910,6 +930,7 @@ public class CreatorModeModule
             while (!uploadTask.IsCompleted) { yield return null; }
         }
 
+        bool submissionSucceeded = false;
         try
         {
             if (error != null) throw error;
@@ -919,7 +940,7 @@ public class CreatorModeModule
                 var (success, response, uploadError) = uploadTask.Result;
                 if (!success) throw new Exception(uploadError);
 
-                EditorUtility.DisplayDialog("Upload Successful", $"New UltiPaw version {buildResult.metadata.version} has been uploaded.", "OK");
+                submissionSucceeded = true;
                 RemoveUnsubmittedVersion(buildResult.metadata);
                 new VersionActions(editor, networkService, fileManagerService).StartVersionFetch();
             }
@@ -927,6 +948,7 @@ public class CreatorModeModule
         catch (Exception ex)
         {
             editor.submitError = ex.Message;
+            editor.warningsModule.AddWarning(ex.Message, MessageType.Error, "Submission Failed");
             UltiPawLogger.LogError($"[CreatorMode] Submission failed: {ex}, url: {uploadUrl}");
         }
         finally
@@ -937,6 +959,11 @@ public class CreatorModeModule
             
             editor.isSubmitting = false;
             editor.Repaint();
+        }
+
+        if (submissionSucceeded)
+        {
+            EditorUtility.DisplayDialog("Upload Successful", $"New UltiPaw version {buildResult.metadata.version} has been uploaded.", "OK");
         }
     }
 }
