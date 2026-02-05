@@ -10,6 +10,8 @@ public class CustomBlendshapeEntry
 {
     [JsonProperty] public string name;
     [JsonProperty] public string defaultValue;
+    [JsonProperty] public bool isSlider;
+    [JsonProperty] public bool isSliderDefault;
 }
 
 // This response object maps to the JSON from the server's version endpoint.

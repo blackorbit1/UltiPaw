@@ -52,23 +52,45 @@ public class CreatorModeModule
         
         blendshapeList.drawHeaderCallback = (Rect rect) =>
         {
-            float nameWidth = rect.width * 0.75f;
-            float defaultWidth = rect.width * 0.25f;
+            float nameWidth = rect.width * 0.45f;
+            float defaultValWidth = rect.width * 0.20f;
+            float sliderWidth = rect.width * 0.20f;
+            float isDefaultWidth = rect.width * 0.15f;
+            
             EditorGUI.LabelField(new Rect(rect.x, rect.y, nameWidth, rect.height), "Blendshape Name");
-            EditorGUI.LabelField(new Rect(rect.x + nameWidth, rect.y, defaultWidth, rect.height), "Default Value");
+            EditorGUI.LabelField(new Rect(rect.x + nameWidth, rect.y, defaultValWidth, rect.height), "Value");
+            EditorGUI.LabelField(new Rect(rect.x + nameWidth + defaultValWidth, rect.y, sliderWidth, rect.height), "Slider");
+            EditorGUI.LabelField(new Rect(rect.x + nameWidth + defaultValWidth + sliderWidth, rect.y, isDefaultWidth, rect.height), "Default");
         };
         blendshapeList.drawElementCallback = (Rect rect, int index, bool isActive, bool isFocused) =>
         {
             var element = blendshapeList.serializedProperty.GetArrayElementAtIndex(index);
             rect.y += 2;
-            float nameWidth = rect.width * 0.75f - 5f; // 5px spacing
-            float defaultWidth = rect.width * 0.25f;
+            float spacing = 5f;
+            float nameWidth = rect.width * 0.45f - spacing;
+            float defaultValWidth = rect.width * 0.20f - spacing;
+            float sliderWidth = rect.width * 0.20f - spacing;
+            float isDefaultWidth = rect.width * 0.15f;
             
             var nameProp = element.FindPropertyRelative("name");
             var defaultValueProp = element.FindPropertyRelative("defaultValue");
+            var isSliderProp = element.FindPropertyRelative("isSlider");
+            var isSliderDefaultProp = element.FindPropertyRelative("isSliderDefault");
             
-            EditorGUI.PropertyField(new Rect(rect.x, rect.y, nameWidth, EditorGUIUtility.singleLineHeight), nameProp, GUIContent.none);
-            EditorGUI.PropertyField(new Rect(rect.x + nameWidth + 5f, rect.y, defaultWidth, EditorGUIUtility.singleLineHeight), defaultValueProp, GUIContent.none);
+            float currentX = rect.x;
+            EditorGUI.PropertyField(new Rect(currentX, rect.y, nameWidth, EditorGUIUtility.singleLineHeight), nameProp, GUIContent.none);
+            currentX += nameWidth + spacing;
+            EditorGUI.PropertyField(new Rect(currentX, rect.y, defaultValWidth, EditorGUIUtility.singleLineHeight), defaultValueProp, GUIContent.none);
+            currentX += defaultValWidth + spacing;
+            
+            isSliderProp.boolValue = EditorGUI.Toggle(new Rect(currentX + (sliderWidth - 16f) / 2f, rect.y, 16f, EditorGUIUtility.singleLineHeight), isSliderProp.boolValue);
+            currentX += sliderWidth + spacing;
+
+            using (new EditorGUI.DisabledScope(!isSliderProp.boolValue))
+            {
+                isSliderDefaultProp.boolValue = EditorGUI.Toggle(new Rect(currentX + (isDefaultWidth - 16f) / 2f, rect.y, 16f, EditorGUIUtility.singleLineHeight), isSliderDefaultProp.boolValue);
+                if (!isSliderProp.boolValue) isSliderDefaultProp.boolValue = false;
+            }
         };
         
         // Initialize the autocomplete search field for blendshapes
@@ -228,6 +250,8 @@ public class CreatorModeModule
         var element = prop.GetArrayElementAtIndex(index);
         element.FindPropertyRelative("name").stringValue = selectedBlendshape;
         element.FindPropertyRelative("defaultValue").stringValue = "0";
+        element.FindPropertyRelative("isSlider").boolValue = false;
+        element.FindPropertyRelative("isSliderDefault").boolValue = false;
         editor.serializedObject.ApplyModifiedProperties();
 
         // Clear the search field
@@ -444,6 +468,8 @@ public class CreatorModeModule
                 var element = editor.customBlendshapesForCreatorProp.GetArrayElementAtIndex(i);
                 element.FindPropertyRelative("name").stringValue = newParent.customBlendshapes[i].name;
                 element.FindPropertyRelative("defaultValue").stringValue = newParent.customBlendshapes[i].defaultValue;
+                element.FindPropertyRelative("isSlider").boolValue = newParent.customBlendshapes[i].isSlider;
+                element.FindPropertyRelative("isSliderDefault").boolValue = newParent.customBlendshapes[i].isSliderDefault;
             }
             editor.serializedObject.ApplyModifiedProperties();
         }
@@ -603,7 +629,12 @@ public class CreatorModeModule
 
         // Convert CreatorBlendshapeEntry list to CustomBlendshapeEntry array
         var customBlendshapeEntries = editor.ultiPawTarget.customBlendshapesForCreator
-            .Select(entry => new CustomBlendshapeEntry { name = entry.name, defaultValue = entry.defaultValue })
+            .Select(entry => new CustomBlendshapeEntry { 
+                name = entry.name, 
+                defaultValue = entry.defaultValue,
+                isSlider = entry.isSlider,
+                isSliderDefault = entry.isSliderDefault
+            })
             .ToArray();
 
         var metadata = new UltiPawVersion {
@@ -715,6 +746,8 @@ public class CreatorModeModule
                     var element = editor.customBlendshapesForCreatorProp.GetArrayElementAtIndex(i);
                     element.FindPropertyRelative("name").stringValue = ver.customBlendshapes[i].name;
                     element.FindPropertyRelative("defaultValue").stringValue = ver.customBlendshapes[i].defaultValue;
+                    element.FindPropertyRelative("isSlider").boolValue = ver.customBlendshapes[i].isSlider;
+                    element.FindPropertyRelative("isSliderDefault").boolValue = ver.customBlendshapes[i].isSliderDefault;
                 }
             }
 

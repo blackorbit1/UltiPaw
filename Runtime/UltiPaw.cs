@@ -11,6 +11,8 @@ public class CreatorBlendshapeEntry
 {
     public string name;
     public string defaultValue;
+    public bool isSlider;
+    public bool isSliderDefault;
 }
 
 // This component is a pure data container for an avatar that has been modified
@@ -45,6 +47,9 @@ public class UltiPaw : MonoBehaviour
 
     [Tooltip("Use an A-Pose instead of T-Pose for dynamic normal calculations to prevent thigh clipping.")]
     [HideInInspector] public bool useAPoseForDynamicNormals = true;
+
+    [Tooltip("The name of the sliders sub-menu in the VRChat expressions menu.")]
+    [HideInInspector] public string slidersMenuName = "UltiPaw sliders";
 
     // --- CREATOR MODE PERSISTENT DATA ---
     [HideInInspector] public bool isCreatorMode = false;

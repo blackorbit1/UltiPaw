@@ -22,9 +22,28 @@ public class SelectableChipGroup
             this.onSelectionChanged = onSelectionChanged;
         }
 
+        public void SetOptions(List<string> newOptions)
+        {
+            this.options = newOptions;
+        }
+
+        public void SetSelection(HashSet<int> newSelection)
+        {
+            this.selectedIndices = newSelection ?? new HashSet<int>();
+            onSelectionChanged?.Invoke(this.selectedIndices);
+        }
+
         public void Draw()
         {
-            float availableWidth = EditorGUIUtility.currentViewWidth - 40f; // Approximate padding
+            // Use current view width but subtract typical padding
+            // If inside a BeginArea, EditorGUIUtility.currentViewWidth might still return the window width
+            // Instead, we can try to get the width from the layout engine or assume it's constrained
+            float availableWidth = EditorGUIUtility.currentViewWidth - 40f; 
+            
+            // Try to detect if we have less width available (e.g. in SlidersDrawer)
+            // This is a bit hacky but works for this specific case
+            if (availableWidth > 400f) availableWidth -= 130f; // Image width + padding
+
             float currentX = 0;
             float currentY = 0;
             float rowHeight = 28f;
