@@ -11,6 +11,7 @@ public class AdvancedModeModule
     private bool addArmatureToggle = false;
     private GameObject debugPrefabInstance;
     private DynamicNormalsService dynamicNormalsService;
+    private readonly BlendShapeLinkTestDrawer blendShapeLinkTestDrawer;
     private bool dynamicNormalsFoldout = false; // Folded by default
 
     // FBX Hash checker state
@@ -23,6 +24,7 @@ public class AdvancedModeModule
     {
         this.editor = editor;
         dynamicNormalsService = new DynamicNormalsService(editor);
+        blendShapeLinkTestDrawer = new BlendShapeLinkTestDrawer(editor);
         // Ensure issue reporter subscribes according to current settings
         EditorIssueReporter.RefreshListener();
     }
@@ -350,6 +352,9 @@ public class AdvancedModeModule
                 }
                 EditorGUI.indentLevel--;
 
+                EditorGUILayout.Space();
+                blendShapeLinkTestDrawer.Draw();
+
                 
                 // Debug Tools section
                 EditorGUILayout.Space();
@@ -485,6 +490,7 @@ public class AdvancedModeModule
     {
         // Ensure reporter is set according to latest preference whenever play mode changes
         EditorIssueReporter.RefreshListener();
+        blendShapeLinkTestDrawer?.OnPlayModeStateChanged(state);
 
         if (state == PlayModeStateChange.ExitingEditMode && addArmatureToggle)
         {
