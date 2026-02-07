@@ -210,6 +210,9 @@ public class SlidersDrawer
 
         float drawerHeight = 224f;
         float imageWidth = 115f;
+        Rect compressionSectionBottomRect = new Rect();
+        bool showPendingApplyLabel = false;
+        double timeRemaining = 0;
         
         // Define styles for transparent text field
         GUIStyle transparentTextFieldStyle = new GUIStyle(GUIStyle.none);
@@ -253,6 +256,7 @@ public class SlidersDrawer
                     UpdateGraph(selectedIndices.Count);
                 }
                 EditorGUI.EndDisabledGroup();
+                compressionSectionBottomRect = GUILayoutUtility.GetLastRect();
 
                 if (usage.compressionEnabled)
                 {
@@ -260,19 +264,21 @@ public class SlidersDrawer
                     successStyle.normal.textColor = new Color(0.3f, 0.8f, 0.3f);
                     successStyle.fontStyle = FontStyle.Bold;
                     EditorGUILayout.LabelField("Parameter use reduced by VRCFury compression", successStyle);
+                    compressionSectionBottomRect = GUILayoutUtility.GetLastRect();
                     
                     if (usage.compressionIsExternal && !string.IsNullOrEmpty(usage.compressionPath))
                     {
                         GUIStyle pathStyle = new GUIStyle(EditorStyles.miniLabel);
                         pathStyle.normal.textColor = new Color(0.5f, 0.5f, 0.5f);
                         EditorGUILayout.LabelField($"Already activated in : {usage.compressionPath}", pathStyle);
+                        compressionSectionBottomRect = GUILayoutUtility.GetLastRect();
                     }
                 }
                 
                 // Debounce logic for sliders setup (moved here to avoid clipping)
                 if (hasPendingMenuNameUpdate)
                 {
-                    double timeRemaining = DEBOUNCE_DELAY - (EditorApplication.timeSinceStartup - lastMenuNameChangeTime);
+                    timeRemaining = DEBOUNCE_DELAY - (EditorApplication.timeSinceStartup - lastMenuNameChangeTime);
                     if (timeRemaining <= 0)
                     {
                         hasPendingMenuNameUpdate = false;
@@ -280,8 +286,7 @@ public class SlidersDrawer
                     }
                     else
                     {
-                        EditorGUILayout.Space(5);
-                        EditorGUILayout.LabelField($"<color=#888888>Applying with VRCFury in {timeRemaining:F0}s...</color>", new GUIStyle(EditorStyles.miniLabel) { richText = true });
+                        showPendingApplyLabel = true;
                         editor.Repaint(); // Force repaint to see the countdown
                     }
                 }
@@ -343,6 +348,19 @@ public class SlidersDrawer
                         lastMenuNameChangeTime = EditorApplication.timeSinceStartup;
                         hasPendingMenuNameUpdate = true;
                     }
+                }
+
+                if (showPendingApplyLabel)
+                {
+                    GUIStyle pendingStyle = new GUIStyle(EditorStyles.miniLabel);
+                    pendingStyle.richText = true;
+                    Rect pendingRect = new Rect(
+                        compressionSectionBottomRect.x,
+                        compressionSectionBottomRect.yMax + 5f,
+                        compressionSectionBottomRect.width,
+                        EditorGUIUtility.singleLineHeight
+                    );
+                    GUI.Label(pendingRect, $"<color=#888888>Applying with VRCFury in {timeRemaining:F0}s...</color>", pendingStyle);
                 }
             }
         }
