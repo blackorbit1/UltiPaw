@@ -1,4 +1,5 @@
 ﻿#if UNITY_EDITOR
+using System;
 using System.Globalization;
 using System.Linq;
 using UnityEditor;
@@ -9,11 +10,13 @@ public class BlendshapeDrawer
     private const float WeightEpsilon = 0.001f;
 
     private readonly UltiPawEditor editor;
+    private readonly Action onBlendshapesChanged;
     private string lastAutoAppliedVersionKey;
 
-    public BlendshapeDrawer(UltiPawEditor editor)
+    public BlendshapeDrawer(UltiPawEditor editor, Action onBlendshapesChanged = null)
     {
         this.editor = editor;
+        this.onBlendshapesChanged = onBlendshapesChanged;
     }
 
     public void Draw()
@@ -124,6 +127,7 @@ public class BlendshapeDrawer
                 
                 EditorUtility.SetDirty(smr);
                 EditorUtility.SetDirty(editor.ultiPawTarget);
+                onBlendshapesChanged?.Invoke();
             }
         }
         
@@ -137,6 +141,7 @@ public class BlendshapeDrawer
         {
             ClearAllCustomOverrides();
             ApplyDefaultBlendshapeValuesWithHair(smr, mohawkSmr, maneSmr, values, blendshapeEntries);
+            onBlendshapesChanged?.Invoke();
         }
         
         EditorGUILayout.EndVertical();

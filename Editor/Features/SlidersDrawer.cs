@@ -14,14 +14,15 @@ public class SlidersDrawer
     private List<string> sliderNames = new List<string>();
     private List<RepartitionGraph.GraphElement> graphData = new List<RepartitionGraph.GraphElement>();
     private HashSet<int> selectedIndices = new HashSet<int>();
+    private bool suppressSelectionCallback;
     
     private double lastMenuNameChangeTime;
     private bool hasPendingMenuNameUpdate;
+    private bool replayPlaymodeAfterForcedApply;
     private const double DEBOUNCE_DELAY = 4.0; // Seconds
 
     private const int MAX_PARAMETERS = 256;
-    private const int PARAMETERS_PER_SLIDER = 6;
-    private const int USED_BY_AVATAR_DEFAULT = 45;
+    private const int PARAMETER_COST_FLOAT = 8;
 
     public SlidersDrawer(UltiPawEditor editor)
     {
@@ -35,24 +36,56 @@ public class SlidersDrawer
         // Initialize with default/empty state
         UpdateSliderData();
         
-        HashSet<int> initialSelection = new HashSet<int>();
         var entries = GetSliderEntries();
-        for (int i = 0; i < entries.Count; i++)
-        {
-            if (entries[i].isSliderDefault) initialSelection.Add(i);
-        }
+        HashSet<int> initialSelection = GetInitialSelection(entries);
 
         selectedIndices = initialSelection;
-        selectableChipGroup = new SelectableChipGroup(sliderNames, initialSelection, (selection) => {
-            selectedIndices = selection;
-            UpdateGraph(selection.Count);
-            
-            // Start debounce timer for chips too
-            lastMenuNameChangeTime = EditorApplication.timeSinceStartup;
-            hasPendingMenuNameUpdate = true;
-        });
+        selectableChipGroup = new SelectableChipGroup(sliderNames, initialSelection, OnSliderSelectionChanged);
         
         UpdateGraph(initialSelection.Count);
+    }
+
+    public void RequestApplyDebounced()
+    {
+        lastMenuNameChangeTime = EditorApplication.timeSinceStartup;
+        hasPendingMenuNameUpdate = true;
+    }
+
+    public void OnPlayModeStateChanged(PlayModeStateChange state)
+    {
+        if (state == PlayModeStateChange.EnteredEditMode)
+        {
+            replayPlaymodeAfterForcedApply = false;
+            return;
+        }
+
+        if (state != PlayModeStateChange.ExitingEditMode) return;
+        if (!hasPendingMenuNameUpdate) return;
+
+        // Cancel this play transition, apply pending setup in Edit Mode,
+        // then resume Play Mode on the next tick.
+        if (!replayPlaymodeAfterForcedApply)
+        {
+            replayPlaymodeAfterForcedApply = true;
+            EditorApplication.isPlaying = false;
+        }
+
+        hasPendingMenuNameUpdate = false;
+        ApplySlidersToAvatar(immediate: true);
+
+        EditorApplication.delayCall += ResumePlaymodeAfterForcedApply;
+    }
+
+    private void ResumePlaymodeAfterForcedApply()
+    {
+        if (!replayPlaymodeAfterForcedApply) return;
+
+        replayPlaymodeAfterForcedApply = false;
+
+        if (!EditorApplication.isPlayingOrWillChangePlaymode)
+        {
+            EditorApplication.isPlaying = true;
+        }
     }
 
     private List<CustomBlendshapeEntry> GetSliderEntries()
@@ -71,10 +104,109 @@ public class SlidersDrawer
         sliderNames = entries.Select(e => e.name).ToList();
     }
 
+    private HashSet<int> GetInitialSelection(List<CustomBlendshapeEntry> entries)
+    {
+        if (editor.ultiPawTarget.useCustomSliderSelection)
+        {
+            var savedNames = new HashSet<string>(editor.ultiPawTarget.customSliderSelectionNames ?? new List<string>());
+            var restored = new HashSet<int>();
+            for (int i = 0; i < entries.Count; i++)
+            {
+                if (savedNames.Contains(entries[i].name)) restored.Add(i);
+            }
+            return restored;
+        }
+
+        var defaults = new HashSet<int>();
+        for (int i = 0; i < entries.Count; i++)
+        {
+            if (entries[i].isSliderDefault) defaults.Add(i);
+        }
+        return defaults;
+    }
+
+    private HashSet<int> GetDefaultSelection(List<CustomBlendshapeEntry> entries)
+    {
+        var defaults = new HashSet<int>();
+        for (int i = 0; i < entries.Count; i++)
+        {
+            if (entries[i].isSliderDefault) defaults.Add(i);
+        }
+        return defaults;
+    }
+
+    private void OnSliderSelectionChanged(HashSet<int> selection)
+    {
+        selectedIndices = new HashSet<int>(selection);
+        UpdateGraph(selectedIndices.Count);
+
+        if (suppressSelectionCallback) return;
+
+        PersistSliderSelectionOverride();
+        RequestApplyDebounced();
+    }
+
+    private void PersistSliderSelectionOverride()
+    {
+        var entries = GetSliderEntries();
+        var defaultSelection = GetDefaultSelection(entries);
+        bool matchesDefault = defaultSelection.SetEquals(selectedIndices);
+
+        Undo.RecordObject(editor.ultiPawTarget, "Change Slider Selection");
+        if (matchesDefault)
+        {
+            editor.ultiPawTarget.useCustomSliderSelection = false;
+            editor.ultiPawTarget.customSliderSelectionNames.Clear();
+        }
+        else
+        {
+            editor.ultiPawTarget.useCustomSliderSelection = true;
+            editor.ultiPawTarget.customSliderSelectionNames = selectedIndices
+                .Where(index => index >= 0 && index < entries.Count)
+                .Select(index => entries[index].name)
+                .ToList();
+        }
+
+        EditorUtility.SetDirty(editor.ultiPawTarget);
+    }
+
     private void UpdateGraph(int selectedCount)
     {
-        int usedBySliders = selectedCount * PARAMETERS_PER_SLIDER;
-        int usedByAvatar = USED_BY_AVATAR_DEFAULT; // TODO: Logic to retrieve the "Used by avatar" amount
+        GameObject avatarRoot = editor.ultiPawTarget.transform.root?.gameObject;
+        if (avatarRoot == null) return;
+
+        var usage = VRCFuryService.Instance.GetAvatarParameterUsage(avatarRoot);
+
+        int usedByAvatar = usage.totalUsedAfterBuild;
+        int usedBySliders;
+
+        if (usage.compressionEnabled)
+        {
+            // Calculate what the cost WOULD be if these UltiPaw sliders were added.
+            // VRCFury compressor logic (simplified):
+            // totalCost = currentBits + (vrcfuryAddedBits + newBits) - savings
+            // savings = max(0, (compressibleBits + newBits) - 16)
+            
+            int newBits = selectedCount * PARAMETER_COST_FLOAT;
+            
+            // We assume all UltiPaw sliders are compressible (they are Floats)
+            int projectedVrcfTargetRaw = usage.vrcfuryAddedBits + newBits;
+            int projectedSavings = 0;
+            if (projectedVrcfTargetRaw > 16)
+            {
+                projectedSavings = projectedVrcfTargetRaw - 16;
+            }
+
+            int projectedTotalPostBuild = usage.currentBits + projectedVrcfTargetRaw - projectedSavings;
+            
+            // The marginal cost is the difference between current and projected total
+            usedBySliders = Mathf.Max(0, projectedTotalPostBuild - usage.totalUsedAfterBuild);
+        }
+        else
+        {
+            usedBySliders = selectedCount * PARAMETER_COST_FLOAT;
+        }
+
         int available = Mathf.Max(0, MAX_PARAMETERS - usedByAvatar - usedBySliders);
 
         graphData = new List<RepartitionGraph.GraphElement>
@@ -90,18 +222,20 @@ public class SlidersDrawer
         var entries = GetSliderEntries();
         if (entries.Count == 0) return;
 
-        // If entries changed, refresh names and chip group
-        if (entries.Count != sliderNames.Count)
+        // If entries changed, refresh names and selection
+        var currentNames = entries.Select(e => e.name).ToList();
+        if (entries.Count != sliderNames.Count || !sliderNames.SequenceEqual(currentNames))
         {
             UpdateSliderData();
             selectableChipGroup.SetOptions(sliderNames);
             
-            HashSet<int> initialSelection = new HashSet<int>();
-            for (int i = 0; i < entries.Count; i++)
-            {
-                if (entries[i].isSliderDefault) initialSelection.Add(i);
-            }
+            HashSet<int> initialSelection = GetInitialSelection(entries);
+            selectedIndices = initialSelection;
+            UpdateGraph(initialSelection.Count);
+
+            suppressSelectionCallback = true;
             selectableChipGroup.SetSelection(initialSelection);
+            suppressSelectionCallback = false;
         }
 
         float drawerHeight = 224f;
@@ -134,28 +268,59 @@ public class SlidersDrawer
                 EditorGUILayout.Space(15);
 
                 selectableChipGroup.Draw();
+                EditorGUILayout.Space(5);
+
+                GameObject rootObj = editor.ultiPawTarget.transform.root.gameObject;
+                var usage = VRCFuryService.Instance.GetAvatarParameterUsage(rootObj);
+                
+                EditorGUI.BeginDisabledGroup(usage.compressionIsExternal);
+                bool toggleVal = usage.compressionEnabled;
+                EditorGUI.BeginChangeCheck();
+                toggleVal = EditorGUILayout.ToggleLeft("enable VRCFury parameters compression", toggleVal);
+                if (EditorGUI.EndChangeCheck())
+                {
+                    VRCFuryService.Instance.SetCompression(rootObj, toggleVal);
+                    UpdateGraph(selectedIndices.Count);
+                }
+                EditorGUI.EndDisabledGroup();
+
+                if (usage.compressionEnabled)
+                {
+                    GUIStyle successStyle = new GUIStyle(EditorStyles.miniLabel);
+                    successStyle.normal.textColor = new Color(0.3f, 0.8f, 0.3f);
+                    successStyle.fontStyle = FontStyle.Bold;
+                    EditorGUILayout.LabelField("✓ Parameter use reduced by VRCFury compression", successStyle);
+                    
+                    if (usage.compressionIsExternal && !string.IsNullOrEmpty(usage.compressionPath))
+                    {
+                        GUIStyle pathStyle = new GUIStyle(EditorStyles.miniLabel);
+                        pathStyle.normal.textColor = new Color(0.5f, 0.5f, 0.5f);
+                        EditorGUILayout.LabelField($"Already activated in : {usage.compressionPath}", pathStyle);
+                    }
+                }
+                
+                // Debounce logic for sliders setup (moved here to avoid clipping)
+                if (hasPendingMenuNameUpdate)
+                {
+                    double timeRemaining = DEBOUNCE_DELAY - (EditorApplication.timeSinceStartup - lastMenuNameChangeTime);
+                    if (timeRemaining <= 0)
+                    {
+                        hasPendingMenuNameUpdate = false;
+                        ApplySlidersToAvatar();
+                    }
+                    else
+                    {
+                        EditorGUILayout.Space(5);
+                        EditorGUILayout.LabelField($"<color=#888888>Applying with VRCFury in {timeRemaining:F0}s...</color>", new GUIStyle(EditorStyles.miniLabel) { richText = true });
+                        editor.Repaint(); // Force repaint to see the countdown
+                    }
+                }
                 
                 GUILayout.FlexibleSpace();
             }
             GUILayout.EndVertical();
 
-            // Debounce logic for sliders setup
-            if (hasPendingMenuNameUpdate)
-            {
-                double timeRemaining = DEBOUNCE_DELAY - (EditorApplication.timeSinceStartup - lastMenuNameChangeTime);
-                if (timeRemaining <= 0)
-                {
-                    hasPendingMenuNameUpdate = false;
-                    ApplySlidersToAvatar();
-                }
-                else
-                {
-                    // Draw a small status indicator
-                    Rect statusRect = new Rect(imagePlaceholderRect.xMax + 10, imagePlaceholderRect.yMax - 20, 200, 20);
-                    GUI.Label(statusRect, $"<color=#888888>Applying with VRCFury in {timeRemaining:F0}s...</color>", new GUIStyle(EditorStyles.miniLabel) { richText = true });
-                    editor.Repaint(); // Force repaint to see the countdown
-                }
-            }
+            // Debounce logic moved inside the vertical layout
 
             // Draw overlay elements (Image + Icon + Text) at absolute coordinates
             if (Event.current.type == EventType.Repaint || Event.current.type == EventType.Layout || Event.current.type == EventType.MouseDown || Event.current.type == EventType.MouseUp || Event.current.type == EventType.KeyDown || Event.current.type == EventType.KeyUp)
@@ -213,14 +378,20 @@ public class SlidersDrawer
         }
         EditorGUILayout.EndHorizontal();
     }
-    private void ApplySlidersToAvatar()
+    private void ApplySlidersToAvatar(bool immediate = false)
     {
         var allEntries = GetSliderEntries();
         var selectedEntries = selectedIndices.Select(index => allEntries[index]).ToList();
         
         GameObject avatarRoot = editor.ultiPawTarget.transform.root.gameObject;
         string menuName = editor.ultiPawTarget.slidersMenuName;
-        
+
+        if (immediate)
+        {
+            VRCFuryService.Instance.ApplySliders(avatarRoot, menuName, selectedEntries);
+            return;
+        }
+
         // Use the TaskQueue to avoid blocking the UI
         VRCFuryTaskQueue.Enqueue(() => {
             VRCFuryService.Instance.ApplySliders(avatarRoot, menuName, selectedEntries);

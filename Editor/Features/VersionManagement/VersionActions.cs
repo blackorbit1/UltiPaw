@@ -397,6 +397,8 @@ public class VersionActions
                 // Clear all custom overrides when switching versions
                 editor.ultiPawTarget.customBlendshapeOverrideNames.Clear();
                 editor.ultiPawTarget.customBlendshapeOverrideValues.Clear();
+                editor.ultiPawTarget.useCustomSliderSelection = false;
+                editor.ultiPawTarget.customSliderSelectionNames.Clear();
                 
                 // Find the Body mesh (and optional hair meshes for sync)
                 var allSmrs = root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
@@ -442,6 +444,8 @@ public class VersionActions
                 // Clear custom overrides when resetting
                 editor.ultiPawTarget.customBlendshapeOverrideNames.Clear();
                 editor.ultiPawTarget.customBlendshapeOverrideValues.Clear();
+                editor.ultiPawTarget.useCustomSliderSelection = false;
+                editor.ultiPawTarget.customSliderSelectionNames.Clear();
             }
         }
         

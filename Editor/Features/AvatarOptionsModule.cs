@@ -15,7 +15,7 @@ public class AvatarOptionsModule
         this.editor = editor;
         customVeinsDrawer = new CustomVeinsDrawer(editor);
         slidersDrawer = new SlidersDrawer(editor);
-        blendshapeDrawer = new BlendshapeDrawer(editor);
+        blendshapeDrawer = new BlendshapeDrawer(editor, slidersDrawer.RequestApplyDebounced);
     }
 
     public void Draw()
@@ -29,6 +29,11 @@ public class AvatarOptionsModule
         
         // Then draw BlendshapeDrawer
         blendshapeDrawer.Draw();
+    }
+
+    public void OnPlayModeStateChanged(PlayModeStateChange state)
+    {
+        slidersDrawer.OnPlayModeStateChanged(state);
     }
 }
 #endif

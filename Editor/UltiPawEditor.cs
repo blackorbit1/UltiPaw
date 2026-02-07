@@ -131,6 +131,7 @@ public class UltiPawEditor : UnityEditor.Editor
     private void OnPlayModeStateChanged(PlayModeStateChange state)
     {
         advancedModule?.OnPlayModeStateChanged(state);
+        avatarOptionsModule?.OnPlayModeStateChanged(state);
     }
 
     private async void StartAsyncInitialization()

@@ -51,6 +51,12 @@ public class UltiPaw : MonoBehaviour
     [Tooltip("The name of the sliders sub-menu in the VRChat expressions menu.")]
     [HideInInspector] public string slidersMenuName = "UltiPaw sliders";
 
+    [Tooltip("Whether slider selection overrides the version defaults.")]
+    [HideInInspector] [SerializeField] public bool useCustomSliderSelection = false;
+
+    [Tooltip("Stores user-customized slider selection by blendshape name.")]
+    [HideInInspector] [SerializeField] public List<string> customSliderSelectionNames = new List<string>();
+
     // --- CREATOR MODE PERSISTENT DATA ---
     [HideInInspector] public bool isCreatorMode = false;
     [HideInInspector] public GameObject customFbxForCreator;
