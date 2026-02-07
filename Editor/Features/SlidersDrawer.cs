@@ -22,7 +22,6 @@ public class SlidersDrawer
     private const double DEBOUNCE_DELAY = 4.0; // Seconds
 
     private const int MAX_PARAMETERS = 256;
-    private const int PARAMETER_COST_FLOAT = 8;
 
     public SlidersDrawer(UltiPawEditor editor)
     {
@@ -175,39 +174,10 @@ public class SlidersDrawer
         GameObject avatarRoot = editor.ultiPawTarget.transform.root?.gameObject;
         if (avatarRoot == null) return;
 
-        var usage = VRCFuryService.Instance.GetAvatarParameterUsage(avatarRoot);
-
-        int usedByAvatar = usage.totalUsedAfterBuild;
-        int usedBySliders;
-
-        if (usage.compressionEnabled)
-        {
-            // Calculate what the cost WOULD be if these UltiPaw sliders were added.
-            // VRCFury compressor logic (simplified):
-            // totalCost = currentBits + (vrcfuryAddedBits + newBits) - savings
-            // savings = max(0, (compressibleBits + newBits) - 16)
-            
-            int newBits = selectedCount * PARAMETER_COST_FLOAT;
-            
-            // We assume all UltiPaw sliders are compressible (they are Floats)
-            int projectedVrcfTargetRaw = usage.vrcfuryAddedBits + newBits;
-            int projectedSavings = 0;
-            if (projectedVrcfTargetRaw > 16)
-            {
-                projectedSavings = projectedVrcfTargetRaw - 16;
-            }
-
-            int projectedTotalPostBuild = usage.currentBits + projectedVrcfTargetRaw - projectedSavings;
-            
-            // The marginal cost is the difference between current and projected total
-            usedBySliders = Mathf.Max(0, projectedTotalPostBuild - usage.totalUsedAfterBuild);
-        }
-        else
-        {
-            usedBySliders = selectedCount * PARAMETER_COST_FLOAT;
-        }
-
-        int available = Mathf.Max(0, MAX_PARAMETERS - usedByAvatar - usedBySliders);
+        var usage = VRCFuryService.Instance.GetAvatarParameterUsage(avatarRoot, selectedCount);
+        int usedByAvatar = usage.usedByAvatar;
+        int usedBySliders = usage.usedBySliders;
+        int available = Mathf.Max(0, MAX_PARAMETERS - usage.totalUsedAfterBuild);
 
         graphData = new List<RepartitionGraph.GraphElement>
         {
@@ -271,7 +241,7 @@ public class SlidersDrawer
                 EditorGUILayout.Space(5);
 
                 GameObject rootObj = editor.ultiPawTarget.transform.root.gameObject;
-                var usage = VRCFuryService.Instance.GetAvatarParameterUsage(rootObj);
+                var usage = VRCFuryService.Instance.GetAvatarParameterUsage(rootObj, selectedIndices.Count);
                 
                 EditorGUI.BeginDisabledGroup(usage.compressionIsExternal);
                 bool toggleVal = usage.compressionEnabled;
@@ -289,7 +259,7 @@ public class SlidersDrawer
                     GUIStyle successStyle = new GUIStyle(EditorStyles.miniLabel);
                     successStyle.normal.textColor = new Color(0.3f, 0.8f, 0.3f);
                     successStyle.fontStyle = FontStyle.Bold;
-                    EditorGUILayout.LabelField("✓ Parameter use reduced by VRCFury compression", successStyle);
+                    EditorGUILayout.LabelField("Parameter use reduced by VRCFury compression", successStyle);
                     
                     if (usage.compressionIsExternal && !string.IsNullOrEmpty(usage.compressionPath))
                     {

@@ -23,13 +23,13 @@ public class VRCFuryService
 
     public struct ParameterUsage
     {
-        public int currentBits;            // Bits already in Expression Parameters
-        public int vrcfuryAddedBits;      // Bits added by VRCFury features (total without compression)
-        public int savedBits;             // Bits saved by compression
-        public int totalUsedAfterBuild;   // Estimated total bits after VRCFury runs
-        public bool compressionEnabled;   // True if "Unlimited Parameters" feature is present
-        public bool compressionIsExternal; // True if compression is NOT on the "ultipaw sliders" object
-        public string compressionPath;    // Path to the GameObject containing the "Unlimited Parameters" feature
+        public int currentSyncedBits;
+        public int totalUsedAfterBuild;
+        public int usedByAvatar;
+        public int usedBySliders;
+        public bool compressionEnabled;
+        public bool compressionIsExternal;
+        public string compressionPath;
     }
 
     public void ApplySliders(GameObject avatarRoot, string menuPath, List<CustomBlendshapeEntry> selectedSliders)
@@ -245,96 +245,24 @@ public class VRCFuryService
         _vrcFuryType.GetField("content").SetValue(vrcf, feature);
     }
 
+    public ParameterUsage GetAvatarParameterUsage(GameObject avatarRoot, int selectedUltiPawSlidersCount)
+    {
+        var usage = AvatarParametersService.Instance.GetAvatarParameterUsage(avatarRoot, selectedUltiPawSlidersCount);
+        return new ParameterUsage
+        {
+            currentSyncedBits = usage.currentSyncedBits,
+            totalUsedAfterBuild = usage.totalUsedAfterBuild,
+            usedByAvatar = usage.usedByAvatar,
+            usedBySliders = usage.usedBySliders,
+            compressionEnabled = usage.compressionEnabled,
+            compressionIsExternal = usage.compressionIsExternal,
+            compressionPath = usage.compressionPath
+        };
+    }
+
     public ParameterUsage GetAvatarParameterUsage(GameObject avatarRoot)
     {
-        var usage = new ParameterUsage();
-        if (avatarRoot == null) return usage;
-
-        var descriptor = avatarRoot.GetComponent<VRC.SDK3.Avatars.Components.VRCAvatarDescriptor>();
-        if (descriptor == null) return usage;
-
-        // 1. Get current cost from Expression Parameters
-        if (descriptor.customExpressions && descriptor.expressionParameters != null)
-        {
-            usage.currentBits = descriptor.expressionParameters.CalcTotalCost();
-        }
-
-        // 2. Scan for VRCFury features
-        if (_vrcFuryType == null) _vrcFuryType = FindType("VF.Model.VRCFury");
-        if (_toggleType == null) _toggleType = FindType("VF.Model.Feature.Toggle");
-        if (_unlimitedType == null) _unlimitedType = FindType("VF.Model.Feature.UnlimitedParameters");
-
-        if (_vrcFuryType == null)
-        {
-            usage.totalUsedAfterBuild = usage.currentBits;
-            return usage;
-        }
-
-        var vrcfComponents = avatarRoot.GetComponentsInChildren(_vrcFuryType, true);
-        var features = new List<object>();
-        foreach (var c in vrcfComponents)
-        {
-            var content = _vrcFuryType.GetField("content").GetValue(c);
-            if (content != null) features.Add(content);
-        }
-
-        // 3. Check for Unlimited Parameters (Compression)
-        var compressionFeature = features.FirstOrDefault(f => _unlimitedType != null && _unlimitedType.IsInstanceOfType(f));
-        usage.compressionEnabled = compressionFeature != null;
-        if (usage.compressionEnabled)
-        {
-            var component = vrcfComponents.FirstOrDefault(c => _vrcFuryType.GetField("content").GetValue(c) == compressionFeature);
-            if (component != null && component is Component vrcfComp)
-            {
-                usage.compressionPath = GetGameObjectPath(vrcfComp.gameObject);
-                usage.compressionIsExternal = vrcfComp.gameObject.name != SLIDERS_GAMEOBJECT_NAME;
-            }
-        }
-
-        int rawAddedBits = 0;
-        int compressibleBits = 0;
-        int compressibleCount = 0;
-
-        foreach (var feature in features)
-        {
-            if (_toggleType != null && _toggleType.IsInstanceOfType(feature))
-            {
-                var name = (string)_toggleType.GetField("name").GetValue(feature);
-                var isSlider = (bool)_toggleType.GetField("slider").GetValue(feature);
-
-                if (!string.IsNullOrEmpty(name))
-                {
-                    int cost = isSlider ? 8 : 1;
-                    rawAddedBits += cost;
-
-                    // Sliders are eligible for compression
-                    if (usage.compressionEnabled && isSlider)
-                    {
-                        compressibleBits += cost;
-                        compressibleCount++;
-                    }
-                }
-            }
-            // Note: Other features might add bits too (e.g. SPS, Puppets), 
-            // but Toggles/Sliders are the primary ones for UltiPaw.
-        }
-
-        usage.vrcfuryAddedBits = rawAddedBits;
-
-        // 4. Calculate Compression Savings
-        if (usage.compressionEnabled && compressibleCount > 0)
-        {
-            // VRCFury compression uses 16 bits (8 for SyncPointer + 8 for SyncDataNum)
-            // It only saves space if the toggles it replaces cost more than 16 bits.
-            int overhead = 16;
-            if (compressibleBits > overhead)
-            {
-                usage.savedBits = compressibleBits - overhead;
-            }
-        }
-
-        usage.totalUsedAfterBuild = usage.currentBits + usage.vrcfuryAddedBits - usage.savedBits;
-        return usage;
+        return GetAvatarParameterUsage(avatarRoot, 0);
     }
 
     public void SetCompression(GameObject avatarRoot, bool enabled)
@@ -424,16 +352,5 @@ public class VRCFuryService
         return null;
     }
 
-    private string GetGameObjectPath(GameObject obj)
-    {
-        if (obj == null) return string.Empty;
-        string path = obj.name;
-        while (obj.transform.parent != null)
-        {
-            obj = obj.transform.parent.gameObject;
-            path = obj.name + "/" + path;
-        }
-        return path;
-    }
 }
 #endif
