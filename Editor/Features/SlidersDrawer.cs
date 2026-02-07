@@ -13,6 +13,11 @@ public class SlidersDrawer
 
     private List<string> sliderNames = new List<string>();
     private List<RepartitionGraph.GraphElement> graphData = new List<RepartitionGraph.GraphElement>();
+    private HashSet<int> selectedIndices = new HashSet<int>();
+    
+    private double lastMenuNameChangeTime;
+    private bool hasPendingMenuNameUpdate;
+    private const double DEBOUNCE_DELAY = 4.0; // Seconds
 
     private const int MAX_PARAMETERS = 256;
     private const int PARAMETERS_PER_SLIDER = 6;
@@ -37,9 +42,14 @@ public class SlidersDrawer
             if (entries[i].isSliderDefault) initialSelection.Add(i);
         }
 
+        selectedIndices = initialSelection;
         selectableChipGroup = new SelectableChipGroup(sliderNames, initialSelection, (selection) => {
+            selectedIndices = selection;
             UpdateGraph(selection.Count);
-            // TODO: Logic on how to apply those sliders on the actual avatar
+            
+            // Start debounce timer for chips too
+            lastMenuNameChangeTime = EditorApplication.timeSinceStartup;
+            hasPendingMenuNameUpdate = true;
         });
         
         UpdateGraph(initialSelection.Count);
@@ -129,6 +139,24 @@ public class SlidersDrawer
             }
             GUILayout.EndVertical();
 
+            // Debounce logic for sliders setup
+            if (hasPendingMenuNameUpdate)
+            {
+                double timeRemaining = DEBOUNCE_DELAY - (EditorApplication.timeSinceStartup - lastMenuNameChangeTime);
+                if (timeRemaining <= 0)
+                {
+                    hasPendingMenuNameUpdate = false;
+                    ApplySlidersToAvatar();
+                }
+                else
+                {
+                    // Draw a small status indicator
+                    Rect statusRect = new Rect(imagePlaceholderRect.xMax + 10, imagePlaceholderRect.yMax - 20, 200, 20);
+                    GUI.Label(statusRect, $"<color=#888888>Applying with VRCFury in {timeRemaining:F0}s...</color>", new GUIStyle(EditorStyles.miniLabel) { richText = true });
+                    editor.Repaint(); // Force repaint to see the countdown
+                }
+            }
+
             // Draw overlay elements (Image + Icon + Text) at absolute coordinates
             if (Event.current.type == EventType.Repaint || Event.current.type == EventType.Layout || Event.current.type == EventType.MouseDown || Event.current.type == EventType.MouseUp || Event.current.type == EventType.KeyDown || Event.current.type == EventType.KeyUp)
             {
@@ -175,11 +203,28 @@ public class SlidersDrawer
                     {
                         Undo.RecordObject(editor.ultiPawTarget, "Change Slider Menu Name");
                         editor.ultiPawTarget.slidersMenuName = newName;
+                        
+                        // Start debounce timer
+                        lastMenuNameChangeTime = EditorApplication.timeSinceStartup;
+                        hasPendingMenuNameUpdate = true;
                     }
                 }
             }
         }
         EditorGUILayout.EndHorizontal();
+    }
+    private void ApplySlidersToAvatar()
+    {
+        var allEntries = GetSliderEntries();
+        var selectedEntries = selectedIndices.Select(index => allEntries[index]).ToList();
+        
+        GameObject avatarRoot = editor.ultiPawTarget.transform.root.gameObject;
+        string menuName = editor.ultiPawTarget.slidersMenuName;
+        
+        // Use the TaskQueue to avoid blocking the UI
+        VRCFuryTaskQueue.Enqueue(() => {
+            VRCFuryService.Instance.ApplySliders(avatarRoot, menuName, selectedEntries);
+        });
     }
 }
 #endif

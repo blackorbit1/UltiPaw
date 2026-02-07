@@ -5,7 +5,8 @@
     "VRC.SDK3A.Editor",
     "VRC.SDKBase",
     "VRC.SDKBase.Editor",
-    "ultipaw"
+    "ultipaw",
+    "com.vrcfury.api"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],
