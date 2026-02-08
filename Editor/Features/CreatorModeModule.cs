@@ -19,6 +19,9 @@ public class CreatorModeModule
     private readonly FileManagerService fileManagerService;
     private ReorderableList blendshapeList;
     private AutocompleteSearchField.AutocompleteSearchField blendshapeSearchField;
+    private readonly Dictionary<string, AutocompleteSearchField.AutocompleteSearchField> correctiveSearchFields
+        = new Dictionary<string, AutocompleteSearchField.AutocompleteSearchField>();
+    private readonly Dictionary<string, string> pendingCorrectiveValues = new Dictionary<string, string>();
 
     // UI State
     private bool creatorModeFoldout = true;
@@ -38,6 +41,10 @@ public class CreatorModeModule
     private string autoAssignedVeinsTexturePath;
     private UltiPawVersion lastParentVersionForVeins;
     private bool isRestoringFromVersionState;
+    private const float BlendshapeNameColumn = 0.35f;
+    private const float BlendshapeValueColumn = 0.16f;
+    private const float BlendshapeSliderColumn = 0.10f;
+    private const float BlendshapeDefaultColumn = 0.10f;
     
     public CreatorModeModule(UltiPawEditor editor)
     {
@@ -52,25 +59,28 @@ public class CreatorModeModule
         
         blendshapeList.drawHeaderCallback = (Rect rect) =>
         {
-            float nameWidth = rect.width * 0.45f;
-            float defaultValWidth = rect.width * 0.20f;
-            float sliderWidth = rect.width * 0.20f;
-            float isDefaultWidth = rect.width * 0.15f;
+            float nameWidth = rect.width * BlendshapeNameColumn;
+            float defaultValWidth = rect.width * BlendshapeValueColumn;
+            float sliderWidth = rect.width * BlendshapeSliderColumn;
+            float isDefaultWidth = rect.width * BlendshapeDefaultColumn;
+            float correctiveWidth = rect.width - nameWidth - defaultValWidth - sliderWidth - isDefaultWidth;
             
             EditorGUI.LabelField(new Rect(rect.x, rect.y, nameWidth, rect.height), "Blendshape Name");
             EditorGUI.LabelField(new Rect(rect.x + nameWidth, rect.y, defaultValWidth, rect.height), "Value");
             EditorGUI.LabelField(new Rect(rect.x + nameWidth + defaultValWidth, rect.y, sliderWidth, rect.height), "Slider");
             EditorGUI.LabelField(new Rect(rect.x + nameWidth + defaultValWidth + sliderWidth, rect.y, isDefaultWidth, rect.height), "Default");
+            EditorGUI.LabelField(new Rect(rect.x + nameWidth + defaultValWidth + sliderWidth + isDefaultWidth, rect.y, correctiveWidth, rect.height), "Correctives");
         };
         blendshapeList.drawElementCallback = (Rect rect, int index, bool isActive, bool isFocused) =>
         {
             var element = blendshapeList.serializedProperty.GetArrayElementAtIndex(index);
             rect.y += 2;
             float spacing = 5f;
-            float nameWidth = rect.width * 0.45f - spacing;
-            float defaultValWidth = rect.width * 0.20f - spacing;
-            float sliderWidth = rect.width * 0.20f - spacing;
-            float isDefaultWidth = rect.width * 0.15f;
+            float nameWidth = rect.width * BlendshapeNameColumn - spacing;
+            float defaultValWidth = rect.width * BlendshapeValueColumn - spacing;
+            float sliderWidth = rect.width * BlendshapeSliderColumn - spacing;
+            float isDefaultWidth = rect.width * BlendshapeDefaultColumn - spacing;
+            float correctiveWidth = rect.width - nameWidth - defaultValWidth - sliderWidth - isDefaultWidth - spacing * 4f;
             
             var nameProp = element.FindPropertyRelative("name");
             var defaultValueProp = element.FindPropertyRelative("defaultValue");
@@ -90,6 +100,14 @@ public class CreatorModeModule
             {
                 isSliderDefaultProp.boolValue = EditorGUI.Toggle(new Rect(currentX + (isDefaultWidth - 16f) / 2f, rect.y, 16f, EditorGUIUtility.singleLineHeight), isSliderDefaultProp.boolValue);
                 if (!isSliderProp.boolValue) isSliderDefaultProp.boolValue = false;
+            }
+            currentX += isDefaultWidth + spacing;
+
+            if (GUI.Button(new Rect(currentX, rect.y, correctiveWidth, EditorGUIUtility.singleLineHeight), "add fixes"))
+            {
+                var correctiveProp = element.FindPropertyRelative("correctiveBlendshapes");
+                AddCorrectivePair(correctiveProp);
+                editor.serializedObject.ApplyModifiedProperties();
             }
         };
         
@@ -143,6 +161,8 @@ public class CreatorModeModule
                 EditorGUILayout.LabelField("Search and Add Blendshapes:", EditorStyles.miniBoldLabel);
                 blendshapeSearchField.OnGUI();
             }
+
+            DrawBlendshapeCorrectivesSection();
             
             EditorGUILayout.EndVertical();  
             
@@ -216,15 +236,8 @@ public class CreatorModeModule
         
         if (string.IsNullOrEmpty(searchString))
             return;
-
-        var fbxObject = editor.customFbxForCreatorProp.objectReferenceValue as GameObject;
-        if (fbxObject == null) return;
-
-        var smr = fbxObject.GetComponentInChildren<SkinnedMeshRenderer>();
-        if (smr == null || smr.sharedMesh == null) return;
-
-        var allBlendshapes = Enumerable.Range(0, smr.sharedMesh.blendShapeCount)
-            .Select(i => smr.sharedMesh.GetBlendShapeName(i));
+        
+        var allBlendshapes = GetAllBlendshapeNamesFromCustomFbx();
         var existingBlendshapeNames = editor.ultiPawTarget.customBlendshapesForCreator.Select(e => e.name);
         var availableBlendshapes = allBlendshapes.Except(existingBlendshapeNames).OrderBy(s => s);
 
@@ -252,11 +265,191 @@ public class CreatorModeModule
         element.FindPropertyRelative("defaultValue").stringValue = "0";
         element.FindPropertyRelative("isSlider").boolValue = false;
         element.FindPropertyRelative("isSliderDefault").boolValue = false;
+        element.FindPropertyRelative("correctiveBlendshapes").arraySize = 0;
         editor.serializedObject.ApplyModifiedProperties();
 
         // Clear the search field
         blendshapeSearchField.searchString = "";
         blendshapeSearchField.ClearResults();
+    }
+
+    private IEnumerable<string> GetAllBlendshapeNamesFromCustomFbx()
+    {
+        var fbxObject = editor.customFbxForCreatorProp.objectReferenceValue as GameObject;
+        if (fbxObject == null) return Enumerable.Empty<string>();
+
+        var smr = fbxObject.GetComponentInChildren<SkinnedMeshRenderer>();
+        if (smr == null || smr.sharedMesh == null) return Enumerable.Empty<string>();
+
+        return Enumerable.Range(0, smr.sharedMesh.blendShapeCount)
+            .Select(i => smr.sharedMesh.GetBlendShapeName(i));
+    }
+
+    private void DrawBlendshapeCorrectivesSection()
+    {
+        EditorGUILayout.Space(8f);
+        EditorGUILayout.LabelField("Blendshape Correctives", EditorStyles.miniBoldLabel);
+
+        var blendshapesProp = editor.customBlendshapesForCreatorProp;
+        if (blendshapesProp == null || blendshapesProp.arraySize == 0)
+        {
+            EditorGUILayout.HelpBox("Add blendshapes above to create corrective links.", MessageType.None);
+            return;
+        }
+
+        bool drewOne = false;
+        for (int i = 0; i < blendshapesProp.arraySize; i++)
+        {
+            var blendshapeElement = blendshapesProp.GetArrayElementAtIndex(i);
+            var correctiveProp = blendshapeElement.FindPropertyRelative("correctiveBlendshapes");
+            if (correctiveProp == null || correctiveProp.arraySize == 0) continue;
+
+            drewOne = true;
+            string title = blendshapeElement.FindPropertyRelative("name").stringValue;
+            if (string.IsNullOrWhiteSpace(title)) title = "(Unnamed Blendshape)";
+
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField(title, EditorStyles.boldLabel);
+            if (GUILayout.Button("Delete", GUILayout.Width(70f)))
+            {
+                correctiveProp.arraySize = 0;
+                editor.serializedObject.ApplyModifiedProperties();
+                EditorGUILayout.EndHorizontal();
+                EditorGUILayout.EndVertical();
+                continue;
+            }
+            EditorGUILayout.EndHorizontal();
+
+            for (int j = 0; j < correctiveProp.arraySize; j++)
+            {
+                var item = correctiveProp.GetArrayElementAtIndex(j);
+                var toFixProp = item.FindPropertyRelative("blendshapeToFix");
+                var fixingProp = item.FindPropertyRelative("fixingBlendshape");
+                string keyPrefix = $"corrective_{i}_{j}";
+                float indentPadding = EditorGUI.indentLevel * 15f;
+                float availableWidth = EditorGUIUtility.currentViewWidth - indentPadding - 110f;
+                float fieldWidth = Mathf.Clamp((availableWidth - 28f - 4f) * 0.5f, 95f, 260f);
+
+                EditorGUILayout.BeginHorizontal();
+                DrawCorrectiveBlendshapeAutocompleteField(
+                    toFixProp,
+                    keyPrefix + "_toFix",
+                    "blendshape to fix",
+                    GUILayout.Width(fieldWidth)
+                );
+                GUILayout.Space(4f);
+                DrawCorrectiveBlendshapeAutocompleteField(
+                    fixingProp,
+                    keyPrefix + "_fixing",
+                    "fixing blendshape",
+                    GUILayout.Width(fieldWidth)
+                );
+                if (GUILayout.Button("-", GUILayout.Width(24f)))
+                {
+                    correctiveProp.DeleteArrayElementAtIndex(j);
+                    editor.serializedObject.ApplyModifiedProperties();
+                    EditorGUILayout.EndHorizontal();
+                    break;
+                }
+                EditorGUILayout.EndHorizontal();
+            }
+
+            if (GUILayout.Button("Add", GUILayout.Width(80f)))
+            {
+                AddCorrectivePair(correctiveProp);
+                editor.serializedObject.ApplyModifiedProperties();
+            }
+
+            EditorGUILayout.EndVertical();
+        }
+
+        if (!drewOne)
+        {
+            EditorGUILayout.HelpBox("Use 'add corrective blendshapes' in the table to create entries.", MessageType.None);
+        }
+
+        EditorGUILayout.HelpBox(
+            "The fixing blendshape activation will be proportional to the fixed blendshape and the blendshape needing correctives",
+            MessageType.Info
+        );
+    }
+
+    private void DrawCorrectiveBlendshapeAutocompleteField(
+        SerializedProperty stringProp,
+        string fieldKey,
+        string label,
+        params GUILayoutOption[] layout
+    )
+    {
+        EditorGUILayout.BeginVertical(layout);
+        var clippedMiniLabel = new GUIStyle(EditorStyles.miniLabel)
+        {
+            clipping = TextClipping.Clip,
+            wordWrap = false
+        };
+        EditorGUILayout.LabelField(label, clippedMiniLabel, layout);
+
+        var searchField = GetOrCreateCorrectiveSearchField(fieldKey);
+        string currentValue = stringProp != null ? (stringProp.stringValue ?? string.Empty) : string.Empty;
+        if (searchField.searchString != currentValue)
+        {
+            searchField.searchString = currentValue;
+        }
+
+        searchField.OnGUI();
+
+        if (pendingCorrectiveValues.TryGetValue(fieldKey, out var pending))
+        {
+            if (stringProp != null) stringProp.stringValue = pending ?? string.Empty;
+            pendingCorrectiveValues.Remove(fieldKey);
+        }
+
+        EditorGUILayout.EndVertical();
+    }
+
+    private AutocompleteSearchField.AutocompleteSearchField GetOrCreateCorrectiveSearchField(string fieldKey)
+    {
+        if (correctiveSearchFields.TryGetValue(fieldKey, out var existing))
+        {
+            return existing;
+        }
+
+        var field = new AutocompleteSearchField.AutocompleteSearchField();
+        field.onInputChanged = input =>
+        {
+            pendingCorrectiveValues[fieldKey] = input ?? string.Empty;
+            field.ClearResults();
+            if (string.IsNullOrWhiteSpace(input)) return;
+
+            foreach (var name in GetAllBlendshapeNamesFromCustomFbx()
+                         .Where(n => !string.IsNullOrWhiteSpace(n))
+                         .Distinct()
+                         .OrderBy(n => n))
+            {
+                if (name.IndexOf(input, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    field.AddResult(name);
+                }
+            }
+        };
+        field.onConfirm = selected =>
+        {
+            pendingCorrectiveValues[fieldKey] = selected ?? string.Empty;
+        };
+
+        correctiveSearchFields[fieldKey] = field;
+        return field;
+    }
+
+    private static void AddCorrectivePair(SerializedProperty correctiveProp, string blendshapeToFix = "", string fixingBlendshape = "")
+    {
+        if (correctiveProp == null) return;
+        int i = correctiveProp.arraySize;
+        correctiveProp.InsertArrayElementAtIndex(i);
+        var row = correctiveProp.GetArrayElementAtIndex(i);
+        row.FindPropertyRelative("blendshapeToFix").stringValue = blendshapeToFix ?? string.Empty;
+        row.FindPropertyRelative("fixingBlendshape").stringValue = fixingBlendshape ?? string.Empty;
     }
 
     private void DrawParentVersionDropdown()
@@ -470,8 +663,24 @@ public class CreatorModeModule
                 element.FindPropertyRelative("defaultValue").stringValue = newParent.customBlendshapes[i].defaultValue;
                 element.FindPropertyRelative("isSlider").boolValue = newParent.customBlendshapes[i].isSlider;
                 element.FindPropertyRelative("isSliderDefault").boolValue = newParent.customBlendshapes[i].isSliderDefault;
+                CopyCorrectivesToSerialized(element, newParent.customBlendshapes[i].correctiveBlendshapes);
             }
             editor.serializedObject.ApplyModifiedProperties();
+        }
+    }
+
+    private static void CopyCorrectivesToSerialized(SerializedProperty blendshapeElement, CorrectiveBlendshapeEntry[] source)
+    {
+        var correctiveProp = blendshapeElement.FindPropertyRelative("correctiveBlendshapes");
+        if (correctiveProp == null) return;
+
+        correctiveProp.arraySize = 0;
+        if (source == null || source.Length == 0) return;
+
+        foreach (var corrective in source)
+        {
+            if (corrective == null) continue;
+            AddCorrectivePair(correctiveProp, corrective.blendshapeToFix, corrective.fixingBlendshape);
         }
     }
 
@@ -629,11 +838,25 @@ public class CreatorModeModule
 
         // Convert CreatorBlendshapeEntry list to CustomBlendshapeEntry array
         var customBlendshapeEntries = editor.ultiPawTarget.customBlendshapesForCreator
-            .Select(entry => new CustomBlendshapeEntry { 
-                name = entry.name, 
-                defaultValue = entry.defaultValue,
-                isSlider = entry.isSlider,
-                isSliderDefault = entry.isSliderDefault
+            .Select(entry =>
+            {
+                var corrective = (entry.correctiveBlendshapes ?? new List<CreatorCorrectiveBlendshapeEntry>())
+                    .Where(c => c != null
+                                && !string.IsNullOrWhiteSpace(c.blendshapeToFix)
+                                && !string.IsNullOrWhiteSpace(c.fixingBlendshape))
+                    .Select(c => new CorrectiveBlendshapeEntry {
+                        blendshapeToFix = c.blendshapeToFix,
+                        fixingBlendshape = c.fixingBlendshape
+                    })
+                    .ToArray();
+
+                return new CustomBlendshapeEntry {
+                    name = entry.name,
+                    defaultValue = entry.defaultValue,
+                    isSlider = entry.isSlider,
+                    isSliderDefault = entry.isSliderDefault,
+                    correctiveBlendshapes = corrective.Length > 0 ? corrective : null
+                };
             })
             .ToArray();
 
@@ -748,6 +971,7 @@ public class CreatorModeModule
                     element.FindPropertyRelative("defaultValue").stringValue = ver.customBlendshapes[i].defaultValue;
                     element.FindPropertyRelative("isSlider").boolValue = ver.customBlendshapes[i].isSlider;
                     element.FindPropertyRelative("isSliderDefault").boolValue = ver.customBlendshapes[i].isSliderDefault;
+                    CopyCorrectivesToSerialized(element, ver.customBlendshapes[i].correctiveBlendshapes);
                 }
             }
 

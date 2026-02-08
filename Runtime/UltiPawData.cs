@@ -6,12 +6,20 @@ using Newtonsoft.Json.Converters;
 
 // Represents a custom blendshape with a name and default value.
 [JsonObject(MemberSerialization.OptIn)]
+public class CorrectiveBlendshapeEntry
+{
+    [JsonProperty] public string blendshapeToFix;
+    [JsonProperty] public string fixingBlendshape;
+}
+
+[JsonObject(MemberSerialization.OptIn)]
 public class CustomBlendshapeEntry
 {
     [JsonProperty] public string name;
     [JsonProperty] public string defaultValue;
     [JsonProperty] public bool isSlider;
     [JsonProperty] public bool isSliderDefault;
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)] public CorrectiveBlendshapeEntry[] correctiveBlendshapes;
 }
 
 // This response object maps to the JSON from the server's version endpoint.

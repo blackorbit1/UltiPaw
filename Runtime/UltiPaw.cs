@@ -7,12 +7,20 @@ using UnityEngine;
 
 // Represents a blendshape with a default value in creator mode.
 [Serializable]
+public class CreatorCorrectiveBlendshapeEntry
+{
+    public string blendshapeToFix;
+    public string fixingBlendshape;
+}
+
+[Serializable]
 public class CreatorBlendshapeEntry
 {
     public string name;
     public string defaultValue;
     public bool isSlider;
     public bool isSliderDefault;
+    public List<CreatorCorrectiveBlendshapeEntry> correctiveBlendshapes = new List<CreatorCorrectiveBlendshapeEntry>();
 }
 
 // This component is a pure data container for an avatar that has been modified
