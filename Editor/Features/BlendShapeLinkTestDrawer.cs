@@ -15,6 +15,7 @@ public class BlendShapeLinkTestDrawer
     private string destinationBlendshape = "Blink Fix";
     private string factorParameterName = "custom_face";
     private bool foldout;
+    private bool testEnabled = true;
     private bool autoApplyOnEnterPlay = true;
 
     private int remainingRetries;
@@ -28,6 +29,7 @@ public class BlendShapeLinkTestDrawer
     private const string ParamPrefKey = "UltiPaw_BlendShapeLinkTest_Param";
     private const string TargetPathPrefKey = "UltiPaw_BlendShapeLinkTest_TargetPath";
     private const string AutoPlayPrefKey = "UltiPaw_BlendShapeLinkTest_AutoPlay";
+    private const string EnabledPrefKey = "UltiPaw_BlendShapeLinkTest_Enabled";
 
     private const int MaxRetries = 25;
     private const double RetryIntervalSeconds = 0.2;
@@ -40,6 +42,7 @@ public class BlendShapeLinkTestDrawer
         destinationBlendshape = EditorPrefs.GetString(DestinationPrefKey, destinationBlendshape);
         factorParameterName = EditorPrefs.GetString(ParamPrefKey, factorParameterName);
         targetRendererPath = EditorPrefs.GetString(TargetPathPrefKey, string.Empty);
+        testEnabled = EditorPrefs.GetBool(EnabledPrefKey, true);
         autoApplyOnEnterPlay = EditorPrefs.GetBool(AutoPlayPrefKey, true);
     }
 
@@ -56,6 +59,19 @@ public class BlendShapeLinkTestDrawer
             MessageType.Info
         );
 
+        EditorGUI.BeginChangeCheck();
+        testEnabled = EditorGUILayout.ToggleLeft("Enable Test", testEnabled);
+        if (EditorGUI.EndChangeCheck())
+        {
+            EditorPrefs.SetBool(EnabledPrefKey, testEnabled);
+            if (!testEnabled)
+            {
+                EditorApplication.update -= RetryTick;
+                remainingRetries = 0;
+                nextRetryTime = 0;
+            }
+        }
+
         GameObject avatarRoot = editor?.ultiPawTarget != null ? editor.ultiPawTarget.transform.root.gameObject : null;
         if (avatarRoot == null)
         {
@@ -65,53 +81,55 @@ public class BlendShapeLinkTestDrawer
         }
 
         ResolveTargetRendererFromPathIfNeeded(avatarRoot);
-
-        EditorGUI.BeginChangeCheck();
-        targetRenderer = (SkinnedMeshRenderer)EditorGUILayout.ObjectField(
-            new GUIContent("Target Mesh", "SkinnedMeshRenderer that has both source and destination blendshapes."),
-            targetRenderer,
-            typeof(SkinnedMeshRenderer),
-            true
-        );
-        if (EditorGUI.EndChangeCheck())
+        using (new EditorGUI.DisabledScope(!testEnabled))
         {
-            sourceBlendshape = string.Empty;
-            destinationBlendshape = string.Empty;
-            targetRendererPath = GetRendererPath(avatarRoot, targetRenderer);
-            EditorPrefs.SetString(TargetPathPrefKey, targetRendererPath ?? string.Empty);
-        }
-
-        DrawBlendshapeSelectors();
-
-        EditorGUI.BeginChangeCheck();
-        factorParameterName = EditorGUILayout.TextField(
-            new GUIContent("Factor Parameter", "Float parameter name used as multiplier (0..1)."),
-            factorParameterName
-        );
-        if (EditorGUI.EndChangeCheck())
-        {
-            EditorPrefs.SetString(ParamPrefKey, factorParameterName ?? string.Empty);
-        }
-
-        EditorGUI.BeginChangeCheck();
-        autoApplyOnEnterPlay = EditorGUILayout.ToggleLeft("Auto-apply on Enter Play Mode", autoApplyOnEnterPlay);
-        if (EditorGUI.EndChangeCheck())
-        {
-            EditorPrefs.SetBool(AutoPlayPrefKey, autoApplyOnEnterPlay);
-        }
-
-        if (!EditorApplication.isPlaying)
-        {
-            EditorGUILayout.HelpBox(
-                autoApplyOnEnterPlay
-                    ? "Configured. Enter Play Mode to patch temporary VRCFury controllers."
-                    : "Auto-apply is disabled.",
-                MessageType.None
+            EditorGUI.BeginChangeCheck();
+            targetRenderer = (SkinnedMeshRenderer)EditorGUILayout.ObjectField(
+                new GUIContent("Target Mesh", "SkinnedMeshRenderer that has both source and destination blendshapes."),
+                targetRenderer,
+                typeof(SkinnedMeshRenderer),
+                true
             );
-        }
-        else
-        {
-            DrawRuntimeControls(avatarRoot);
+            if (EditorGUI.EndChangeCheck())
+            {
+                sourceBlendshape = string.Empty;
+                destinationBlendshape = string.Empty;
+                targetRendererPath = GetRendererPath(avatarRoot, targetRenderer);
+                EditorPrefs.SetString(TargetPathPrefKey, targetRendererPath ?? string.Empty);
+            }
+
+            DrawBlendshapeSelectors();
+
+            EditorGUI.BeginChangeCheck();
+            factorParameterName = EditorGUILayout.TextField(
+                new GUIContent("Factor Parameter", "Float parameter name used as multiplier (0..1)."),
+                factorParameterName
+            );
+            if (EditorGUI.EndChangeCheck())
+            {
+                EditorPrefs.SetString(ParamPrefKey, factorParameterName ?? string.Empty);
+            }
+
+            EditorGUI.BeginChangeCheck();
+            autoApplyOnEnterPlay = EditorGUILayout.ToggleLeft("Auto-apply on Enter Play Mode", autoApplyOnEnterPlay);
+            if (EditorGUI.EndChangeCheck())
+            {
+                EditorPrefs.SetBool(AutoPlayPrefKey, autoApplyOnEnterPlay);
+            }
+
+            if (!EditorApplication.isPlaying)
+            {
+                EditorGUILayout.HelpBox(
+                    autoApplyOnEnterPlay
+                        ? "Configured. Enter Play Mode to patch temporary VRCFury controllers."
+                        : "Auto-apply is disabled.",
+                    MessageType.None
+                );
+            }
+            else
+            {
+                DrawRuntimeControls(avatarRoot);
+            }
         }
 
         if (!string.IsNullOrEmpty(runtimeStatus))
@@ -119,11 +137,15 @@ public class BlendShapeLinkTestDrawer
             EditorGUILayout.HelpBox(runtimeStatus, runtimeStatusIsError ? MessageType.Warning : MessageType.Info);
         }
 
+        DrawActiveVersionCorrectiveLinksDebug();
+
         EditorGUILayout.EndVertical();
     }
 
     public void OnPlayModeStateChanged(PlayModeStateChange state)
     {
+        if (!testEnabled) return;
+
         if (state == PlayModeStateChange.EnteredPlayMode)
         {
             runtimeStatus = null;
@@ -138,6 +160,42 @@ public class BlendShapeLinkTestDrawer
             remainingRetries = 0;
             nextRetryTime = 0;
         }
+    }
+
+    private void DrawActiveVersionCorrectiveLinksDebug()
+    {
+        EditorGUILayout.Space(6f);
+        EditorGUILayout.LabelField("Active Links (Current Applied Version)", EditorStyles.miniBoldLabel);
+
+        var version = editor?.ultiPawTarget?.appliedUltiPawVersion;
+        GameObject avatarRoot = editor?.ultiPawTarget != null ? editor.ultiPawTarget.transform.root.gameObject : null;
+        if (version?.customBlendshapes == null || version.customBlendshapes.Length == 0)
+        {
+            EditorGUILayout.HelpBox("No applied version or no blendshape data.", MessageType.None);
+            return;
+        }
+
+        var lines = new List<string>();
+        foreach (var source in version.customBlendshapes)
+        {
+            if (source?.correctiveBlendshapes == null || source.correctiveBlendshapes.Length == 0) continue;
+
+            string factorMode = VRCFuryService.Instance.GetFactorDebugLabel(avatarRoot, source);
+            foreach (var link in source.correctiveBlendshapes)
+            {
+                if (link == null) continue;
+                if (string.IsNullOrWhiteSpace(link.blendshapeToFix) || string.IsNullOrWhiteSpace(link.fixingBlendshape)) continue;
+                lines.Add($"{source.name}: {link.blendshapeToFix} -> {link.fixingBlendshape} ({factorMode})");
+            }
+        }
+
+        if (lines.Count == 0)
+        {
+            EditorGUILayout.HelpBox("No corrective links found on applied version.", MessageType.None);
+            return;
+        }
+
+        EditorGUILayout.HelpBox(string.Join("\n", lines), MessageType.None);
     }
 
     private void DrawRuntimeControls(GameObject avatarRoot)

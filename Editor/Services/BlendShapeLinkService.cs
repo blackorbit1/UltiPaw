@@ -30,7 +30,8 @@ public class BlendShapeLinkService
         SkinnedMeshRenderer targetRenderer,
         string sourceBlendshape,
         string destinationBlendshape,
-        string factorParameterName
+        string factorParameterName,
+        float? factorDefaultValue = null
     )
     {
         if (avatarRoot == null) return Fail("Avatar root is null.");
@@ -62,7 +63,7 @@ public class BlendShapeLinkService
 
         foreach (var controller in controllers)
         {
-            if (!EnsureFloatParameter(controller, factorParameterName, out var paramError))
+            if (!EnsureFloatParameter(controller, factorParameterName, factorDefaultValue, out var paramError))
             {
                 Debug.LogWarning("[UltiPaw] " + paramError);
                 continue;
@@ -196,7 +197,7 @@ public class BlendShapeLinkService
         return false;
     }
 
-    private static bool EnsureFloatParameter(AnimatorController controller, string parameterName, out string error)
+    private static bool EnsureFloatParameter(AnimatorController controller, string parameterName, float? defaultValue, out string error)
     {
         error = null;
         var existing = controller.parameters.FirstOrDefault(p => p.name == parameterName);
@@ -207,10 +208,22 @@ public class BlendShapeLinkService
                 error = $"Controller '{controller.name}' has parameter '{parameterName}' with type {existing.type}.";
                 return false;
             }
+            if (defaultValue.HasValue)
+            {
+                existing.defaultFloat = Mathf.Clamp01(defaultValue.Value);
+            }
             return true;
         }
 
         controller.AddParameter(parameterName, AnimatorControllerParameterType.Float);
+        if (defaultValue.HasValue)
+        {
+            var created = controller.parameters.FirstOrDefault(p => p.name == parameterName);
+            if (created != null)
+            {
+                created.defaultFloat = Mathf.Clamp01(defaultValue.Value);
+            }
+        }
         return true;
     }
 
@@ -301,7 +314,6 @@ public class BlendShapeLinkService
             if (IsWrapperTree(tree, factorParameterName))
             {
                 wrappersAlreadyPresent++;
-                return tree;
             }
 
             bool changed = false;

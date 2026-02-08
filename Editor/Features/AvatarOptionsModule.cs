@@ -34,6 +34,9 @@ public class AvatarOptionsModule
     public void OnPlayModeStateChanged(PlayModeStateChange state)
     {
         slidersDrawer.OnPlayModeStateChanged(state);
+
+        GameObject avatarRoot = editor?.ultiPawTarget != null ? editor.ultiPawTarget.transform.root.gameObject : null;
+        VRCFuryService.Instance.OnPlayModeStateChanged(state, avatarRoot, editor?.ultiPawTarget?.appliedUltiPawVersion);
     }
 }
 #endif
