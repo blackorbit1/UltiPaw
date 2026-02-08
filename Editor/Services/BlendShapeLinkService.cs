@@ -98,11 +98,30 @@ public class BlendShapeLinkService
             {
                 controllersProcessed++;
                 anyChanged = true;
+
+                // Ensure live animators in Play Mode receive the parameter value immediately
+                if (Application.isPlaying && factorDefaultValue.HasValue)
+                {
+                    foreach (var animator in avatarRoot.GetComponentsInChildren<Animator>(true))
+                    {
+                        if (animator == null) continue;
+                        var runtimeCtrl = animator.runtimeAnimatorController;
+                        bool matches = false;
+                        if (runtimeCtrl == controller) matches = true;
+                        else if (runtimeCtrl is AnimatorOverrideController odc && odc.runtimeAnimatorController == controller) matches = true;
+
+                        if (matches)
+                        {
+                            animator.SetFloat(factorParameterName, Mathf.Clamp01(factorDefaultValue.Value));
+                        }
+                    }
+                }
             }
         }
 
-        if (anyChanged)
+        if (anyChanged || wrappersAlreadyPresent > 0)
         {
+            string status = anyChanged ? "Patched" : "Already patched";
             return new ApplyResult
             {
                 success = true,
@@ -111,20 +130,7 @@ public class BlendShapeLinkService
                 statesRewritten = statesRewritten,
                 wrappersAlreadyPresent = wrappersAlreadyPresent,
                 message =
-                    $"Patched {controllersProcessed} temp controller(s), wrapped {clipsWrapped} clip(s), rewrote {statesRewritten} state/tree motion reference(s)."
-            };
-        }
-
-        if (wrappersAlreadyPresent > 0)
-        {
-            return new ApplyResult
-            {
-                success = true,
-                controllersProcessed = controllers.Count,
-                clipsWrapped = 0,
-                statesRewritten = 0,
-                wrappersAlreadyPresent = wrappersAlreadyPresent,
-                message = $"Already patched (found {wrappersAlreadyPresent} existing wrapper tree reference(s))."
+                    $"{status} {controllersProcessed} temp controller(s), wrapped {clipsWrapped} clip(s), rewrote {statesRewritten} state/tree motion reference(s)."
             };
         }
 
@@ -210,7 +216,18 @@ public class BlendShapeLinkService
             }
             if (defaultValue.HasValue)
             {
-                existing.defaultFloat = Mathf.Clamp01(defaultValue.Value);
+                var paramsCopy = controller.parameters;
+                bool changed = false;
+                for (int i = 0; i < paramsCopy.Length; i++)
+                {
+                    if (paramsCopy[i].name == parameterName)
+                    {
+                        paramsCopy[i].defaultFloat = Mathf.Clamp01(defaultValue.Value);
+                        changed = true;
+                        break;
+                    }
+                }
+                if (changed) controller.parameters = paramsCopy;
             }
             return true;
         }
@@ -218,11 +235,18 @@ public class BlendShapeLinkService
         controller.AddParameter(parameterName, AnimatorControllerParameterType.Float);
         if (defaultValue.HasValue)
         {
-            var created = controller.parameters.FirstOrDefault(p => p.name == parameterName);
-            if (created != null)
+            var paramsCopy = controller.parameters;
+            bool changed = false;
+            for (int i = 0; i < paramsCopy.Length; i++)
             {
-                created.defaultFloat = Mathf.Clamp01(defaultValue.Value);
+                if (paramsCopy[i].name == parameterName)
+                {
+                    paramsCopy[i].defaultFloat = Mathf.Clamp01(defaultValue.Value);
+                    changed = true;
+                    break;
+                }
             }
+            if (changed) controller.parameters = paramsCopy;
         }
         return true;
     }
@@ -260,13 +284,22 @@ public class BlendShapeLinkService
                 clipCache,
                 visitedTrees,
                 ref clipsWrapped,
-                ref wrappersAlreadyPresent
+                ref wrappersAlreadyPresent,
+                out bool internalChanged
             );
 
-            if (rewritten == null || rewritten == state.motion) continue;
-            state.motion = rewritten;
-            statesRewritten++;
-            changed = true;
+            if (rewritten == null) continue;
+
+            if (rewritten != state.motion)
+            {
+                state.motion = rewritten;
+                statesRewritten++;
+                changed = true;
+            }
+            else if (internalChanged)
+            {
+                changed = true;
+            }
         }
 
         foreach (var childMachine in stateMachine.stateMachines)
@@ -301,9 +334,11 @@ public class BlendShapeLinkService
         IDictionary<AnimationClip, Motion> clipCache,
         ISet<BlendTree> visitedTrees,
         ref int clipsWrapped,
-        ref int wrappersAlreadyPresent
+        ref int wrappersAlreadyPresent,
+        out bool changed
     )
     {
+        changed = false;
         if (motion == null) return null;
 
         if (motion is BlendTree tree)
@@ -313,10 +348,19 @@ public class BlendShapeLinkService
 
             if (IsWrapperTree(tree, factorParameterName))
             {
+                if (TryAugmentExistingWrapperVariant(
+                        tree,
+                        targetPath,
+                        sourceProperty,
+                        destinationProperty
+                    ))
+                {
+                    changed = true;
+                }
                 wrappersAlreadyPresent++;
+                return tree;
             }
 
-            bool changed = false;
             var children = tree.children;
             for (int i = 0; i < children.Length; i++)
             {
@@ -330,14 +374,22 @@ public class BlendShapeLinkService
                     clipCache,
                     visitedTrees,
                     ref clipsWrapped,
-                    ref wrappersAlreadyPresent
+                    ref wrappersAlreadyPresent,
+                    out bool childInternalChanged
                 );
-                if (rewritten == null || rewritten == childMotion) continue;
-                children[i].motion = rewritten;
-                changed = true;
+
+                if (rewritten != null && (rewritten != childMotion || childInternalChanged))
+                {
+                    children[i].motion = rewritten;
+                    changed = true;
+                }
             }
 
-            if (changed) tree.children = children;
+            if (changed)
+            {
+                tree.children = children;
+                EditorUtility.SetDirty(tree);
+            }
             return tree;
         }
 
@@ -358,6 +410,7 @@ public class BlendShapeLinkService
         var wrapperTree = CreateWrapperTree(clip, variantClip, factorParameterName);
         clipCache[clip] = wrapperTree;
         clipsWrapped++;
+        changed = true;
         return wrapperTree;
     }
 
@@ -398,6 +451,58 @@ public class BlendShapeLinkService
         return false;
     }
 
+    private static bool TryAugmentExistingWrapperVariant(
+        BlendTree wrapperTree,
+        string targetPath,
+        string sourceProperty,
+        string destinationProperty
+    )
+    {
+        if (wrapperTree == null) return false;
+        var children = wrapperTree.children;
+        if (children == null || children.Length < 2) return false;
+
+        // Recursively find the original clip in case of nested wrappers
+        AnimationClip originalClip = null;
+        Motion m0 = children[0].motion;
+        while (m0 != null)
+        {
+            if (m0 is AnimationClip c)
+            {
+                originalClip = c;
+                break;
+            }
+            if (m0 is BlendTree t && t.name.StartsWith(WrapperPrefix, StringComparison.Ordinal))
+            {
+                var tChildren = t.children;
+                if (tChildren != null && tChildren.Length > 0)
+                {
+                    m0 = tChildren[0].motion;
+                    continue;
+                }
+            }
+            break;
+        }
+
+        if (originalClip == null) return false;
+        if (!(children[1].motion is AnimationClip variantClip)) return false;
+
+        if (!TryGetSourceBinding(originalClip, targetPath, sourceProperty, out var sourceBinding, out var sourceCurve))
+        {
+            return false;
+        }
+
+        var destinationBinding = sourceBinding;
+        destinationBinding.propertyName = destinationProperty;
+
+        var existing = AnimationUtility.GetEditorCurve(variantClip, destinationBinding);
+        if (existing != null) return false;
+
+        AnimationUtility.SetEditorCurve(variantClip, destinationBinding, sourceCurve);
+        EditorUtility.SetDirty(variantClip);
+        return true;
+    }
+
     private static AnimationClip CreateVariantClip(
         AnimationClip sourceClip,
         EditorCurveBinding sourceBinding,
@@ -412,6 +517,7 @@ public class BlendShapeLinkService
         var destinationBinding = sourceBinding;
         destinationBinding.propertyName = destinationProperty;
         AnimationUtility.SetEditorCurve(variantClip, destinationBinding, sourceCurve);
+        EditorUtility.SetDirty(variantClip);
         return variantClip;
     }
 

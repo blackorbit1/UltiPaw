@@ -344,7 +344,18 @@ public class VRCFuryService
             return $"factor param: {param}";
         }
 
-        return "factor: blendshape activation value (internal const param per mesh)";
+        float factor = 0f;
+        if (avatarRoot != null)
+        {
+            var renderers = avatarRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+            var first = renderers.FirstOrDefault(s => s != null && s.sharedMesh != null && s.sharedMesh.GetBlendShapeIndex(sourceBlendshape?.name) >= 0);
+            if (first != null)
+            {
+                factor = GetBlendshapeWeight01(first, sourceBlendshape?.name);
+            }
+        }
+
+        return $"factor: constant {factor:F2} (internal const param per mesh)";
     }
 
     private bool IsSliderFactorActive(GameObject avatarRoot, CustomBlendshapeEntry sourceBlendshape)
@@ -364,7 +375,7 @@ public class VRCFuryService
         return BuildSliderGlobalParamName(blendshapeName);
     }
 
-    private bool TryGetActiveSliderGlobalParam(GameObject avatarRoot, string blendshapeName, out string globalParam)
+    public bool TryGetActiveSliderGlobalParam(GameObject avatarRoot, string blendshapeName, out string globalParam)
     {
         globalParam = null;
         if (avatarRoot == null || string.IsNullOrWhiteSpace(blendshapeName)) return false;

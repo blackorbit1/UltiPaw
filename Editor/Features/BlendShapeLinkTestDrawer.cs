@@ -110,6 +110,22 @@ public class BlendShapeLinkTestDrawer
                 EditorPrefs.SetString(ParamPrefKey, factorParameterName ?? string.Empty);
             }
 
+            if (GUILayout.Button(new GUIContent("Auto-resolve Slider Parameter", "Try to find the correct internal VRCFury parameter for this name."), EditorStyles.miniButton))
+            {
+                if (VRCFuryService.Instance.TryGetActiveSliderGlobalParam(avatarRoot, factorParameterName, out var globalParam))
+                {
+                    factorParameterName = globalParam;
+                    EditorPrefs.SetString(ParamPrefKey, factorParameterName);
+                    UltiPawLogger.Log($"[UltiPaw] Resolved slider parameter to: {factorParameterName}");
+                }
+                else
+                {
+                    // No prefix? maybe it needs one
+                    string prefixed = "UP_Slider_" + factorParameterName;
+                    UltiPawLogger.LogWarning($"[UltiPaw] Could not find slider for '{factorParameterName}'. If it is an UltiPaw slider, it probably needs a prefix (like '{prefixed}').");
+                }
+            }
+
             EditorGUI.BeginChangeCheck();
             autoApplyOnEnterPlay = EditorGUILayout.ToggleLeft("Auto-apply on Enter Play Mode", autoApplyOnEnterPlay);
             if (EditorGUI.EndChangeCheck())
@@ -160,6 +176,7 @@ public class BlendShapeLinkTestDrawer
             remainingRetries = 0;
             nextRetryTime = 0;
         }
+        editor?.Repaint();
     }
 
     private void DrawActiveVersionCorrectiveLinksDebug()
