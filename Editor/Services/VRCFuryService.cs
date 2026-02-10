@@ -32,6 +32,25 @@ public class VRCFuryService
         public string compressionPath;
     }
 
+    public static string GetSliderGlobalParamName(string sliderName)
+    {
+        if (string.IsNullOrWhiteSpace(sliderName))
+        {
+            return "UP_SLIDER_PARAM";
+        }
+
+        var chars = sliderName
+            .Select(c => char.IsLetterOrDigit(c) ? c : '_')
+            .ToArray();
+        string sanitized = new string(chars);
+        if (string.IsNullOrWhiteSpace(sanitized))
+        {
+            sanitized = "SLIDER";
+        }
+
+        return "UP_SLIDER_" + sanitized;
+    }
+
     public void ApplySliders(GameObject avatarRoot, string menuPath, List<CustomBlendshapeEntry> selectedSliders)
     {
         if (avatarRoot == null)
@@ -139,6 +158,8 @@ public class VRCFuryService
         _toggleType.GetField("name")?.SetValue(toggleFeature, fullPath);
         _toggleType.GetField("slider")?.SetValue(toggleFeature, true);
         _toggleType.GetField("defaultSliderValue")?.SetValue(toggleFeature, GetCurrentSliderValue(avatarRoot, sliderEntry.name));
+        _toggleType.GetField("useGlobalParam")?.SetValue(toggleFeature, true);
+        _toggleType.GetField("globalParam")?.SetValue(toggleFeature, GetSliderGlobalParamName(sliderEntry.name));
 
         var state = System.Activator.CreateInstance(_stateType);
         var blendshapeAction = CreateBlendshapeAction(sliderEntry.name, 100f);

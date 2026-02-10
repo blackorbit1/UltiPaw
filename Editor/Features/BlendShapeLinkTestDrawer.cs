@@ -1,6 +1,7 @@
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
@@ -10,37 +11,26 @@ public class BlendShapeLinkTestDrawer
     private readonly UltiPawEditor editor;
 
     private SkinnedMeshRenderer targetRenderer;
-    private string targetRendererPath;
     private string sourceBlendshape = "Blink";
     private string destinationBlendshape = "Blink Fix";
     private string factorParameterName = "custom_face";
     private bool foldout;
-    private bool autoApplyOnEnterPlay = true;
-
-    private int remainingRetries;
-    private double nextRetryTime;
-    private string runtimeStatus;
-    private bool runtimeStatusIsError;
+    private bool testEnabled;
 
     private const string FoldoutPrefKey = "UltiPaw_BlendShapeLinkTest_Foldout";
+    private const string EnabledPrefKey = "UltiPaw_BlendShapeLinkTest_Enabled";
     private const string SourcePrefKey = "UltiPaw_BlendShapeLinkTest_Source";
     private const string DestinationPrefKey = "UltiPaw_BlendShapeLinkTest_Destination";
     private const string ParamPrefKey = "UltiPaw_BlendShapeLinkTest_Param";
-    private const string TargetPathPrefKey = "UltiPaw_BlendShapeLinkTest_TargetPath";
-    private const string AutoPlayPrefKey = "UltiPaw_BlendShapeLinkTest_AutoPlay";
-
-    private const int MaxRetries = 25;
-    private const double RetryIntervalSeconds = 0.2;
 
     public BlendShapeLinkTestDrawer(UltiPawEditor editor)
     {
         this.editor = editor;
         foldout = EditorPrefs.GetBool(FoldoutPrefKey, false);
+        testEnabled = EditorPrefs.GetBool(EnabledPrefKey, true);
         sourceBlendshape = EditorPrefs.GetString(SourcePrefKey, sourceBlendshape);
         destinationBlendshape = EditorPrefs.GetString(DestinationPrefKey, destinationBlendshape);
         factorParameterName = EditorPrefs.GetString(ParamPrefKey, factorParameterName);
-        targetRendererPath = EditorPrefs.GetString(TargetPathPrefKey, string.Empty);
-        autoApplyOnEnterPlay = EditorPrefs.GetBool(AutoPlayPrefKey, true);
     }
 
     public void Draw()
@@ -51,8 +41,8 @@ public class BlendShapeLinkTestDrawer
 
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
         EditorGUILayout.HelpBox(
-            "This runs in Play Mode after VRCFury creates temporary controllers. " +
-            "It patches only temporary controllers and does not modify your original controller assets.",
+            "Saves a BlendShape factor link configuration. " +
+            "The patch is applied only to VRCFury temporary controllers during avatar preprocess (build/upload and play-mode build).",
             MessageType.Info
         );
 
@@ -64,187 +54,76 @@ public class BlendShapeLinkTestDrawer
             return;
         }
 
-        ResolveTargetRendererFromPathIfNeeded(avatarRoot);
-
-        EditorGUI.BeginChangeCheck();
-        targetRenderer = (SkinnedMeshRenderer)EditorGUILayout.ObjectField(
-            new GUIContent("Target Mesh", "SkinnedMeshRenderer that has both source and destination blendshapes."),
-            targetRenderer,
-            typeof(SkinnedMeshRenderer),
-            true
-        );
-        if (EditorGUI.EndChangeCheck())
-        {
-            sourceBlendshape = string.Empty;
-            destinationBlendshape = string.Empty;
-            targetRendererPath = GetRendererPath(avatarRoot, targetRenderer);
-            EditorPrefs.SetString(TargetPathPrefKey, targetRendererPath ?? string.Empty);
-        }
-
-        DrawBlendshapeSelectors();
-
-        EditorGUI.BeginChangeCheck();
-        factorParameterName = EditorGUILayout.TextField(
-            new GUIContent("Factor Parameter", "Float parameter name used as multiplier (0..1)."),
-            factorParameterName
-        );
-        if (EditorGUI.EndChangeCheck())
-        {
-            EditorPrefs.SetString(ParamPrefKey, factorParameterName ?? string.Empty);
-        }
-
-        EditorGUI.BeginChangeCheck();
-        autoApplyOnEnterPlay = EditorGUILayout.ToggleLeft("Auto-apply on Enter Play Mode", autoApplyOnEnterPlay);
-        if (EditorGUI.EndChangeCheck())
-        {
-            EditorPrefs.SetBool(AutoPlayPrefKey, autoApplyOnEnterPlay);
-        }
-
-        if (!EditorApplication.isPlaying)
-        {
-            EditorGUILayout.HelpBox(
-                autoApplyOnEnterPlay
-                    ? "Configured. Enter Play Mode to patch temporary VRCFury controllers."
-                    : "Auto-apply is disabled.",
-                MessageType.None
-            );
-        }
-        else
-        {
-            DrawRuntimeControls(avatarRoot);
-        }
-
-        if (!string.IsNullOrEmpty(runtimeStatus))
-        {
-            EditorGUILayout.HelpBox(runtimeStatus, runtimeStatusIsError ? MessageType.Warning : MessageType.Info);
-        }
-
-        EditorGUILayout.EndVertical();
-    }
-
-    public void OnPlayModeStateChanged(PlayModeStateChange state)
-    {
-        if (state == PlayModeStateChange.EnteredPlayMode)
-        {
-            runtimeStatus = null;
-            runtimeStatusIsError = false;
-            if (autoApplyOnEnterPlay)
-            {
-                StartRetryPatch();
-            }
-        }
-        else if (state == PlayModeStateChange.EnteredEditMode)
-        {
-            remainingRetries = 0;
-            nextRetryTime = 0;
-        }
-    }
-
-    private void DrawRuntimeControls(GameObject avatarRoot)
-    {
-        if (remainingRetries > 0)
-        {
-            EditorGUILayout.LabelField($"Waiting for VRCFury temp controllers... retries left: {remainingRetries}");
-        }
-
-        if (GUILayout.Button("Apply Now (Play Mode)"))
-        {
-            TryApplyOnce(avatarRoot, finalAttempt: true);
-        }
-
-        EditorApplication.QueuePlayerLoopUpdate();
-    }
-
-    private void StartRetryPatch()
-    {
-        remainingRetries = MaxRetries;
-        nextRetryTime = EditorApplication.timeSinceStartup + 0.1;
-        EditorApplication.update -= RetryTick;
-        EditorApplication.update += RetryTick;
-    }
-
-    private void RetryTick()
-    {
-        if (!EditorApplication.isPlaying)
-        {
-            EditorApplication.update -= RetryTick;
-            remainingRetries = 0;
-            return;
-        }
-
-        if (remainingRetries <= 0)
-        {
-            EditorApplication.update -= RetryTick;
-            runtimeStatusIsError = true;
-            if (string.IsNullOrEmpty(runtimeStatus))
-            {
-                runtimeStatus = "Timed out waiting for matching temporary controllers.";
-            }
-            return;
-        }
-
-        if (EditorApplication.timeSinceStartup < nextRetryTime) return;
-        nextRetryTime = EditorApplication.timeSinceStartup + RetryIntervalSeconds;
-
-        GameObject avatarRoot = editor?.ultiPawTarget != null ? editor.ultiPawTarget.transform.root.gameObject : null;
-        if (avatarRoot == null)
-        {
-            remainingRetries = 0;
-            runtimeStatus = "Avatar root missing during play mode.";
-            runtimeStatusIsError = true;
-            EditorApplication.update -= RetryTick;
-            return;
-        }
-
-        bool completed = TryApplyOnce(avatarRoot, finalAttempt: remainingRetries == 1);
-        remainingRetries--;
-        if (completed)
-        {
-            EditorApplication.update -= RetryTick;
-            remainingRetries = 0;
-        }
-    }
-
-    private bool TryApplyOnce(GameObject avatarRoot, bool finalAttempt)
-    {
-        ResolveTargetRendererFromPathIfNeeded(avatarRoot);
         if (targetRenderer == null)
         {
             targetRenderer = FindDefaultBodyRenderer(avatarRoot);
-            targetRendererPath = GetRendererPath(avatarRoot, targetRenderer);
         }
 
-        var result = BlendShapeLinkService.Instance.ApplyFactorLinkToTemporaryControllers(
-            avatarRoot,
-            targetRenderer,
-            sourceBlendshape,
-            destinationBlendshape,
-            factorParameterName
+        EditorGUI.BeginChangeCheck();
+        testEnabled = EditorGUILayout.Toggle(
+            new GUIContent("Enable Test Link", "Toggles only this manual test link. Does not affect version-based BlendShape links."),
+            testEnabled
         );
-
-        if (result.success)
+        if (EditorGUI.EndChangeCheck())
         {
-            runtimeStatusIsError = false;
-            runtimeStatus = result.message;
-            UltiPawLogger.Log("[UltiPaw] " + result.message);
-            return true;
+            EditorPrefs.SetBool(EnabledPrefKey, testEnabled);
+            if (targetRenderer != null &&
+                !string.IsNullOrWhiteSpace(sourceBlendshape) &&
+                !string.IsNullOrWhiteSpace(destinationBlendshape) &&
+                !string.IsNullOrWhiteSpace(factorParameterName))
+            {
+                BlendShapeLinkService.Instance.UpsertFactorLinkConfig(
+                    avatarRoot,
+                    targetRenderer,
+                    sourceBlendshape,
+                    destinationBlendshape,
+                    factorParameterName,
+                    testEnabled
+                );
+            }
         }
 
-        // Retry-worthy outcomes: temp controllers not ready yet or source curve not present yet.
-        bool retryWorthy =
-            result.message.IndexOf("No temporary controllers found yet", StringComparison.OrdinalIgnoreCase) >= 0 ||
-            result.message.IndexOf("No matching source blendshape curves", StringComparison.OrdinalIgnoreCase) >= 0;
-
-        if (retryWorthy && !finalAttempt)
+        using (new EditorGUI.DisabledScope(!testEnabled))
         {
-            runtimeStatusIsError = false;
-            runtimeStatus = result.message;
-            return false;
+            EditorGUI.BeginChangeCheck();
+            targetRenderer = (SkinnedMeshRenderer)EditorGUILayout.ObjectField(
+                new GUIContent("Target Mesh", "SkinnedMeshRenderer that has both source and destination blendshapes."),
+                targetRenderer,
+                typeof(SkinnedMeshRenderer),
+                true
+            );
+            if (EditorGUI.EndChangeCheck())
+            {
+                sourceBlendshape = string.Empty;
+                destinationBlendshape = string.Empty;
+            }
+
+            DrawBlendshapeSelectors();
+
+            EditorGUI.BeginChangeCheck();
+            factorParameterName = EditorGUILayout.TextField(
+                new GUIContent("Factor Parameter", "Float parameter name used as the multiplier (0..1)."),
+                factorParameterName
+            );
+            if (EditorGUI.EndChangeCheck())
+            {
+                EditorPrefs.SetString(ParamPrefKey, factorParameterName ?? string.Empty);
+            }
+
         }
 
-        runtimeStatusIsError = true;
-        runtimeStatus = result.message;
-        return true;
+        EditorGUILayout.Space(4f);
+        using (new EditorGUI.DisabledScope(targetRenderer == null))
+        {
+            if (GUILayout.Button("Save Factor Link Config"))
+            {
+                SaveConfig(avatarRoot);
+            }
+        }
+
+        DrawActiveVersionLinksDebug(avatarRoot);
+
+        EditorGUILayout.EndVertical();
     }
 
     private void DrawBlendshapeSelectors()
@@ -256,8 +135,6 @@ public class BlendShapeLinkTestDrawer
         {
             sourceBlendshape = EditorGUILayout.TextField("Source Blendshape", sourceBlendshape);
             destinationBlendshape = EditorGUILayout.TextField("Destination Blendshape", destinationBlendshape);
-            EditorPrefs.SetString(SourcePrefKey, sourceBlendshape ?? string.Empty);
-            EditorPrefs.SetString(DestinationPrefKey, destinationBlendshape ?? string.Empty);
             return;
         }
 
@@ -281,34 +158,54 @@ public class BlendShapeLinkTestDrawer
         }
     }
 
-    private void ResolveTargetRendererFromPathIfNeeded(GameObject avatarRoot)
+    private void SaveConfig(GameObject avatarRoot)
     {
-        if (avatarRoot == null) return;
-        if (targetRenderer != null && targetRenderer.transform.IsChildOf(avatarRoot.transform)) return;
+        var result = BlendShapeLinkService.Instance.UpsertFactorLinkConfig(
+            avatarRoot,
+            targetRenderer,
+            sourceBlendshape,
+            destinationBlendshape,
+            factorParameterName,
+            testEnabled
+        );
 
-        if (!string.IsNullOrEmpty(targetRendererPath))
+        if (!result.success)
         {
-            var t = avatarRoot.transform.Find(targetRendererPath);
-            if (t != null)
-            {
-                var resolved = t.GetComponent<SkinnedMeshRenderer>();
-                if (resolved != null)
-                {
-                    targetRenderer = resolved;
-                    return;
-                }
-            }
+            EditorUtility.DisplayDialog("BlendShape Factor Link", result.message, "Ok");
+            return;
         }
 
-        targetRenderer = FindDefaultBodyRenderer(avatarRoot);
-        targetRendererPath = GetRendererPath(avatarRoot, targetRenderer);
+        EditorUtility.SetDirty(editor?.ultiPawTarget);
+        UltiPawLogger.Log("[UltiPaw] BlendShape factor link config saved.");
+        EditorUtility.DisplayDialog("BlendShape Factor Link", result.message, "Ok");
     }
 
-    private static string GetRendererPath(GameObject avatarRoot, SkinnedMeshRenderer renderer)
+    public void OnPlayModeStateChanged(PlayModeStateChange state)
     {
-        if (avatarRoot == null || renderer == null) return string.Empty;
-        if (!renderer.transform.IsChildOf(avatarRoot.transform)) return string.Empty;
-        return AnimationUtility.CalculateTransformPath(renderer.transform, avatarRoot.transform);
+        // Intentionally no-op. Execution is handled by BlendShapeLinkPostVrcfuryHook.
+    }
+
+    private void DrawActiveVersionLinksDebug(GameObject avatarRoot)
+    {
+        EditorGUILayout.Space(6f);
+        EditorGUILayout.LabelField("Active Version Links (Debug)", EditorStyles.boldLabel);
+
+        var infos = BlendShapeLinkService.Instance.GetActiveVersionLinkDebugInfo(avatarRoot);
+        if (infos == null || infos.Count == 0)
+        {
+            EditorGUILayout.HelpBox("No active version BlendShape links.", MessageType.None);
+            return;
+        }
+
+        foreach (var info in infos)
+        {
+            string factorInfo = info.usesConstantFactor
+                ? $"param={info.factorParameterName}, constant={info.constantFactor.ToString("G9", CultureInfo.InvariantCulture)}"
+                : $"param={info.factorParameterName}";
+
+            EditorGUILayout.LabelField(
+                $"[{info.targetRendererPath}] {info.sourceBlendshape} -> {info.destinationBlendshape} | {factorInfo}");
+        }
     }
 
     private static List<string> GetBlendshapeNames(SkinnedMeshRenderer renderer)

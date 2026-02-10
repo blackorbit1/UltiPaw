@@ -311,6 +311,7 @@ public class VersionActions
             }
             
             editor.ultiPawTarget.appliedUltiPawVersion = version;
+            SyncAppliedVersionBlendshapeLinkCache(version);
             
             // Check feature flags
             bool hasCustomVeins = !isReset && version != null && (version.extraCustomization?.Contains("customVeins") ?? false);
@@ -446,6 +447,7 @@ public class VersionActions
                 editor.ultiPawTarget.customBlendshapeOverrideValues.Clear();
                 editor.ultiPawTarget.useCustomSliderSelection = false;
                 editor.ultiPawTarget.customSliderSelectionNames.Clear();
+                SyncAppliedVersionBlendshapeLinkCache(null);
             }
         }
         
@@ -664,6 +666,7 @@ public class VersionActions
             editor.isUltiPaw = true;
             editor.currentIsCustom = false;
             editor.ultiPawTarget.appliedUltiPawVersion = matchingVersion;
+            SyncAppliedVersionBlendshapeLinkCache(matchingVersion);
         }
         else
         {
@@ -703,6 +706,49 @@ public class VersionActions
         }
 
         EditorUtility.SetDirty(editor.ultiPawTarget);
+    }
+
+    private void SyncAppliedVersionBlendshapeLinkCache(UltiPawVersion version)
+    {
+        if (editor?.ultiPawTarget == null) return;
+
+        var cache = editor.ultiPawTarget.appliedVersionBlendshapeLinksCache;
+        if (cache == null)
+        {
+            cache = new List<CreatorBlendshapeEntry>();
+            editor.ultiPawTarget.appliedVersionBlendshapeLinksCache = cache;
+        }
+
+        cache.Clear();
+        if (version?.customBlendshapes == null || version.customBlendshapes.Length == 0) return;
+
+        foreach (var entry in version.customBlendshapes)
+        {
+            if (entry == null) continue;
+            var cached = new CreatorBlendshapeEntry
+            {
+                name = entry.name,
+                defaultValue = entry.defaultValue,
+                isSlider = entry.isSlider,
+                isSliderDefault = entry.isSliderDefault,
+                correctiveBlendshapes = new List<CreatorCorrectiveBlendshapeEntry>()
+            };
+
+            if (entry.correctiveBlendshapes != null)
+            {
+                foreach (var c in entry.correctiveBlendshapes)
+                {
+                    if (c == null) continue;
+                    cached.correctiveBlendshapes.Add(new CreatorCorrectiveBlendshapeEntry
+                    {
+                        blendshapeToFix = c.blendshapeToFix,
+                        fixingBlendshape = c.fixingBlendshape
+                    });
+                }
+            }
+
+            cache.Add(cached);
+        }
     }
 
     private void SmartSelectVersion()
@@ -798,6 +844,7 @@ public class VersionActions
             // Update state flags
             editor.isUltiPaw = false;
             editor.ultiPawTarget.appliedUltiPawVersion = null;
+            SyncAppliedVersionBlendshapeLinkCache(null);
             editor.currentIsCustom = true;
 
             // Recalculate hashes and update state

@@ -23,6 +23,16 @@ public class CreatorBlendshapeEntry
     public List<CreatorCorrectiveBlendshapeEntry> correctiveBlendshapes = new List<CreatorCorrectiveBlendshapeEntry>();
 }
 
+[Serializable]
+public class BlendShapeFactorLinkEntry
+{
+    public bool enabled = true;
+    public string targetRendererPath;
+    public string sourceBlendshape;
+    public string destinationBlendshape;
+    public string factorParameterName;
+}
+
 // This component is a pure data container for an avatar that has been modified
 // by UltiPaw. It holds only the state that needs to be saved with the scene/prefab.
 public class UltiPaw : MonoBehaviour
@@ -64,6 +74,12 @@ public class UltiPaw : MonoBehaviour
 
     [Tooltip("Stores user-customized slider selection by blendshape name.")]
     [HideInInspector] [SerializeField] public List<string> customSliderSelectionNames = new List<string>();
+
+    [Tooltip("Persistent blendshape factor links that are applied to VRCFury built controllers during preprocess.")]
+    [HideInInspector] [SerializeField] public List<BlendShapeFactorLinkEntry> blendShapeFactorLinks = new List<BlendShapeFactorLinkEntry>();
+
+    [Tooltip("Serialized cache of applied version blendshape definitions used for build-time corrective links.")]
+    [HideInInspector] [SerializeField] public List<CreatorBlendshapeEntry> appliedVersionBlendshapeLinksCache = new List<CreatorBlendshapeEntry>();
 
     // --- CREATOR MODE PERSISTENT DATA ---
     [HideInInspector] public bool isCreatorMode = false;
