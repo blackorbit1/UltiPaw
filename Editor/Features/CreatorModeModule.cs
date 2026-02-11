@@ -324,25 +324,31 @@ public class CreatorModeModule
             for (int j = 0; j < correctiveProp.arraySize; j++)
             {
                 var item = correctiveProp.GetArrayElementAtIndex(j);
-                var toFixProp = item.FindPropertyRelative("blendshapeToFix");
-                var fixingProp = item.FindPropertyRelative("fixingBlendshape");
+                var toFixTypeProp = item.FindPropertyRelative("toFixType");
+                var toFixProp = item.FindPropertyRelative("toFix");
+                var fixedByTypeProp = item.FindPropertyRelative("fixedByType");
+                var fixedByProp = item.FindPropertyRelative("fixedBy");
                 string keyPrefix = $"corrective_{i}_{j}";
                 float indentPadding = EditorGUI.indentLevel * 15f;
                 float availableWidth = EditorGUIUtility.currentViewWidth - indentPadding - 110f;
                 float fieldWidth = Mathf.Clamp((availableWidth - 28f - 4f) * 0.5f, 95f, 260f);
 
                 EditorGUILayout.BeginHorizontal();
-                DrawCorrectiveBlendshapeAutocompleteField(
+                DrawCorrectiveTargetField(
+                    toFixTypeProp,
                     toFixProp,
                     keyPrefix + "_toFix",
-                    "blendshape to fix",
+                    "to fix",
+                    true,
                     GUILayout.Width(fieldWidth)
                 );
                 GUILayout.Space(4f);
-                DrawCorrectiveBlendshapeAutocompleteField(
-                    fixingProp,
+                DrawCorrectiveTargetField(
+                    fixedByTypeProp,
+                    fixedByProp,
                     keyPrefix + "_fixing",
-                    "fixing blendshape",
+                    "fixing",
+                    false,
                     GUILayout.Width(fieldWidth)
                 );
                 if (GUILayout.Button("-", GUILayout.Width(24f)))
@@ -370,15 +376,17 @@ public class CreatorModeModule
         }
 
         EditorGUILayout.HelpBox(
-            "The fixing blendshape activation will be proportional to the fixed blendshape and the blendshape needing correctives",
+            "The fixing target activation is proportional to the fixed blendshape and the blendshape needing correction.",
             MessageType.Info
         );
     }
 
-    private void DrawCorrectiveBlendshapeAutocompleteField(
+    private void DrawCorrectiveTargetField(
+        SerializedProperty typeProp,
         SerializedProperty stringProp,
         string fieldKey,
-        string label,
+        string labelSuffix,
+        bool typeBeforeLabel,
         params GUILayoutOption[] layout
     )
     {
@@ -388,24 +396,132 @@ public class CreatorModeModule
             clipping = TextClipping.Clip,
             wordWrap = false
         };
-        EditorGUILayout.LabelField(label, clippedMiniLabel, layout);
 
-        var searchField = GetOrCreateCorrectiveSearchField(fieldKey);
-        string currentValue = stringProp != null ? (stringProp.stringValue ?? string.Empty) : string.Empty;
-        if (searchField.searchString != currentValue)
+        CorrectiveActivationType currentType = CorrectiveActivationType.Blendshape;
+        if (typeProp != null)
         {
-            searchField.searchString = currentValue;
+            typeProp.enumValueIndex = Mathf.Clamp(typeProp.enumValueIndex, 0, Enum.GetValues(typeof(CorrectiveActivationType)).Length - 1);
+            currentType = (CorrectiveActivationType)typeProp.enumValueIndex;
         }
 
-        searchField.OnGUI();
-
-        if (pendingCorrectiveValues.TryGetValue(fieldKey, out var pending))
+        EditorGUILayout.BeginHorizontal();
+        if (typeBeforeLabel)
         {
-            if (stringProp != null) stringProp.stringValue = pending ?? string.Empty;
-            pendingCorrectiveValues.Remove(fieldKey);
+            var newType = (CorrectiveActivationType)EditorGUILayout.EnumPopup(currentType, GUILayout.Width(92f));
+            EditorGUILayout.LabelField(labelSuffix, clippedMiniLabel);
+            currentType = ApplyCorrectiveTypeChange(typeProp, stringProp, fieldKey, currentType, newType);
+        }
+        else
+        {
+            EditorGUILayout.LabelField(labelSuffix, clippedMiniLabel, GUILayout.Width(42f));
+            var newType = (CorrectiveActivationType)EditorGUILayout.EnumPopup(currentType, GUILayout.Width(92f));
+            currentType = ApplyCorrectiveTypeChange(typeProp, stringProp, fieldKey, currentType, newType);
+        }
+        EditorGUILayout.EndHorizontal();
+
+        if (currentType == CorrectiveActivationType.Blendshape)
+        {
+            var searchField = GetOrCreateCorrectiveSearchField(fieldKey);
+            string currentValue = stringProp != null ? (stringProp.stringValue ?? string.Empty) : string.Empty;
+            if (searchField.searchString != currentValue)
+            {
+                searchField.searchString = currentValue;
+            }
+
+            searchField.OnGUI();
+
+            if (pendingCorrectiveValues.TryGetValue(fieldKey, out var pending))
+            {
+                if (stringProp != null) stringProp.stringValue = pending ?? string.Empty;
+                pendingCorrectiveValues.Remove(fieldKey);
+            }
+        }
+        else
+        {
+            DrawAnimationClipNameField(stringProp);
         }
 
         EditorGUILayout.EndVertical();
+    }
+
+    private CorrectiveActivationType ApplyCorrectiveTypeChange(
+        SerializedProperty typeProp,
+        SerializedProperty stringProp,
+        string fieldKey,
+        CorrectiveActivationType currentType,
+        CorrectiveActivationType newType)
+    {
+        if (typeProp == null || newType == currentType) return currentType;
+
+        typeProp.enumValueIndex = (int)newType;
+        if (stringProp != null)
+        {
+            stringProp.stringValue = string.Empty;
+        }
+        pendingCorrectiveValues.Remove(fieldKey);
+        if (correctiveSearchFields.TryGetValue(fieldKey, out var existing))
+        {
+            existing.searchString = string.Empty;
+            existing.ClearResults();
+        }
+        return newType;
+    }
+
+    private static void DrawAnimationClipNameField(SerializedProperty stringProp)
+    {
+        string currentName = stringProp != null ? (stringProp.stringValue ?? string.Empty) : string.Empty;
+        var currentClip = FindAnimationClipsByName(currentName).FirstOrDefault();
+        var selectedClip = EditorGUILayout.ObjectField(currentClip, typeof(AnimationClip), false) as AnimationClip;
+        if (stringProp != null)
+        {
+            stringProp.stringValue = selectedClip != null ? selectedClip.name : string.Empty;
+        }
+    }
+
+    private static List<AnimationClip> FindAnimationClipsByName(string clipName)
+    {
+        var clips = new List<AnimationClip>();
+        if (string.IsNullOrWhiteSpace(clipName)) return clips;
+
+        string[] guids = AssetDatabase.FindAssets("t:AnimationClip");
+        for (int i = 0; i < guids.Length; i++)
+        {
+            string path = AssetDatabase.GUIDToAssetPath(guids[i]);
+            var clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(path);
+            if (clip != null && string.Equals(clip.name, clipName, StringComparison.Ordinal))
+            {
+                clips.Add(clip);
+            }
+        }
+
+        return clips;
+    }
+
+    private static List<string> CollectAnimationAssetPathsFromFixedBy(IEnumerable<CustomBlendshapeEntry> customBlendshapeEntries)
+    {
+        var paths = new HashSet<string>(StringComparer.Ordinal);
+        if (customBlendshapeEntries == null) return paths.ToList();
+
+        foreach (var blendshape in customBlendshapeEntries)
+        {
+            if (blendshape?.correctiveBlendshapes == null) continue;
+            foreach (var corrective in blendshape.correctiveBlendshapes)
+            {
+                if (corrective == null) continue;
+                if (corrective.fixedByType != CorrectiveActivationType.Animation) continue;
+                if (string.IsNullOrWhiteSpace(corrective.fixedBy)) continue;
+
+                foreach (var clip in FindAnimationClipsByName(corrective.fixedBy))
+                {
+                    if (clip == null) continue;
+                    string assetPath = AssetDatabase.GetAssetPath(clip);
+                    if (string.IsNullOrWhiteSpace(assetPath)) continue;
+                    paths.Add(assetPath);
+                }
+            }
+        }
+
+        return paths.ToList();
     }
 
     private AutocompleteSearchField.AutocompleteSearchField GetOrCreateCorrectiveSearchField(string fieldKey)
@@ -442,14 +558,21 @@ public class CreatorModeModule
         return field;
     }
 
-    private static void AddCorrectivePair(SerializedProperty correctiveProp, string blendshapeToFix = "", string fixingBlendshape = "")
+    private static void AddCorrectivePair(
+        SerializedProperty correctiveProp,
+        CorrectiveActivationType toFixType = CorrectiveActivationType.Blendshape,
+        string toFix = "",
+        CorrectiveActivationType fixedByType = CorrectiveActivationType.Blendshape,
+        string fixedBy = "")
     {
         if (correctiveProp == null) return;
         int i = correctiveProp.arraySize;
         correctiveProp.InsertArrayElementAtIndex(i);
         var row = correctiveProp.GetArrayElementAtIndex(i);
-        row.FindPropertyRelative("blendshapeToFix").stringValue = blendshapeToFix ?? string.Empty;
-        row.FindPropertyRelative("fixingBlendshape").stringValue = fixingBlendshape ?? string.Empty;
+        row.FindPropertyRelative("toFixType").enumValueIndex = (int)toFixType;
+        row.FindPropertyRelative("toFix").stringValue = toFix ?? string.Empty;
+        row.FindPropertyRelative("fixedByType").enumValueIndex = (int)fixedByType;
+        row.FindPropertyRelative("fixedBy").stringValue = fixedBy ?? string.Empty;
     }
 
     private void DrawParentVersionDropdown()
@@ -680,7 +803,7 @@ public class CreatorModeModule
         foreach (var corrective in source)
         {
             if (corrective == null) continue;
-            AddCorrectivePair(correctiveProp, corrective.blendshapeToFix, corrective.fixingBlendshape);
+            AddCorrectivePair(correctiveProp, corrective.toFixType, corrective.toFix, corrective.fixedByType, corrective.fixedBy);
         }
     }
 
@@ -772,6 +895,36 @@ public class CreatorModeModule
         if (selectedParentVersionObject == null)
             throw new Exception("A Parent Version must be selected.");
 
+        // Convert CreatorBlendshapeEntry list to CustomBlendshapeEntry array.
+        var customBlendshapeEntries = editor.ultiPawTarget.customBlendshapesForCreator
+            .Select(entry =>
+            {
+                var corrective = (entry.correctiveBlendshapes ?? new List<CreatorCorrectiveBlendshapeEntry>())
+                    .Where(c => c != null
+                                && !string.IsNullOrWhiteSpace(c.toFix)
+                                && !string.IsNullOrWhiteSpace(c.fixedBy))
+                    .Select(c => new CorrectiveBlendshapeEntry
+                    {
+                        toFixType = c.toFixType,
+                        toFix = c.toFix,
+                        fixedByType = c.fixedByType,
+                        fixedBy = c.fixedBy
+                    })
+                    .ToArray();
+
+                return new CustomBlendshapeEntry
+                {
+                    name = entry.name,
+                    defaultValue = entry.defaultValue,
+                    isSlider = entry.isSlider,
+                    isSliderDefault = entry.isSliderDefault,
+                    correctiveBlendshapes = corrective.Length > 0 ? corrective : null
+                };
+            })
+            .ToArray();
+
+        var fixedByAnimationAssetPaths = CollectAnimationAssetPathsFromFixedBy(customBlendshapeEntries);
+
         string newVersionString = $"{newVersionMajor}.{newVersionMinor}.{newVersionPatch}";
         EditorUtility.DisplayProgressBar("Preparing Build", "Creating version package...", 0.2f);
 
@@ -784,7 +937,8 @@ public class CreatorModeModule
             logicPrefab,
             selectedParentVersionObject,
             shouldIncludeCustomVeins,
-            customVeinsTexture
+            customVeinsTexture,
+            fixedByAnimationAssetPaths
         );
 
         EditorUtility.DisplayProgressBar("Preparing Build", "Calculating hashes and dependencies...", 0.5f);
@@ -835,30 +989,6 @@ public class CreatorModeModule
         }
 
         string customVeinsAssetPath = shouldIncludeCustomVeins ? AssetDatabase.GetAssetPath(customVeinsTexture) : null;
-
-        // Convert CreatorBlendshapeEntry list to CustomBlendshapeEntry array
-        var customBlendshapeEntries = editor.ultiPawTarget.customBlendshapesForCreator
-            .Select(entry =>
-            {
-                var corrective = (entry.correctiveBlendshapes ?? new List<CreatorCorrectiveBlendshapeEntry>())
-                    .Where(c => c != null
-                                && !string.IsNullOrWhiteSpace(c.blendshapeToFix)
-                                && !string.IsNullOrWhiteSpace(c.fixingBlendshape))
-                    .Select(c => new CorrectiveBlendshapeEntry {
-                        blendshapeToFix = c.blendshapeToFix,
-                        fixingBlendshape = c.fixingBlendshape
-                    })
-                    .ToArray();
-
-                return new CustomBlendshapeEntry {
-                    name = entry.name,
-                    defaultValue = entry.defaultValue,
-                    isSlider = entry.isSlider,
-                    isSliderDefault = entry.isSliderDefault,
-                    correctiveBlendshapes = corrective.Length > 0 ? corrective : null
-                };
-            })
-            .ToArray();
 
         var metadata = new UltiPawVersion {
             version = newVersionString,
@@ -1102,7 +1232,8 @@ public class CreatorModeModule
                 logicPrefab,
                 parentVersion,
                 unsubmittedVersion.includeCustomVeins ?? false,
-                customVeinsTexture
+                customVeinsTexture,
+                CollectAnimationAssetPathsFromFixedBy(unsubmittedVersion.customBlendshapes)
             );
 
             EditorUtility.DisplayProgressBar("Uploading", "Sending package to server...", 0.7f);

@@ -11,16 +11,22 @@ public class BlendShapeLinkTestDrawer
     private readonly UltiPawEditor editor;
 
     private SkinnedMeshRenderer targetRenderer;
-    private string sourceBlendshape = "Blink";
-    private string destinationBlendshape = "Blink Fix";
+    private CorrectiveActivationType toFixType = CorrectiveActivationType.Blendshape;
+    private string toFix = "Blink";
+    private CorrectiveActivationType fixedByType = CorrectiveActivationType.Blendshape;
+    private string fixedBy = "Blink Fix";
     private string factorParameterName = "custom_face";
     private bool foldout;
     private bool testEnabled;
 
     private const string FoldoutPrefKey = "UltiPaw_BlendShapeLinkTest_Foldout";
     private const string EnabledPrefKey = "UltiPaw_BlendShapeLinkTest_Enabled";
-    private const string SourcePrefKey = "UltiPaw_BlendShapeLinkTest_Source";
-    private const string DestinationPrefKey = "UltiPaw_BlendShapeLinkTest_Destination";
+    private const string ToFixTypePrefKey = "UltiPaw_BlendShapeLinkTest_ToFixType";
+    private const string ToFixPrefKey = "UltiPaw_BlendShapeLinkTest_ToFix";
+    private const string FixedByTypePrefKey = "UltiPaw_BlendShapeLinkTest_FixedByType";
+    private const string FixedByPrefKey = "UltiPaw_BlendShapeLinkTest_FixedBy";
+    private const string SourceLegacyPrefKey = "UltiPaw_BlendShapeLinkTest_Source";
+    private const string DestinationLegacyPrefKey = "UltiPaw_BlendShapeLinkTest_Destination";
     private const string ParamPrefKey = "UltiPaw_BlendShapeLinkTest_Param";
 
     public BlendShapeLinkTestDrawer(UltiPawEditor editor)
@@ -28,8 +34,10 @@ public class BlendShapeLinkTestDrawer
         this.editor = editor;
         foldout = EditorPrefs.GetBool(FoldoutPrefKey, false);
         testEnabled = EditorPrefs.GetBool(EnabledPrefKey, true);
-        sourceBlendshape = EditorPrefs.GetString(SourcePrefKey, sourceBlendshape);
-        destinationBlendshape = EditorPrefs.GetString(DestinationPrefKey, destinationBlendshape);
+        toFixType = (CorrectiveActivationType)EditorPrefs.GetInt(ToFixTypePrefKey, (int)CorrectiveActivationType.Blendshape);
+        fixedByType = (CorrectiveActivationType)EditorPrefs.GetInt(FixedByTypePrefKey, (int)CorrectiveActivationType.Blendshape);
+        toFix = EditorPrefs.GetString(ToFixPrefKey, EditorPrefs.GetString(SourceLegacyPrefKey, toFix));
+        fixedBy = EditorPrefs.GetString(FixedByPrefKey, EditorPrefs.GetString(DestinationLegacyPrefKey, fixedBy));
         factorParameterName = EditorPrefs.GetString(ParamPrefKey, factorParameterName);
     }
 
@@ -41,7 +49,7 @@ public class BlendShapeLinkTestDrawer
 
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
         EditorGUILayout.HelpBox(
-            "Saves a BlendShape factor link configuration. " +
+            "Saves a corrective factor link configuration. " +
             "The patch is applied only to VRCFury temporary controllers during avatar preprocess (build/upload and play-mode build).",
             MessageType.Info
         );
@@ -61,22 +69,21 @@ public class BlendShapeLinkTestDrawer
 
         EditorGUI.BeginChangeCheck();
         testEnabled = EditorGUILayout.Toggle(
-            new GUIContent("Enable Test Link", "Toggles only this manual test link. Does not affect version-based BlendShape links."),
+            new GUIContent("Enable Test Link", "Toggles only this manual test link. Does not affect version-based corrective links."),
             testEnabled
         );
         if (EditorGUI.EndChangeCheck())
         {
             EditorPrefs.SetBool(EnabledPrefKey, testEnabled);
-            if (targetRenderer != null &&
-                !string.IsNullOrWhiteSpace(sourceBlendshape) &&
-                !string.IsNullOrWhiteSpace(destinationBlendshape) &&
-                !string.IsNullOrWhiteSpace(factorParameterName))
+            if (IsReadyToSave())
             {
                 BlendShapeLinkService.Instance.UpsertFactorLinkConfig(
                     avatarRoot,
                     targetRenderer,
-                    sourceBlendshape,
-                    destinationBlendshape,
+                    toFixType,
+                    toFix,
+                    fixedByType,
+                    fixedBy,
                     factorParameterName,
                     testEnabled
                 );
@@ -87,18 +94,24 @@ public class BlendShapeLinkTestDrawer
         {
             EditorGUI.BeginChangeCheck();
             targetRenderer = (SkinnedMeshRenderer)EditorGUILayout.ObjectField(
-                new GUIContent("Target Mesh", "SkinnedMeshRenderer that has both source and destination blendshapes."),
+                new GUIContent("Target Mesh", "Required when either side uses Blendshape."),
                 targetRenderer,
                 typeof(SkinnedMeshRenderer),
                 true
             );
             if (EditorGUI.EndChangeCheck())
             {
-                sourceBlendshape = string.Empty;
-                destinationBlendshape = string.Empty;
+                toFix = string.Empty;
+                fixedBy = string.Empty;
             }
 
-            DrawBlendshapeSelectors();
+            DrawTypedTargetField(ref toFixType, ref toFix, "to fix", true);
+            DrawTypedTargetField(ref fixedByType, ref fixedBy, "fixing", false);
+
+            EditorPrefs.SetInt(ToFixTypePrefKey, (int)toFixType);
+            EditorPrefs.SetInt(FixedByTypePrefKey, (int)fixedByType);
+            EditorPrefs.SetString(ToFixPrefKey, toFix ?? string.Empty);
+            EditorPrefs.SetString(FixedByPrefKey, fixedBy ?? string.Empty);
 
             EditorGUI.BeginChangeCheck();
             factorParameterName = EditorGUILayout.TextField(
@@ -109,11 +122,16 @@ public class BlendShapeLinkTestDrawer
             {
                 EditorPrefs.SetString(ParamPrefKey, factorParameterName ?? string.Empty);
             }
+        }
 
+        bool needsRenderer = toFixType == CorrectiveActivationType.Blendshape || fixedByType == CorrectiveActivationType.Blendshape;
+        if (needsRenderer && targetRenderer == null)
+        {
+            EditorGUILayout.HelpBox("Target Mesh is required when one side uses Blendshape.", MessageType.Warning);
         }
 
         EditorGUILayout.Space(4f);
-        using (new EditorGUI.DisabledScope(targetRenderer == null))
+        using (new EditorGUI.DisabledScope(!IsReadyToSave()))
         {
             if (GUILayout.Button("Save Factor Link Config"))
             {
@@ -126,36 +144,74 @@ public class BlendShapeLinkTestDrawer
         EditorGUILayout.EndVertical();
     }
 
-    private void DrawBlendshapeSelectors()
+    private void DrawTypedTargetField(ref CorrectiveActivationType type, ref string value, string suffix, bool typeFirst)
     {
-        var names = GetBlendshapeNames(targetRenderer);
-        bool hasNames = names.Count > 0;
-
-        if (!hasNames)
+        EditorGUILayout.BeginHorizontal();
+        if (typeFirst)
         {
-            sourceBlendshape = EditorGUILayout.TextField("Source Blendshape", sourceBlendshape);
-            destinationBlendshape = EditorGUILayout.TextField("Destination Blendshape", destinationBlendshape);
+            var next = (CorrectiveActivationType)EditorGUILayout.EnumPopup(type, GUILayout.Width(92f));
+            if (next != type) value = string.Empty;
+            type = next;
+            EditorGUILayout.LabelField(suffix, EditorStyles.miniLabel);
+        }
+        else
+        {
+            EditorGUILayout.LabelField(suffix, EditorStyles.miniLabel, GUILayout.Width(42f));
+            var next = (CorrectiveActivationType)EditorGUILayout.EnumPopup(type, GUILayout.Width(92f));
+            if (next != type) value = string.Empty;
+            type = next;
+        }
+        EditorGUILayout.EndHorizontal();
+
+        if (type == CorrectiveActivationType.Blendshape)
+        {
+            var names = GetBlendshapeNames(targetRenderer);
+            if (names.Count == 0)
+            {
+                value = EditorGUILayout.TextField(value);
+                return;
+            }
+
+            int index = Mathf.Max(0, names.IndexOf(value));
+            index = EditorGUILayout.Popup(index, names.ToArray());
+            if (index >= 0 && index < names.Count)
+            {
+                value = names[index];
+            }
             return;
         }
 
-        int sourceIndex = Mathf.Max(0, names.IndexOf(sourceBlendshape));
-        int destinationIndex = Mathf.Max(0, names.IndexOf(destinationBlendshape));
+        var selectedClip = FindAnimationClipByName(value);
+        var nextClip = EditorGUILayout.ObjectField(selectedClip, typeof(AnimationClip), false) as AnimationClip;
+        value = nextClip != null ? nextClip.name : string.Empty;
+    }
 
-        EditorGUI.BeginChangeCheck();
-        sourceIndex = EditorGUILayout.Popup("Source Blendshape", sourceIndex, names.ToArray());
-        if (EditorGUI.EndChangeCheck())
+    private static AnimationClip FindAnimationClipByName(string clipName)
+    {
+        if (string.IsNullOrWhiteSpace(clipName)) return null;
+
+        string[] guids = AssetDatabase.FindAssets("t:AnimationClip");
+        for (int i = 0; i < guids.Length; i++)
         {
-            sourceBlendshape = names[sourceIndex];
-            EditorPrefs.SetString(SourcePrefKey, sourceBlendshape ?? string.Empty);
+            string path = AssetDatabase.GUIDToAssetPath(guids[i]);
+            var clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(path);
+            if (clip != null && string.Equals(clip.name, clipName, StringComparison.Ordinal))
+            {
+                return clip;
+            }
         }
 
-        EditorGUI.BeginChangeCheck();
-        destinationIndex = EditorGUILayout.Popup("Destination Blendshape", destinationIndex, names.ToArray());
-        if (EditorGUI.EndChangeCheck())
-        {
-            destinationBlendshape = names[destinationIndex];
-            EditorPrefs.SetString(DestinationPrefKey, destinationBlendshape ?? string.Empty);
-        }
+        return null;
+    }
+
+    private bool IsReadyToSave()
+    {
+        bool needsRenderer = toFixType == CorrectiveActivationType.Blendshape || fixedByType == CorrectiveActivationType.Blendshape;
+        if (needsRenderer && targetRenderer == null) return false;
+        if (string.IsNullOrWhiteSpace(toFix)) return false;
+        if (string.IsNullOrWhiteSpace(fixedBy)) return false;
+        if (string.IsNullOrWhiteSpace(factorParameterName)) return false;
+        return true;
     }
 
     private void SaveConfig(GameObject avatarRoot)
@@ -163,8 +219,10 @@ public class BlendShapeLinkTestDrawer
         var result = BlendShapeLinkService.Instance.UpsertFactorLinkConfig(
             avatarRoot,
             targetRenderer,
-            sourceBlendshape,
-            destinationBlendshape,
+            toFixType,
+            toFix,
+            fixedByType,
+            fixedBy,
             factorParameterName,
             testEnabled
         );
@@ -193,7 +251,7 @@ public class BlendShapeLinkTestDrawer
         var infos = BlendShapeLinkService.Instance.GetActiveVersionLinkDebugInfo(avatarRoot);
         if (infos == null || infos.Count == 0)
         {
-            EditorGUILayout.HelpBox("No active version BlendShape links.", MessageType.None);
+            EditorGUILayout.HelpBox("No active version corrective links.", MessageType.None);
             return;
         }
 
@@ -204,7 +262,7 @@ public class BlendShapeLinkTestDrawer
                 : $"param={info.factorParameterName}";
 
             EditorGUILayout.LabelField(
-                $"[{info.targetRendererPath}] {info.sourceBlendshape} -> {info.destinationBlendshape} | {factorInfo}");
+                $"[{info.targetRendererPath}] {info.toFixType}:{info.toFix} -> {info.fixedByType}:{info.fixedBy} | {factorInfo}");
         }
     }
 

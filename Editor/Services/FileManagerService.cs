@@ -278,7 +278,8 @@ public class FileManagerService
         GameObject logicPrefab,
         UltiPawVersion parentVersion,
         bool includeCustomVeins,
-        Texture2D customVeinsTexture)
+        Texture2D customVeinsTexture,
+        IEnumerable<string> additionalAnimationAssetPaths = null)
     {
         string newVersionDataPath = UltiPawUtils.GetVersionDataPath(newVersionString, baseFbxVersion);
         string newVersionDataFullPath = Path.GetFullPath(newVersionDataPath);
@@ -314,7 +315,19 @@ public class FileManagerService
             
             string packageUnityPath = UltiPawUtils.CombineUnityPath(newVersionDataPath, "ultipaw logic.unitypackage");
             string packagePath = Path.GetFullPath(packageUnityPath);
-            AssetDatabase.ExportPackage(AssetDatabase.GetDependencies(prefabSourcePath, true), packagePath, ExportPackageOptions.Recurse | ExportPackageOptions.IncludeDependencies);
+
+            var exportAssets = new HashSet<string>(AssetDatabase.GetDependencies(prefabSourcePath, true), StringComparer.Ordinal);
+            if (additionalAnimationAssetPaths != null)
+            {
+                foreach (var animationPath in additionalAnimationAssetPaths)
+                {
+                    if (string.IsNullOrWhiteSpace(animationPath)) continue;
+                    if (AssetDatabase.LoadAssetAtPath<AnimationClip>(animationPath) == null) continue;
+                    exportAssets.Add(animationPath);
+                }
+            }
+
+            AssetDatabase.ExportPackage(exportAssets.ToArray(), packagePath, ExportPackageOptions.Recurse | ExportPackageOptions.IncludeDependencies);
 
             // 4. Copy custom veins normal map if requested
             if (includeCustomVeins)

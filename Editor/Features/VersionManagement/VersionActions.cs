@@ -741,8 +741,10 @@ public class VersionActions
                     if (c == null) continue;
                     cached.correctiveBlendshapes.Add(new CreatorCorrectiveBlendshapeEntry
                     {
-                        blendshapeToFix = c.blendshapeToFix,
-                        fixingBlendshape = c.fixingBlendshape
+                        toFixType = c.toFixType,
+                        toFix = c.toFix,
+                        fixedByType = c.fixedByType,
+                        fixedBy = c.fixedBy
                     });
                 }
             }

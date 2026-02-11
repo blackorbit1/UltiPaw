@@ -8,8 +8,34 @@ using Newtonsoft.Json.Converters;
 [JsonObject(MemberSerialization.OptIn)]
 public class CorrectiveBlendshapeEntry
 {
-    [JsonProperty] public string blendshapeToFix;
-    [JsonProperty] public string fixingBlendshape;
+    [JsonProperty] public CorrectiveActivationType toFixType = CorrectiveActivationType.Blendshape;
+    [JsonProperty] public string toFix;
+    [JsonProperty] public CorrectiveActivationType fixedByType = CorrectiveActivationType.Blendshape;
+    [JsonProperty] public string fixedBy;
+
+    // Backward-compat with older payloads.
+    [JsonProperty("blendshapeToFix")] private string LegacyBlendshapeToFix
+    {
+        set
+        {
+            if (string.IsNullOrWhiteSpace(toFix))
+            {
+                toFix = value;
+            }
+        }
+    }
+
+    // Backward-compat with older payloads.
+    [JsonProperty("fixingBlendshape")] private string LegacyFixingBlendshape
+    {
+        set
+        {
+            if (string.IsNullOrWhiteSpace(fixedBy))
+            {
+                fixedBy = value;
+            }
+        }
+    }
 }
 
 [JsonObject(MemberSerialization.OptIn)]
@@ -19,7 +45,28 @@ public class CustomBlendshapeEntry
     [JsonProperty] public string defaultValue;
     [JsonProperty] public bool isSlider;
     [JsonProperty] public bool isSliderDefault;
-    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)] public CorrectiveBlendshapeEntry[] correctiveBlendshapes;
+    [JsonProperty("correctives", NullValueHandling = NullValueHandling.Ignore)] public CorrectiveBlendshapeEntry[] correctiveBlendshapes;
+
+    // Backward-compat with older payloads.
+    [JsonProperty("correctiveBlendshapes")] private CorrectiveBlendshapeEntry[] LegacyCorrectiveBlendshapes
+    {
+        set
+        {
+            if ((correctiveBlendshapes == null || correctiveBlendshapes.Length == 0) &&
+                value != null &&
+                value.Length > 0)
+            {
+                correctiveBlendshapes = value;
+            }
+        }
+    }
+}
+
+[JsonConverter(typeof(StringEnumConverter))]
+public enum CorrectiveActivationType
+{
+    [EnumMember(Value = "Blendshape")] Blendshape,
+    [EnumMember(Value = "Animation")] Animation
 }
 
 // This response object maps to the JSON from the server's version endpoint.

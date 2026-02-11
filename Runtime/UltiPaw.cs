@@ -4,13 +4,18 @@ using VRC.SDKBase;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 // Represents a blendshape with a default value in creator mode.
 [Serializable]
 public class CreatorCorrectiveBlendshapeEntry
 {
-    public string blendshapeToFix;
-    public string fixingBlendshape;
+    public CorrectiveActivationType toFixType = CorrectiveActivationType.Blendshape;
+    [FormerlySerializedAs("blendshapeToFix")]
+    public string toFix;
+    public CorrectiveActivationType fixedByType = CorrectiveActivationType.Blendshape;
+    [FormerlySerializedAs("fixingBlendshape")]
+    public string fixedBy;
 }
 
 [Serializable]
@@ -28,8 +33,12 @@ public class BlendShapeFactorLinkEntry
 {
     public bool enabled = true;
     public string targetRendererPath;
-    public string sourceBlendshape;
-    public string destinationBlendshape;
+    public CorrectiveActivationType toFixType = CorrectiveActivationType.Blendshape;
+    [FormerlySerializedAs("sourceBlendshape")]
+    public string toFix;
+    public CorrectiveActivationType fixedByType = CorrectiveActivationType.Blendshape;
+    [FormerlySerializedAs("destinationBlendshape")]
+    public string fixedBy;
     public string factorParameterName;
 }
 
