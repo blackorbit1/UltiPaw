@@ -7,7 +7,10 @@
 ## BlendShape Link System
 
 ### Goal
-- Drive corrective blendshape animation (`fixingBlendshape`) from an already-animated source blendshape (`blendshapeToFix`), multiplied by a factor.
+- Drive corrective activation from an already-animated source (`toFix`) to a target (`fixedBy`), multiplied by a factor.
+- Supported target types:
+  - `Blendshape`
+  - `Animation`
 - Apply this only to VRCFury-generated temporary controllers at build/preprocess time.
 - Never mutate the original user-authored controllers directly.
 
@@ -18,15 +21,16 @@
 - Saved as persistent config in `UltiPaw.blendShapeFactorLinks`.
 - Fields:
   - target renderer path
-  - source blendshape
-  - destination blendshape
+  - `toFixType`, `toFix`
+  - `fixedByType`, `fixedBy`
   - factor parameter name
   - enabled flag
 
 2. Current-version links (version JSON corrective definitions)
-- Source data: `customBlendshapes[].correctiveBlendshapes` from applied version.
+- Source data: `customBlendshapes[].correctives` (mapped internally to `correctiveBlendshapes`).
 - Runtime/build fallback cache: `UltiPaw.appliedVersionBlendshapeLinksCache`.
-- Generated per renderer containing both source + destination blendshapes (all skinned meshes, not only Body).
+- Links are generated per renderer when either side uses `Blendshape` (all skinned meshes, not only Body).
+- Links with `Animation -> Animation` are generated once (no renderer path dependency).
 - Factor selection:
   - If driver blendshape is an active slider: use slider global param.
   - If not: use a constant factor parameter with default value equal to current driver blendshape weight (0..1).
@@ -50,16 +54,40 @@
   - manual links
 
 ### Animator Mutation Strategy
-- Core service: `Editor/Services/BlendShapeLinkService.cs`
+- Core service is split (partial class):
+  - `Editor/Services/BlendShapeLinkService.cs` (planning/lookup/signature build)
+  - `Editor/Services/BlendShapeLinkService.LinkResolution.cs` (manual link resolution/validation)
+  - `Editor/Services/BlendShapeLinkService.Rewrite.cs` (state machine + blendtree rewrite)
+  - `Editor/Services/BlendShapeLinkService.VariantOps.cs` (clip variant creation/curve ops)
 - Collect only VRCFury temp controllers (`com.vrcfury.temp`).
-- For each matching clip curve on target path/property:
-  - clone clip as variant and write destination curve from source curve
+- For each matching motion (states and nested blendtrees):
+  - clone clip as variant
+  - apply corrective based on type combination:
+    - `Blendshape -> Blendshape`: destination blendshape curve copied from source blendshape curve
+    - `Animation -> Blendshape`: destination blendshape forced to 100 in matching animation clips
+    - `Blendshape -> Animation`: overlay animation curves blended by source blendshape activation
+    - `Animation -> Animation`: overlay animation curves copied to matching animation clips
   - create wrapper 1D blend tree with factor parameter:
     - child 0 threshold 0: original clip
     - child 1 threshold 1: variant clip
   - rewrite state/tree motion refs to wrapper
+- Wrapper stacking:
+  - if a wrapper for the same factor already exists, recurse into the wrapper variant child so multiple links can stack safely.
 - Ensure factor parameter exists as Float in each processed controller.
 - Wrapper/variant assets are attached as sub-assets to the temporary controller.
+
+### Animation Matching Rules (`toFixType = Animation`)
+- Never rely on VRCFury temp asset paths.
+- Matching priority:
+  - 1) Semantic signature match against the reference `toFix` animation clip:
+    - same animated binding (`path`, `type`, `propertyName`)
+    - same sampled values (epsilon-tolerant)
+  - 2) Normalized clip name match (`clip.name`)
+  - 3) Normalized source file name match (`*.anim` name)
+- Normalization:
+  - case-insensitive
+  - strips `.anim`
+  - removes non-alphanumeric characters
 
 ### Clone / Upload Robustness
 - Preprocess may run on cloned avatar objects with editor-only components missing.
@@ -76,6 +104,7 @@
 - Drawer shows:
   - manual test controls (enable/disable + save config)
   - live list of active version links
+  - per-link typed endpoints (`toFixType:toFix -> fixedByType:fixedBy`)
   - factor parameter name
   - exact constant factor value for non-slider links
 - Link debug data comes from `BlendShapeLinkService.GetActiveVersionLinkDebugInfo`.
