@@ -1,12 +1,16 @@
 #if UNITY_EDITOR
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
+using UnityEngine.Animations;
+using UnityEngine.Playables;
 using VRC.SDK3.Avatars.Components;
 
 public partial class BlendShapeLinkService
@@ -22,6 +26,18 @@ public partial class BlendShapeLinkService
             return FailApply("No VRCFury temporary AnimatorController found on avatar descriptor.");
         }
 
+        var descriptor = avatarRoot.GetComponentInChildren<VRCAvatarDescriptor>(true);
+        var changedControllersForDescriptor = new HashSet<AnimatorController>();
+
+        // VRChat's Playable Layers system only allows blendshape animations in the FX layer.
+        // If we modify layers in Additive/Gesture/etc with blendshape links, they won't work.
+        // We need to identify these and move them to FX.
+        var fxController = FindControllerForLayerType(descriptor, VRCAvatarDescriptor.AnimLayerType.FX);
+        var additiveController = FindControllerForLayerType(descriptor, VRCAvatarDescriptor.AnimLayerType.Additive);
+        
+        // Track layers that need to be moved from Additive to FX
+        var layersToMoveToFx = new List<(AnimatorController sourceController, int layerIndex, AnimatorControllerLayer layer)>();
+
         int linksProcessed = 0;
         int clipsWrapped = 0;
         int statesRewritten = 0;
@@ -31,8 +47,10 @@ public partial class BlendShapeLinkService
         foreach (var planned in plannedLinks)
         {
             bool thisLinkChangedAnyController = false;
+            UltiPawLogger.Log($"[UltiPaw] Processing link: toFix='{planned.toFixName}' fixedBy='{planned.fixedByName}' across {controllers.Count} controllers");
             foreach (var controller in controllers)
             {
+                UltiPawLogger.Log($"[UltiPaw] Checking controller '{controller.name}' for link toFix='{planned.toFixName}'");
                 if (!EnsureFloatParameter(controller, planned.factorParameterName, planned.setFactorDefaultValue, planned.factorDefaultValue, out var paramError))
                 {
                     Debug.LogWarning("[UltiPaw] " + paramError);
@@ -44,18 +62,44 @@ public partial class BlendShapeLinkService
                 var visitedStateMachines = new HashSet<AnimatorStateMachine>();
                 var visitedTrees = new HashSet<BlendTree>();
 
-                foreach (var layer in controller.layers)
+                var layers = controller.layers;
+                bool layersArrayChanged = false;
+                for (int i = 0; i < layers.Length; i++)
                 {
+                    var layer = layers[i];
                     if (layer?.stateMachine == null) continue;
                     if (RewriteStateMachine(controller, layer.stateMachine, planned, clipCache, visitedStateMachines, visitedTrees, ref clipsWrapped, ref statesRewritten))
                     {
                         controllerChanged = true;
                         thisLinkChangedAnyController = true;
+
+                        UltiPawLogger.Log($"[UltiPaw] Layer '{layer.name}' index {i} in controller '{controller.name}' was modified with blendshape link.");
+                        
+                        // If this is a non-FX controller (like Additive), mark layer for migration to FX
+                        if (controller != fxController && fxController != null)
+                        {
+                            Debug.Log($"[UltiPaw] Layer '{layer.name}' in '{controller.name}' contains blendshape animations - will move to FX controller.");
+                            layersToMoveToFx.Add((controller, i, layer));
+                        }
+                        
+                        // Clear mask regardless (for FX layers with restrictive masks)
+                        if (layer.avatarMask != null)
+                        {
+                            UltiPawLogger.Log($"[UltiPaw] Clearing mask '{layer.avatarMask.name}' from layer '{layer.name}'.");
+                            layer.avatarMask = null;
+                            layers[i] = layer;
+                            layersArrayChanged = true;
+                        }
                     }
                 }
 
                 if (!controllerChanged) continue;
+                if (layersArrayChanged)
+                {
+                    controller.layers = layers;
+                }
                 changedControllers.Add(controller);
+                changedControllersForDescriptor.Add(controller);
                 anyControllerChanged = true;
                 EditorUtility.SetDirty(controller);
 
@@ -80,10 +124,58 @@ public partial class BlendShapeLinkService
 
             if (thisLinkChangedAnyController) linksProcessed++;
         }
+        
+        // Move affected layers from non-FX controllers to FX
+        if (layersToMoveToFx.Count > 0 && fxController != null)
+        {
+            MoveLayersToFxController(layersToMoveToFx, fxController);
+            changedControllers.Add(fxController);
+            anyControllerChanged = true;
+        }
 
         if (anyControllerChanged)
         {
+            if (descriptor != null)
+            {
+                bool descriptorChanged = false;
+                void ClearDescriptorLayerMasks(VRCAvatarDescriptor.CustomAnimLayer[] layers)
+                {
+                    if (layers == null) return;
+                    for (int i = 0; i < layers.Length; i++)
+                    {
+                        if (layers[i].animatorController is AnimatorController ac &&
+                            changedControllersForDescriptor.Contains(ac) &&
+                            layers[i].mask != null)
+                        {
+                            UltiPawLogger.Log($"[UltiPaw] Clearing mask from VRCAvatarDescriptor layer type '{layers[i].type}' because its controller '{ac.name}' was modified by a corrective link.");
+                            layers[i].mask = null;
+                            descriptorChanged = true;
+                        }
+                    }
+                }
+
+                if (descriptor.baseAnimationLayers != null)
+                {
+                    var layersArr = descriptor.baseAnimationLayers;
+                    ClearDescriptorLayerMasks(layersArr);
+                    descriptor.baseAnimationLayers = layersArr;
+                }
+                if (descriptor.specialAnimationLayers != null)
+                {
+                    var layersArr = descriptor.specialAnimationLayers;
+                    ClearDescriptorLayerMasks(layersArr);
+                    descriptor.specialAnimationLayers = layersArr;
+                }
+
+                if (descriptorChanged)
+                {
+                    EditorUtility.SetDirty(descriptor);
+                }
+            }
+
             AssetDatabase.SaveAssets();
+            // Note: Layer migration to FX ensures blendshape animations work in VRChat's Playable Layer system.
+            // No need to manipulate PlayableGraph at runtime - the fix is applied at build time.
             return new ApplyResult
             {
                 success = true,
@@ -139,6 +231,91 @@ public partial class BlendShapeLinkService
         return normalized.IndexOf("com.vrcfury.temp", StringComparison.OrdinalIgnoreCase) >= 0;
     }
 
+    private static AnimatorController FindControllerForLayerType(VRCAvatarDescriptor descriptor, VRCAvatarDescriptor.AnimLayerType layerType)
+    {
+        if (descriptor == null) return null;
+        
+        foreach (var layer in descriptor.baseAnimationLayers ?? Array.Empty<VRCAvatarDescriptor.CustomAnimLayer>())
+        {
+            if (layer.type == layerType && !layer.isDefault && layer.animatorController is AnimatorController ctrl)
+                return ctrl;
+        }
+        foreach (var layer in descriptor.specialAnimationLayers ?? Array.Empty<VRCAvatarDescriptor.CustomAnimLayer>())
+        {
+            if (layer.type == layerType && !layer.isDefault && layer.animatorController is AnimatorController ctrl)
+                return ctrl;
+        }
+        return null;
+    }
+
+    private static void MoveLayersToFxController(
+        List<(AnimatorController sourceController, int layerIndex, AnimatorControllerLayer layer)> layersToMove,
+        AnimatorController fxController)
+    {
+        if (layersToMove == null || layersToMove.Count == 0 || fxController == null) return;
+
+        // VRChat's Playable Layers have strict rules:
+        // - Additive/Gesture/Base/Action: Only affects transforms (bones/muscles)
+        // - FX: Affects everything EXCEPT transforms (blendshapes, materials, etc.)
+        //
+        // When we add blendshape animations to a non-FX layer (like eye tracking in Additive),
+        // we need to COPY (not move) the layer to FX so:
+        // 1. The original layer keeps working for bone/muscle animations
+        // 2. The FX copy handles the blendshape animations
+        //
+        // We create a simplified copy in FX that only contains the blendshape-affecting clips.
+        
+        foreach (var (sourceController, layerIndex, layer) in layersToMove)
+        {
+            if (sourceController == fxController) continue;
+            
+            Debug.Log($"[UltiPaw] Copying layer '{layer.name}' from '{sourceController.name}' to FX controller for blendshape animations.");
+            
+            // Copy parameters from source controller to FX controller
+            foreach (var param in sourceController.parameters)
+            {
+                if (!fxController.parameters.Any(p => p.name == param.name))
+                {
+                    fxController.AddParameter(param.name, param.type);
+                    var newParam = fxController.parameters.FirstOrDefault(p => p.name == param.name);
+                    if (newParam != null)
+                    {
+                        newParam.defaultBool = param.defaultBool;
+                        newParam.defaultFloat = param.defaultFloat;
+                        newParam.defaultInt = param.defaultInt;
+                    }
+                }
+            }
+            
+            // Create a copy of the layer for FX
+            // Note: We share the same state machine reference. This works because:
+            // - The state machine contains blend trees with both original clips (transform animations)
+            //   and variant clips (blendshape animations)
+            // - VRChat's FX layer will automatically filter to only process non-transform animations
+            // - The original layer in Additive will process only transform animations
+            var newLayer = new AnimatorControllerLayer
+            {
+                name = "[UP_FX] " + layer.name,
+                stateMachine = layer.stateMachine, // Share the state machine reference
+                avatarMask = null, // No mask - FX needs access to all blendshapes
+                blendingMode = AnimatorLayerBlendingMode.Override,
+                defaultWeight = layer.defaultWeight,
+                syncedLayerIndex = -1,
+                syncedLayerAffectsTiming = false
+            };
+            
+            // Add to FX controller
+            var fxLayers = fxController.layers.ToList();
+            fxLayers.Add(newLayer);
+            fxController.layers = fxLayers.ToArray();
+        }
+        
+        // Note: We do NOT remove the original layers from the source controller.
+        // They need to stay for the bone/muscle animations to work.
+        
+        EditorUtility.SetDirty(fxController);
+    }
+
     private static bool EnsureFloatParameter(AnimatorController controller, string parameterName, bool setDefaultValue, float defaultValue, out string error)
     {
         error = null;
@@ -182,11 +359,18 @@ public partial class BlendShapeLinkService
         visitedStateMachines.Add(stateMachine);
 
         bool changed = false;
+        bool hasExistingWrapper = false;
 
         foreach (var childState in stateMachine.states)
         {
             var state = childState.state;
             if (state == null || state.motion == null) continue;
+
+            // Check if motion already contains a wrapper for this link (from previous builds)
+            if (ContainsWrapperForFactor(state.motion, planned.factorParameterName, visitedTrees))
+            {
+                hasExistingWrapper = true;
+            }
 
             Motion rewritten = RewriteMotion(controller, state.motion, planned, clipCache, visitedTrees, ref clipsWrapped);
 
@@ -206,7 +390,36 @@ public partial class BlendShapeLinkService
             }
         }
 
-        return changed;
+        // Return true if we made changes OR if we found existing wrappers (mask still needs clearing)
+        return changed || hasExistingWrapper;
+    }
+
+    // Recursively checks if a motion or its children contain a wrapper tree for the given factor parameter
+    private static bool ContainsWrapperForFactor(Motion motion, string factorParameterName, ISet<BlendTree> visited)
+    {
+        if (motion == null) return false;
+        
+        if (motion is BlendTree tree)
+        {
+            if (visited.Contains(tree)) return false;
+            // Don't add to visited here - we're just checking, not modifying
+            
+            if (IsWrapperTree(tree, factorParameterName))
+            {
+                return true;
+            }
+            
+            var children = tree.children;
+            for (int i = 0; i < children.Length; i++)
+            {
+                if (ContainsWrapperForFactor(children[i].motion, factorParameterName, visited))
+                {
+                    return true;
+                }
+            }
+        }
+        
+        return false;
     }
 
     private static Motion RewriteMotion(
