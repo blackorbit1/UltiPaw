@@ -18,6 +18,26 @@ public partial class BlendShapeLinkService
     private const string VariantPrefix = "UP_BSLINK_VARIANT_";
     private const string ConstParamPrefix = "UP_BSLINK_CONST_";
 
+    // Registry of applied links per session, keyed by controller instance ID.
+    // Populated during ApplyPlannedLinks so the debug window can report expected links.
+    private static readonly Dictionary<int, List<AppliedLinkRecord>> _appliedLinksRegistry =
+        new Dictionary<int, List<AppliedLinkRecord>>();
+
+    public struct AppliedLinkRecord
+    {
+        public string controllerName;
+        public string controllerAssetPath;
+        public string factorParameterName;
+        public string targetRendererPath;
+        public string toFixName;
+        public string fixedByName;
+        public string sourceLabel;
+    }
+
+    public static IReadOnlyDictionary<int, List<AppliedLinkRecord>> AppliedLinksRegistry => _appliedLinksRegistry;
+
+    public static void ClearAppliedLinksRegistry() => _appliedLinksRegistry.Clear();
+
     public struct ConfigResult
     {
         public bool success;

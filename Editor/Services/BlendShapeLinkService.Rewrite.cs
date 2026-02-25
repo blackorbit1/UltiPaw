@@ -58,6 +58,24 @@ public partial class BlendShapeLinkService
                 changedControllers.Add(controller);
                 anyControllerChanged = true;
                 EditorUtility.SetDirty(controller);
+
+                // Register applied link for debug window
+                int ctrlId = controller.GetInstanceID();
+                if (!_appliedLinksRegistry.TryGetValue(ctrlId, out var records))
+                {
+                    records = new List<AppliedLinkRecord>();
+                    _appliedLinksRegistry[ctrlId] = records;
+                }
+                records.Add(new AppliedLinkRecord
+                {
+                    controllerName = controller.name,
+                    controllerAssetPath = AssetDatabase.GetAssetPath(controller),
+                    factorParameterName = planned.factorParameterName,
+                    targetRendererPath = planned.targetRendererPath,
+                    toFixName = planned.toFixName,
+                    fixedByName = planned.fixedByName,
+                    sourceLabel = sourceLabel
+                });
             }
 
             if (thisLinkChangedAnyController) linksProcessed++;
