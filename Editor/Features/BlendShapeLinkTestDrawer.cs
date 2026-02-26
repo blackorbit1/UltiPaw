@@ -8,6 +8,12 @@ using UnityEngine;
 
 public class BlendShapeLinkTestDrawer
 {
+    private const double AnimationClipCacheTtlSeconds = 2.0d;
+    private const double DebugInfoRefreshIntervalSeconds = 0.75d;
+    private static Dictionary<string, AnimationClip> animationClipByNameCache;
+    private static double animationClipByNameCacheTimestamp;
+    private static bool projectChangedHooked;
+
     private readonly UltiPawEditor editor;
 
     private SkinnedMeshRenderer targetRenderer;
@@ -18,6 +24,11 @@ public class BlendShapeLinkTestDrawer
     private string factorParameterName = "custom_face";
     private bool foldout;
     private bool testEnabled;
+    private int cachedBlendshapeMeshId;
+    private List<string> cachedBlendshapeNames = new List<string>();
+    private List<BlendShapeLinkService.VersionLinkDebugInfo> cachedDebugInfos;
+    private int cachedDebugAvatarRootId;
+    private double nextDebugRefreshAt;
 
     private const string FoldoutPrefKey = "UltiPaw_BlendShapeLinkTest_Foldout";
     private const string EnabledPrefKey = "UltiPaw_BlendShapeLinkTest_Enabled";
@@ -165,7 +176,7 @@ public class BlendShapeLinkTestDrawer
 
         if (type == CorrectiveActivationType.Blendshape)
         {
-            var names = GetBlendshapeNames(targetRenderer);
+            var names = GetBlendshapeNamesCached(targetRenderer);
             if (names.Count == 0)
             {
                 value = EditorGUILayout.TextField(value);
@@ -190,18 +201,10 @@ public class BlendShapeLinkTestDrawer
     {
         if (string.IsNullOrWhiteSpace(clipName)) return null;
 
-        string[] guids = AssetDatabase.FindAssets("t:AnimationClip");
-        for (int i = 0; i < guids.Length; i++)
-        {
-            string path = AssetDatabase.GUIDToAssetPath(guids[i]);
-            var clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(path);
-            if (clip != null && string.Equals(clip.name, clipName, StringComparison.Ordinal))
-            {
-                return clip;
-            }
-        }
-
-        return null;
+        EnsureProjectChangedHook();
+        RebuildAnimationClipByNameCacheIfNeeded();
+        animationClipByNameCache.TryGetValue(clipName, out var clipFromCache);
+        return clipFromCache;
     }
 
     private bool IsReadyToSave()
@@ -248,7 +251,16 @@ public class BlendShapeLinkTestDrawer
         EditorGUILayout.Space(6f);
         EditorGUILayout.LabelField("Active Version Links (Debug)", EditorStyles.boldLabel);
 
-        var infos = BlendShapeLinkService.Instance.GetActiveVersionLinkDebugInfo(avatarRoot);
+        int avatarRootId = avatarRoot != null ? avatarRoot.GetInstanceID() : 0;
+        double now = EditorApplication.timeSinceStartup;
+        if (cachedDebugInfos == null || cachedDebugAvatarRootId != avatarRootId || now >= nextDebugRefreshAt)
+        {
+            cachedDebugInfos = BlendShapeLinkService.Instance.GetActiveVersionLinkDebugInfo(avatarRoot);
+            cachedDebugAvatarRootId = avatarRootId;
+            nextDebugRefreshAt = now + DebugInfoRefreshIntervalSeconds;
+        }
+
+        var infos = cachedDebugInfos;
         if (infos == null || infos.Count == 0)
         {
             EditorGUILayout.HelpBox("No active version corrective links.", MessageType.None);
@@ -266,18 +278,27 @@ public class BlendShapeLinkTestDrawer
         }
     }
 
-    private static List<string> GetBlendshapeNames(SkinnedMeshRenderer renderer)
+    private List<string> GetBlendshapeNamesCached(SkinnedMeshRenderer renderer)
     {
-        var output = new List<string>();
-        if (renderer == null || renderer.sharedMesh == null) return output;
-
-        var mesh = renderer.sharedMesh;
-        for (int i = 0; i < mesh.blendShapeCount; i++)
+        if (renderer == null || renderer.sharedMesh == null)
         {
-            output.Add(mesh.GetBlendShapeName(i));
+            cachedBlendshapeMeshId = 0;
+            cachedBlendshapeNames.Clear();
+            return cachedBlendshapeNames;
         }
 
-        return output;
+        int meshId = renderer.sharedMesh.GetInstanceID();
+        if (meshId == cachedBlendshapeMeshId) return cachedBlendshapeNames;
+
+        var mesh = renderer.sharedMesh;
+        cachedBlendshapeNames.Clear();
+        for (int i = 0; i < mesh.blendShapeCount; i++)
+        {
+            cachedBlendshapeNames.Add(mesh.GetBlendShapeName(i));
+        }
+
+        cachedBlendshapeMeshId = meshId;
+        return cachedBlendshapeNames;
     }
 
     private static SkinnedMeshRenderer FindDefaultBodyRenderer(GameObject avatarRoot)
@@ -285,6 +306,45 @@ public class BlendShapeLinkTestDrawer
         if (avatarRoot == null) return null;
         return avatarRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true)
             .FirstOrDefault(r => r != null && string.Equals(r.name, "Body", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static void EnsureProjectChangedHook()
+    {
+        if (projectChangedHooked) return;
+        projectChangedHooked = true;
+        EditorApplication.projectChanged += ClearAnimationClipByNameCache;
+    }
+
+    private static void RebuildAnimationClipByNameCacheIfNeeded()
+    {
+        double now = EditorApplication.timeSinceStartup;
+        if (animationClipByNameCache != null && (now - animationClipByNameCacheTimestamp) <= AnimationClipCacheTtlSeconds)
+        {
+            return;
+        }
+
+        var cache = new Dictionary<string, AnimationClip>(StringComparer.Ordinal);
+        string[] guids = AssetDatabase.FindAssets("t:AnimationClip");
+        for (int i = 0; i < guids.Length; i++)
+        {
+            string path = AssetDatabase.GUIDToAssetPath(guids[i]);
+            var clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(path);
+            if (clip == null || string.IsNullOrWhiteSpace(clip.name)) continue;
+
+            if (!cache.ContainsKey(clip.name))
+            {
+                cache[clip.name] = clip;
+            }
+        }
+
+        animationClipByNameCache = cache;
+        animationClipByNameCacheTimestamp = now;
+    }
+
+    private static void ClearAnimationClipByNameCache()
+    {
+        animationClipByNameCache = null;
+        animationClipByNameCacheTimestamp = 0d;
     }
 }
 #endif

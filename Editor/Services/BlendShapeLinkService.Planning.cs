@@ -11,6 +11,11 @@ using VRC.SDK3.Avatars.Components;
 
 public partial class BlendShapeLinkService
 {
+    private static Dictionary<string, List<AnimationClip>> _animationClipLookupCache;
+    private static double _animationClipLookupCacheTimestamp;
+    private static bool _animationClipLookupProjectChangedHooked;
+    private const double AnimationClipLookupCacheTtlSeconds = 2.0d;
+
     private static List<PlannedLink> BuildVersionPlannedLinks(GameObject avatarRoot, UltiPawVersion version,
         bool useCustomSliderSelection, List<string> customSliderSelectionNames)
     {
@@ -22,7 +27,7 @@ public partial class BlendShapeLinkService
             customSliderSelectionNames);
         var renderers = avatarRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true) ??
                         Array.Empty<SkinnedMeshRenderer>();
-        var animationClipLookup = BuildAnimationClipLookup();
+        var animationClipLookup = GetAnimationClipLookupCached();
         var dedupe = new HashSet<string>(StringComparer.Ordinal);
         foreach (var driver in version.customBlendshapes)
         {
@@ -193,6 +198,33 @@ public partial class BlendShapeLinkService
         }
 
         return lookup;
+    }
+
+    private static Dictionary<string, List<AnimationClip>> GetAnimationClipLookupCached()
+    {
+        EnsureAnimationLookupProjectChangedHook();
+
+        double now = EditorApplication.timeSinceStartup;
+        if (_animationClipLookupCache == null || (now - _animationClipLookupCacheTimestamp) > AnimationClipLookupCacheTtlSeconds)
+        {
+            _animationClipLookupCache = BuildAnimationClipLookup();
+            _animationClipLookupCacheTimestamp = now;
+        }
+
+        return _animationClipLookupCache;
+    }
+
+    private static void EnsureAnimationLookupProjectChangedHook()
+    {
+        if (_animationClipLookupProjectChangedHooked) return;
+        _animationClipLookupProjectChangedHooked = true;
+        EditorApplication.projectChanged += ClearAnimationClipLookupCache;
+    }
+
+    private static void ClearAnimationClipLookupCache()
+    {
+        _animationClipLookupCache = null;
+        _animationClipLookupCacheTimestamp = 0d;
     }
 
     private static bool TryResolveAnimationClipByName(string clipName, Dictionary<string, List<AnimationClip>> lookup,
