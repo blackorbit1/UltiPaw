@@ -14,6 +14,11 @@ using AutocompleteSearchField;
 // Handles all UI and logic for the Creator Mode feature.
 public class CreatorModeModule
 {
+    private const double AnimationClipLookupCacheTtlSeconds = 2.0d;
+    private static Dictionary<string, List<AnimationClip>> animationClipsByNameCache;
+    private static double animationClipsByNameCacheTimestamp;
+    private static bool animationClipProjectChangedHooked;
+
     private readonly UltiPawEditor editor;
     private readonly NetworkService networkService;
     private readonly FileManagerService fileManagerService;
@@ -22,6 +27,10 @@ public class CreatorModeModule
     private readonly Dictionary<string, AutocompleteSearchField.AutocompleteSearchField> correctiveSearchFields
         = new Dictionary<string, AutocompleteSearchField.AutocompleteSearchField>();
     private readonly Dictionary<string, string> pendingCorrectiveValues = new Dictionary<string, string>();
+    private readonly HashSet<string> activeCorrectiveFieldKeys = new HashSet<string>(StringComparer.Ordinal);
+    private GUIStyle clippedMiniLabelStyle;
+    private int cachedCustomFbxMeshId;
+    private List<string> cachedCustomFbxBlendshapeNames = new List<string>();
 
     // UI State
     private bool creatorModeFoldout = true;
@@ -31,10 +40,14 @@ public class CreatorModeModule
 
     private List<UltiPawVersion> compatibleParentVersions;
     private List<string> parentVersionDisplayOptions;
+    private string[] parentVersionDisplayOptionsArray = Array.Empty<string>();
     private int defaultParentIndex;
     private int selectedParentVersionIndex = -1;
     private UltiPawVersion selectedParentVersionObject = null;
     private UltiPawVersion previouslySelectedVersion = null;
+    private List<UltiPawVersion> lastServerVersionsRef;
+    private int lastServerVersionsCount = -1;
+    private string lastAppliedParentVersionKey;
     private const string CustomVeinsKey = "customVeins";
     private const string DynamicNormalBodyKey = "dynamicNormalBody";
     private const string DynamicNormalFlexingKey = "dynamicNormalFlexing";
@@ -51,6 +64,7 @@ public class CreatorModeModule
         this.editor = editor;
         this.networkService = new NetworkService();
         this.fileManagerService = new FileManagerService();
+        EnsureAnimationClipProjectChangedHook();
     }
 
     public void Initialize()
@@ -273,26 +287,16 @@ public class CreatorModeModule
         blendshapeSearchField.ClearResults();
     }
 
-    private IEnumerable<string> GetAllBlendshapeNamesFromCustomFbx()
-    {
-        var fbxObject = editor.customFbxForCreatorProp.objectReferenceValue as GameObject;
-        if (fbxObject == null) return Enumerable.Empty<string>();
-
-        var smr = fbxObject.GetComponentInChildren<SkinnedMeshRenderer>();
-        if (smr == null || smr.sharedMesh == null) return Enumerable.Empty<string>();
-
-        return Enumerable.Range(0, smr.sharedMesh.blendShapeCount)
-            .Select(i => smr.sharedMesh.GetBlendShapeName(i));
-    }
-
     private void DrawBlendshapeCorrectivesSection()
     {
         EditorGUILayout.Space(8f);
         EditorGUILayout.LabelField("Blendshape Correctives", EditorStyles.miniBoldLabel);
+        activeCorrectiveFieldKeys.Clear();
 
         var blendshapesProp = editor.customBlendshapesForCreatorProp;
         if (blendshapesProp == null || blendshapesProp.arraySize == 0)
         {
+            ClearAllCorrectiveSearchFields();
             EditorGUILayout.HelpBox("Add blendshapes above to create corrective links.", MessageType.None);
             return;
         }
@@ -329,6 +333,8 @@ public class CreatorModeModule
                 var fixedByTypeProp = item.FindPropertyRelative("fixedByType");
                 var fixedByProp = item.FindPropertyRelative("fixedBy");
                 string keyPrefix = $"corrective_{i}_{j}";
+                activeCorrectiveFieldKeys.Add(keyPrefix + "_toFix");
+                activeCorrectiveFieldKeys.Add(keyPrefix + "_fixing");
                 float indentPadding = EditorGUI.indentLevel * 15f;
                 float availableWidth = EditorGUIUtility.currentViewWidth - indentPadding - 110f;
                 float fieldWidth = Mathf.Clamp((availableWidth - 28f - 4f) * 0.5f, 95f, 260f);
@@ -370,6 +376,8 @@ public class CreatorModeModule
             EditorGUILayout.EndVertical();
         }
 
+        PruneStaleCorrectiveSearchFields();
+
         if (!drewOne)
         {
             EditorGUILayout.HelpBox("Use 'add corrective blendshapes' in the table to create entries.", MessageType.None);
@@ -391,11 +399,7 @@ public class CreatorModeModule
     )
     {
         EditorGUILayout.BeginVertical(layout);
-        var clippedMiniLabel = new GUIStyle(EditorStyles.miniLabel)
-        {
-            clipping = TextClipping.Clip,
-            wordWrap = false
-        };
+        var clippedMiniLabel = GetClippedMiniLabelStyle();
 
         CorrectiveActivationType currentType = CorrectiveActivationType.Blendshape;
         if (typeProp != null)
@@ -480,21 +484,11 @@ public class CreatorModeModule
 
     private static List<AnimationClip> FindAnimationClipsByName(string clipName)
     {
-        var clips = new List<AnimationClip>();
-        if (string.IsNullOrWhiteSpace(clipName)) return clips;
-
-        string[] guids = AssetDatabase.FindAssets("t:AnimationClip");
-        for (int i = 0; i < guids.Length; i++)
-        {
-            string path = AssetDatabase.GUIDToAssetPath(guids[i]);
-            var clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(path);
-            if (clip != null && string.Equals(clip.name, clipName, StringComparison.Ordinal))
-            {
-                clips.Add(clip);
-            }
-        }
-
-        return clips;
+        if (string.IsNullOrWhiteSpace(clipName)) return new List<AnimationClip>();
+        var lookup = GetAnimationClipsByNameLookupCached();
+        return lookup.TryGetValue(clipName, out var clips) && clips != null
+            ? clips
+            : new List<AnimationClip>();
     }
 
     private static List<string> CollectAnimationAssetPathsFromFixedBy(IEnumerable<CustomBlendshapeEntry> customBlendshapeEntries)
@@ -538,10 +532,7 @@ public class CreatorModeModule
             field.ClearResults();
             if (string.IsNullOrWhiteSpace(input)) return;
 
-            foreach (var name in GetAllBlendshapeNamesFromCustomFbx()
-                         .Where(n => !string.IsNullOrWhiteSpace(n))
-                         .Distinct()
-                         .OrderBy(n => n))
+            foreach (var name in GetAllBlendshapeNamesFromCustomFbx())
             {
                 if (name.IndexOf(input, StringComparison.OrdinalIgnoreCase) >= 0)
                 {
@@ -556,6 +547,134 @@ public class CreatorModeModule
 
         correctiveSearchFields[fieldKey] = field;
         return field;
+    }
+
+    private GUIStyle GetClippedMiniLabelStyle()
+    {
+        if (clippedMiniLabelStyle != null) return clippedMiniLabelStyle;
+        clippedMiniLabelStyle = new GUIStyle(EditorStyles.miniLabel)
+        {
+            clipping = TextClipping.Clip,
+            wordWrap = false
+        };
+        return clippedMiniLabelStyle;
+    }
+
+    private void PruneStaleCorrectiveSearchFields()
+    {
+        if (correctiveSearchFields.Count == 0 && pendingCorrectiveValues.Count == 0) return;
+
+        var keysToRemove = new List<string>();
+        foreach (var key in correctiveSearchFields.Keys)
+        {
+            if (!activeCorrectiveFieldKeys.Contains(key))
+            {
+                keysToRemove.Add(key);
+            }
+        }
+
+        for (int i = 0; i < keysToRemove.Count; i++)
+        {
+            correctiveSearchFields.Remove(keysToRemove[i]);
+            pendingCorrectiveValues.Remove(keysToRemove[i]);
+        }
+    }
+
+    private void ClearAllCorrectiveSearchFields()
+    {
+        if (correctiveSearchFields.Count > 0) correctiveSearchFields.Clear();
+        if (pendingCorrectiveValues.Count > 0) pendingCorrectiveValues.Clear();
+    }
+
+    private IEnumerable<string> GetAllBlendshapeNamesFromCustomFbx()
+    {
+        var fbxObject = editor.customFbxForCreatorProp.objectReferenceValue as GameObject;
+        if (fbxObject == null)
+        {
+            cachedCustomFbxMeshId = 0;
+            cachedCustomFbxBlendshapeNames.Clear();
+            return cachedCustomFbxBlendshapeNames;
+        }
+
+        var smr = fbxObject.GetComponentInChildren<SkinnedMeshRenderer>();
+        if (smr == null || smr.sharedMesh == null)
+        {
+            cachedCustomFbxMeshId = 0;
+            cachedCustomFbxBlendshapeNames.Clear();
+            return cachedCustomFbxBlendshapeNames;
+        }
+
+        int meshId = smr.sharedMesh.GetInstanceID();
+        if (meshId == cachedCustomFbxMeshId)
+        {
+            return cachedCustomFbxBlendshapeNames;
+        }
+
+        var names = new List<string>(smr.sharedMesh.blendShapeCount);
+        for (int i = 0; i < smr.sharedMesh.blendShapeCount; i++)
+        {
+            string name = smr.sharedMesh.GetBlendShapeName(i);
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                names.Add(name);
+            }
+        }
+
+        names = names.Distinct(StringComparer.Ordinal).OrderBy(n => n, StringComparer.Ordinal).ToList();
+        cachedCustomFbxBlendshapeNames = names;
+        cachedCustomFbxMeshId = meshId;
+        return cachedCustomFbxBlendshapeNames;
+    }
+
+    private static Dictionary<string, List<AnimationClip>> GetAnimationClipsByNameLookupCached()
+    {
+        EnsureAnimationClipProjectChangedHook();
+
+        double now = EditorApplication.timeSinceStartup;
+        if (animationClipsByNameCache != null &&
+            (now - animationClipsByNameCacheTimestamp) <= AnimationClipLookupCacheTtlSeconds)
+        {
+            return animationClipsByNameCache;
+        }
+
+        var lookup = new Dictionary<string, List<AnimationClip>>(StringComparer.Ordinal);
+        string[] guids = AssetDatabase.FindAssets("t:AnimationClip");
+        for (int i = 0; i < guids.Length; i++)
+        {
+            string path = AssetDatabase.GUIDToAssetPath(guids[i]);
+            var clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(path);
+            if (clip == null || string.IsNullOrWhiteSpace(clip.name)) continue;
+
+            if (!lookup.TryGetValue(clip.name, out var list))
+            {
+                list = new List<AnimationClip>();
+                lookup[clip.name] = list;
+            }
+
+            list.Add(clip);
+        }
+
+        foreach (var pair in lookup)
+        {
+            pair.Value.Sort((a, b) => string.CompareOrdinal(AssetDatabase.GetAssetPath(a), AssetDatabase.GetAssetPath(b)));
+        }
+
+        animationClipsByNameCache = lookup;
+        animationClipsByNameCacheTimestamp = now;
+        return animationClipsByNameCache;
+    }
+
+    private static void EnsureAnimationClipProjectChangedHook()
+    {
+        if (animationClipProjectChangedHooked) return;
+        animationClipProjectChangedHooked = true;
+        EditorApplication.projectChanged += ClearAnimationClipLookupCache;
+    }
+
+    private static void ClearAnimationClipLookupCache()
+    {
+        animationClipsByNameCache = null;
+        animationClipsByNameCacheTimestamp = 0d;
     }
 
     private static void AddCorrectivePair(
@@ -591,7 +710,7 @@ public class CreatorModeModule
         int currentParentPopupIndex = (selectedParentVersionIndex == -1) ? defaultParentIndex : selectedParentVersionIndex;
 
         EditorGUI.BeginChangeCheck();
-        int newParentIndex = EditorGUILayout.Popup(currentParentPopupIndex, parentVersionDisplayOptions.ToArray());
+        int newParentIndex = EditorGUILayout.Popup(currentParentPopupIndex, parentVersionDisplayOptionsArray);
         if (EditorGUI.EndChangeCheck())
         {
             selectedParentVersionIndex = newParentIndex;
@@ -839,10 +958,24 @@ public class CreatorModeModule
     
     private void PopulateParentVersionDropdown()
     {
+        var applied = editor.ultiPawTarget.appliedUltiPawVersion;
+        string appliedKey = applied != null ? (applied.version + "|" + applied.defaultAviVersion) : string.Empty;
+        if (ReferenceEquals(lastServerVersionsRef, editor.serverVersions) &&
+            lastServerVersionsCount == editor.serverVersions.Count &&
+            string.Equals(lastAppliedParentVersionKey, appliedKey, StringComparison.Ordinal) &&
+            compatibleParentVersions != null &&
+            parentVersionDisplayOptions != null)
+        {
+            return;
+        }
+
         compatibleParentVersions = editor.serverVersions.OrderByDescending(v => editor.ParseVersion(v.version)).ToList();
         parentVersionDisplayOptions = compatibleParentVersions.Select(v => $"{v.version} ({v.scope})").ToList();
+        parentVersionDisplayOptionsArray = parentVersionDisplayOptions.ToArray();
+        lastServerVersionsRef = editor.serverVersions;
+        lastServerVersionsCount = editor.serverVersions.Count;
+        lastAppliedParentVersionKey = appliedKey;
 
-        var applied = editor.ultiPawTarget.appliedUltiPawVersion;
         if (applied != null)
         {
             defaultParentIndex = compatibleParentVersions.FindIndex(v => v.Equals(applied));
