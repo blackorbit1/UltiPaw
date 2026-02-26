@@ -23,6 +23,7 @@ public class BlendShapeLinkTestDrawer
     private string fixedBy = "Blink Fix";
     private string factorParameterName = "custom_face";
     private bool foldout;
+    private bool activeVersionLinksFoldout;
     private bool testEnabled;
     private int cachedBlendshapeMeshId;
     private List<string> cachedBlendshapeNames = new List<string>();
@@ -39,6 +40,7 @@ public class BlendShapeLinkTestDrawer
     private const string SourceLegacyPrefKey = "UltiPaw_BlendShapeLinkTest_Source";
     private const string DestinationLegacyPrefKey = "UltiPaw_BlendShapeLinkTest_Destination";
     private const string ParamPrefKey = "UltiPaw_BlendShapeLinkTest_Param";
+    private const string ActiveVersionLinksFoldoutPrefKey = "UltiPaw_BlendShapeLinkTest_ActiveVersionLinksFoldout";
 
     public BlendShapeLinkTestDrawer(UltiPawEditor editor)
     {
@@ -50,6 +52,7 @@ public class BlendShapeLinkTestDrawer
         toFix = EditorPrefs.GetString(ToFixPrefKey, EditorPrefs.GetString(SourceLegacyPrefKey, toFix));
         fixedBy = EditorPrefs.GetString(FixedByPrefKey, EditorPrefs.GetString(DestinationLegacyPrefKey, fixedBy));
         factorParameterName = EditorPrefs.GetString(ParamPrefKey, factorParameterName);
+        activeVersionLinksFoldout = EditorPrefs.GetBool(ActiveVersionLinksFoldoutPrefKey, false);
     }
 
     public void Draw()
@@ -249,7 +252,9 @@ public class BlendShapeLinkTestDrawer
     private void DrawActiveVersionLinksDebug(GameObject avatarRoot)
     {
         EditorGUILayout.Space(6f);
-        EditorGUILayout.LabelField("Active Version Links (Debug)", EditorStyles.boldLabel);
+        activeVersionLinksFoldout = EditorGUILayout.Foldout(activeVersionLinksFoldout, "Active Version Links (Debug)", true);
+        EditorPrefs.SetBool(ActiveVersionLinksFoldoutPrefKey, activeVersionLinksFoldout);
+        if (!activeVersionLinksFoldout) return;
 
         int avatarRootId = avatarRoot != null ? avatarRoot.GetInstanceID() : 0;
         double now = EditorApplication.timeSinceStartup;

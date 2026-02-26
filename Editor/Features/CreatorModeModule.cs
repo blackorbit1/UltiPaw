@@ -34,6 +34,7 @@ public class CreatorModeModule
 
     // UI State
     private bool creatorModeFoldout = true;
+    private bool creatorBlendshapeEditorFoldout;
     private int newVersionMajor = 0, newVersionMinor = 1, newVersionPatch = 0;
     private Scope newVersionScope = Scope.BETA;
     private string newChangelog = "";
@@ -65,6 +66,7 @@ public class CreatorModeModule
         this.networkService = new NetworkService();
         this.fileManagerService = new FileManagerService();
         EnsureAnimationClipProjectChangedHook();
+        creatorBlendshapeEditorFoldout = EditorPrefs.GetBool("UltiPaw_CreatorMode_BlendshapeEditorFoldout", false);
     }
 
     public void Initialize()
@@ -155,6 +157,7 @@ public class CreatorModeModule
             }
             
             DrawParentVersionDropdown();
+            DrawParentBlendshapeImportControls();
             
             EditorGUILayout.PropertyField(editor.customFbxForCreatorProp, new GUIContent("Custom FBX (Transformed)"));
             EditorGUILayout.PropertyField(editor.ultipawAvatarForCreatorProp, new GUIContent("UltiPaw Avatar (Transformed)"));
@@ -166,17 +169,24 @@ public class CreatorModeModule
             
             // vertical group with helpbox style
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            
-            blendshapeList.DoLayoutList();
-            
-            // Display inline blendshape search field
-            if (blendshapeSearchField != null)
-            {
-                EditorGUILayout.LabelField("Search and Add Blendshapes:", EditorStyles.miniBoldLabel);
-                blendshapeSearchField.OnGUI();
-            }
+            creatorBlendshapeEditorFoldout = EditorGUILayout.Foldout(
+                creatorBlendshapeEditorFoldout,
+                "Blendshape And Correctives Editor",
+                true);
+            EditorPrefs.SetBool("UltiPaw_CreatorMode_BlendshapeEditorFoldout", creatorBlendshapeEditorFoldout);
 
-            DrawBlendshapeCorrectivesSection();
+            if (creatorBlendshapeEditorFoldout)
+            {
+                blendshapeList.DoLayoutList();
+
+                if (blendshapeSearchField != null)
+                {
+                    EditorGUILayout.LabelField("Search and Add Blendshapes:", EditorStyles.miniBoldLabel);
+                    blendshapeSearchField.OnGUI();
+                }
+
+                DrawBlendshapeCorrectivesSection();
+            }
             
             EditorGUILayout.EndVertical();  
             
@@ -475,11 +485,44 @@ public class CreatorModeModule
     {
         string currentName = stringProp != null ? (stringProp.stringValue ?? string.Empty) : string.Empty;
         var currentClip = FindAnimationClipsByName(currentName).FirstOrDefault();
-        var selectedClip = EditorGUILayout.ObjectField(currentClip, typeof(AnimationClip), false) as AnimationClip;
-        if (stringProp != null)
+        EditorGUILayout.BeginHorizontal();
+        string nextName = EditorGUILayout.DelayedTextField(currentName);
+        var selectedClip = EditorGUILayout.ObjectField(currentClip, typeof(AnimationClip), false, GUILayout.Width(130f)) as AnimationClip;
+        EditorGUILayout.EndHorizontal();
+
+        if (stringProp == null) return;
+
+        if (selectedClip != null)
         {
             stringProp.stringValue = selectedClip != null ? selectedClip.name : string.Empty;
+            return;
         }
+
+        if (!string.Equals(nextName, currentName, StringComparison.Ordinal))
+        {
+            stringProp.stringValue = nextName ?? string.Empty;
+        }
+    }
+
+    private void DrawParentBlendshapeImportControls()
+    {
+        if (selectedParentVersionObject == null || selectedParentVersionObject.customBlendshapes == null ||
+            selectedParentVersionObject.customBlendshapes.Length == 0)
+        {
+            return;
+        }
+
+        EditorGUILayout.BeginHorizontal();
+        GUILayout.Space(EditorGUI.indentLevel * 15f);
+        if (GUILayout.Button(
+                new GUIContent("Import Parent Blendshapes",
+                    "Copy parent version blendshapes and correctives into Creator Mode."),
+                GUILayout.Width(220f)))
+        {
+            ImportBlendshapesFromParent(selectedParentVersionObject);
+        }
+
+        EditorGUILayout.EndHorizontal();
     }
 
     private static List<AnimationClip> FindAnimationClipsByName(string clipName)
@@ -893,22 +936,50 @@ public class CreatorModeModule
             }
         }
         
-        // Auto-populate custom blendshapes from parent version
-        if (newParent?.customBlendshapes != null && newParent.customBlendshapes.Length > 0 && !isRestoringFromVersionState)
+        // Blendshape/corrective import is now explicit via UI button to avoid long UI stalls on toggle.
+    }
+
+    private void ImportBlendshapesFromParent(UltiPawVersion newParent)
+    {
+        if (newParent == null || newParent.customBlendshapes == null) return;
+
+        var imported = new List<CreatorBlendshapeEntry>(newParent.customBlendshapes.Length);
+        foreach (var src in newParent.customBlendshapes)
         {
-            editor.customBlendshapesForCreatorProp.ClearArray();
-            for (int i = 0; i < newParent.customBlendshapes.Length; i++)
+            if (src == null) continue;
+            var dst = new CreatorBlendshapeEntry
             {
-                editor.customBlendshapesForCreatorProp.InsertArrayElementAtIndex(i);
-                var element = editor.customBlendshapesForCreatorProp.GetArrayElementAtIndex(i);
-                element.FindPropertyRelative("name").stringValue = newParent.customBlendshapes[i].name;
-                element.FindPropertyRelative("defaultValue").stringValue = newParent.customBlendshapes[i].defaultValue;
-                element.FindPropertyRelative("isSlider").boolValue = newParent.customBlendshapes[i].isSlider;
-                element.FindPropertyRelative("isSliderDefault").boolValue = newParent.customBlendshapes[i].isSliderDefault;
-                CopyCorrectivesToSerialized(element, newParent.customBlendshapes[i].correctiveBlendshapes);
+                name = src.name,
+                defaultValue = src.defaultValue,
+                isSlider = src.isSlider,
+                isSliderDefault = src.isSliderDefault,
+                correctiveBlendshapes = new List<CreatorCorrectiveBlendshapeEntry>()
+            };
+
+            if (src.correctiveBlendshapes != null)
+            {
+                for (int i = 0; i < src.correctiveBlendshapes.Length; i++)
+                {
+                    var c = src.correctiveBlendshapes[i];
+                    if (c == null) continue;
+                    dst.correctiveBlendshapes.Add(new CreatorCorrectiveBlendshapeEntry
+                    {
+                        toFixType = c.toFixType,
+                        toFix = c.toFix,
+                        fixedByType = c.fixedByType,
+                        fixedBy = c.fixedBy
+                    });
+                }
             }
-            editor.serializedObject.ApplyModifiedProperties();
+
+            imported.Add(dst);
         }
+
+        Undo.RecordObject(editor.ultiPawTarget, "Import Parent Blendshapes");
+        editor.ultiPawTarget.customBlendshapesForCreator = imported;
+        EditorUtility.SetDirty(editor.ultiPawTarget);
+        editor.serializedObject.Update();
+        ClearAllCorrectiveSearchFields();
     }
 
     private static void CopyCorrectivesToSerialized(SerializedProperty blendshapeElement, CorrectiveBlendshapeEntry[] source)

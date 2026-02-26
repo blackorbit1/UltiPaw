@@ -204,7 +204,7 @@ public partial class BlendShapeLinkService
         if (!TryResolveVersionState(avatarRoot, out var state)) return new List<VersionLinkDebugInfo>();
 
         var planned = BuildVersionPlannedLinks(avatarRoot, state.version, state.useCustomSliderSelection,
-            state.customSliderSelectionNames);
+            state.customSliderSelectionNames, false);
 
         return planned.Select(x => new VersionLinkDebugInfo
         {

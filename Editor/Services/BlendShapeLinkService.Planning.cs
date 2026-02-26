@@ -17,7 +17,8 @@ public partial class BlendShapeLinkService
     private const double AnimationClipLookupCacheTtlSeconds = 2.0d;
 
     private static List<PlannedLink> BuildVersionPlannedLinks(GameObject avatarRoot, UltiPawVersion version,
-        bool useCustomSliderSelection, List<string> customSliderSelectionNames)
+        bool useCustomSliderSelection, List<string> customSliderSelectionNames,
+        bool includeAnimationSignatures = true)
     {
         var output = new List<PlannedLink>();
         if (avatarRoot == null || version?.customBlendshapes == null || version.customBlendshapes.Length == 0)
@@ -27,7 +28,9 @@ public partial class BlendShapeLinkService
             customSliderSelectionNames);
         var renderers = avatarRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true) ??
                         Array.Empty<SkinnedMeshRenderer>();
-        var animationClipLookup = GetAnimationClipLookupCached();
+        Dictionary<string, List<AnimationClip>> animationClipLookup = null;
+        Func<Dictionary<string, List<AnimationClip>>> getAnimationClipLookup = () =>
+            animationClipLookup ?? (animationClipLookup = GetAnimationClipLookupCached());
         var dedupe = new HashSet<string>(StringComparer.Ordinal);
         foreach (var driver in version.customBlendshapes)
         {
@@ -45,15 +48,16 @@ public partial class BlendShapeLinkService
 
                 AnimationClip toFixClip = null;
                 List<AnimationBindingSignature> toFixSignature = null;
-                if (corrective.toFixType == CorrectiveActivationType.Animation &&
-                    TryResolveAnimationClipByName(corrective.toFix, animationClipLookup, out toFixClip))
+                if (includeAnimationSignatures &&
+                    corrective.toFixType == CorrectiveActivationType.Animation &&
+                    TryResolveAnimationClipByName(corrective.toFix, getAnimationClipLookup(), out toFixClip))
                 {
                     toFixSignature = BuildAnimationSignature(toFixClip);
                 }
 
                 AnimationClip fixedByClip = null;
                 if (corrective.fixedByType == CorrectiveActivationType.Animation &&
-                    !TryResolveAnimationClipByName(corrective.fixedBy, animationClipLookup, out fixedByClip))
+                    !TryResolveAnimationClipByName(corrective.fixedBy, getAnimationClipLookup(), out fixedByClip))
                 {
                     continue;
                 }
