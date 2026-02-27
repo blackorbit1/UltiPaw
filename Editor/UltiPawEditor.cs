@@ -218,6 +218,7 @@ public class UltiPawEditor : UnityEditor.Editor
 
     private void AutoDetectBaseFbxViaHierarchy()
     {
+        if (ultiPawTarget == null) return;
         var root = ultiPawTarget.transform.root;
         var bodySmr = root.GetComponentsInChildren<SkinnedMeshRenderer>(true)
             .FirstOrDefault(smr => smr.gameObject.name.Equals("Body", StringComparison.OrdinalIgnoreCase));

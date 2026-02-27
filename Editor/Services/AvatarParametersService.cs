@@ -11,7 +11,6 @@ public class AvatarParametersService
     private static AvatarParametersService _instance;
     public static AvatarParametersService Instance => _instance ??= new AvatarParametersService();
 
-    private const string SLIDERS_GAMEOBJECT_NAME = "ultipaw sliders";
 
     private System.Type _vrcFuryType;
     private System.Type _toggleType;
@@ -371,7 +370,7 @@ public class AvatarParametersService
             bool includePuppets = (bool)(_unlimitedType.GetField("includePuppets")?.GetValue(content) ?? false);
             var go = (component as Component)?.gameObject;
             string path = GetGameObjectPath(go);
-            bool external = go != null && go.name != SLIDERS_GAMEOBJECT_NAME;
+            bool external = go != null && go.name != VRCFuryService.SLIDERS_GAMEOBJECT_NAME;
             return (true, includeBools, includePuppets, path, external);
         }
 
@@ -412,7 +411,7 @@ public class AvatarParametersService
             }
 
             var go = component.gameObject;
-            if (go != null && go.name == SLIDERS_GAMEOBJECT_NAME && isSlider)
+            if (go != null && go.name == VRCFuryService.SLIDERS_GAMEOBJECT_NAME && isSlider)
             {
                 ultiPawSliderCount++;
                 ultiPawSliderRawBits += 8;

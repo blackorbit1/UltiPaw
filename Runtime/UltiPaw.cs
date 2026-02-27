@@ -78,6 +78,12 @@ public class UltiPaw : MonoBehaviour
     [Tooltip("The name of the sliders sub-menu in the VRChat expressions menu.")]
     [HideInInspector] public string slidersMenuName = "UltiPaw sliders";
 
+    [Tooltip("Whether the sliders GameObject is active or inactive (overriding version defaults).")]
+    [HideInInspector] [SerializeField] public bool useCustomSlidersState = false;
+
+    [Tooltip("The user-customized active state of the sliders GameObject.")]
+    [HideInInspector] [SerializeField] public bool customSlidersState = true;
+
     [Tooltip("Whether slider selection overrides the version defaults.")]
     [HideInInspector] [SerializeField] public bool useCustomSliderSelection = false;
 

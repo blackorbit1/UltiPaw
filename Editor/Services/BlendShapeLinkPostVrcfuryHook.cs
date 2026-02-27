@@ -9,6 +9,7 @@ public class BlendShapeLinkPostVrcfuryHook : IVRCSDKPreprocessAvatarCallback
 
     public bool OnPreprocessAvatar(GameObject avatarRoot)
     {
+        BlendShapeLinkService.Instance.ClearSessionTracking();
         var versionResult = BlendShapeLinkService.Instance.ApplyActiveVersionFactorLinks(avatarRoot);
         if (versionResult.success)
         {

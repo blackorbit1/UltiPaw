@@ -15,10 +15,27 @@ using VRC.SDK3.Avatars.Components;
 
 public partial class BlendShapeLinkService
 {
+    // Track layers already copied to FX during the current build session to avoid duplicates
+    // across multiple ApplyPlannedLinks calls (version links + manual links)
+    private static HashSet<string> _layersCopiedToFxThisSession = new HashSet<string>();
+    private static int _lastBuildSessionFrame = -1;
+    public void ClearSessionTracking()
+    {
+        _layersCopiedToFxThisSession.Clear();
+        _lastBuildSessionFrame = Time.frameCount;
+    }
+
     private static ApplyResult ApplyPlannedLinks(GameObject avatarRoot, List<PlannedLink> plannedLinks, string sourceLabel)
     {
         if (avatarRoot == null) return FailApply("Avatar root is null.");
         if (plannedLinks == null || plannedLinks.Count == 0) return FailApply("No corrective links to apply.");
+        
+        // Safety check to ensure session tracking is reset if this is clearly a new frame/build
+        if (Time.frameCount != _lastBuildSessionFrame)
+        {
+            _layersCopiedToFxThisSession.Clear();
+            _lastBuildSessionFrame = Time.frameCount;
+        }
 
         var controllers = CollectVrcFuryBuiltControllers(avatarRoot);
         if (controllers.Count == 0)
@@ -35,8 +52,8 @@ public partial class BlendShapeLinkService
         var fxController = FindControllerForLayerType(descriptor, VRCAvatarDescriptor.AnimLayerType.FX);
         var additiveController = FindControllerForLayerType(descriptor, VRCAvatarDescriptor.AnimLayerType.Additive);
         
-        // Track layers that need to be moved from Additive to FX
-        var layersToMoveToFx = new List<(AnimatorController sourceController, int layerIndex, AnimatorControllerLayer layer)>();
+        // Track layers that need to be copied from Additive/etc to FX (use dictionary to avoid duplicates)
+        var layersToCopyToFx = new Dictionary<string, (AnimatorController sourceController, int layerIndex, AnimatorControllerLayer layer)>();
 
         int linksProcessed = 0;
         int clipsWrapped = 0;
@@ -73,13 +90,24 @@ public partial class BlendShapeLinkService
                         controllerChanged = true;
                         thisLinkChangedAnyController = true;
 
-                        UltiPawLogger.Log($"[UltiPaw] Layer '{layer.name}' index {i} in controller '{controller.name}' was modified with blendshape link.");
-                        
                         // If this is a non-FX controller (like Additive), mark layer for migration to FX
-                        if (controller != fxController && fxController != null)
+                        bool isFxController = (controller == fxController);
+                        bool hasFxController = (fxController != null);
+                        
+                        if (!isFxController && hasFxController)
                         {
-                            Debug.Log($"[UltiPaw] Layer '{layer.name}' in '{controller.name}' contains blendshape animations - will move to FX controller.");
-                            layersToMoveToFx.Add((controller, i, layer));
+                            // Use a unique key to avoid duplicating the same layer if multiple links affect it
+                            // Also check against layers already copied in this build session (across version + manual links)
+                            string layerKey = $"{controller.name}:{i}:{layer.name}";
+                            if (!layersToCopyToFx.ContainsKey(layerKey) && !_layersCopiedToFxThisSession.Contains(layerKey))
+                            {
+                                UltiPawLogger.Log($"[UltiPaw] Layer '{layer.name}' in '{controller.name}' contains blendshape animations - will copy to FX controller.");
+                                layersToCopyToFx[layerKey] = (controller, i, layer);
+                            }
+                        }
+                        else if (!hasFxController)
+                        {
+                            UltiPawLogger.LogWarning($"[UltiPaw] No FX controller found! Cannot copy layer '{layer.name}' for blendshape animations.");
                         }
                         
                         // Clear mask regardless (for FX layers with restrictive masks)
@@ -125,10 +153,10 @@ public partial class BlendShapeLinkService
             if (thisLinkChangedAnyController) linksProcessed++;
         }
         
-        // Move affected layers from non-FX controllers to FX
-        if (layersToMoveToFx.Count > 0 && fxController != null)
+        // Copy affected layers from non-FX controllers to FX (only once per unique layer)
+        if (layersToCopyToFx.Count > 0 && fxController != null)
         {
-            MoveLayersToFxController(layersToMoveToFx, fxController);
+            CopyLayersToFxController(layersToCopyToFx.Values.ToList(), fxController);
             changedControllers.Add(fxController);
             anyControllerChanged = true;
         }
@@ -248,7 +276,7 @@ public partial class BlendShapeLinkService
         return null;
     }
 
-    private static void MoveLayersToFxController(
+    private static void CopyLayersToFxController(
         List<(AnimatorController sourceController, int layerIndex, AnimatorControllerLayer layer)> layersToMove,
         AnimatorController fxController)
     {
@@ -265,11 +293,24 @@ public partial class BlendShapeLinkService
         //
         // We create a simplified copy in FX that only contains the blendshape-affecting clips.
         
+        var currentFxLayerNames = new HashSet<string>(fxController.layers.Select(l => l.name));
+
         foreach (var (sourceController, layerIndex, layer) in layersToMove)
         {
             if (sourceController == fxController) continue;
             
-            Debug.Log($"[UltiPaw] Copying layer '{layer.name}' from '{sourceController.name}' to FX controller for blendshape animations.");
+            // Use a unique key to track this layer as copied in the current session
+            string layerKey = $"{sourceController.name}:{layerIndex}:{layer.name}";
+            _layersCopiedToFxThisSession.Add(layerKey);
+
+            string newLayerName = "[UP_FX] " + layer.name;
+            if (currentFxLayerNames.Contains(newLayerName))
+            {
+                UltiPawLogger.Log($"[UltiPaw] Layer '{newLayerName}' already exists in FX controller. Skipping copy (state machine is shared and already updated).");
+                continue;
+            }
+            
+            UltiPawLogger.Log($"[UltiPaw] Copying layer '{layer.name}' from '{sourceController.name}' to FX controller for blendshape animations.");
             
             // Copy parameters from source controller to FX controller
             foreach (var param in sourceController.parameters)
@@ -319,28 +360,37 @@ public partial class BlendShapeLinkService
     private static bool EnsureFloatParameter(AnimatorController controller, string parameterName, bool setDefaultValue, float defaultValue, out string error)
     {
         error = null;
-        var existing = controller.parameters.FirstOrDefault(p => p.name == parameterName);
-        if (existing != null)
+        var parameters = controller.parameters;
+        for (int i = 0; i < parameters.Length; i++)
         {
-            if (existing.type != AnimatorControllerParameterType.Float)
+            var p = parameters[i];
+            if (p.name == parameterName)
             {
-                error = $"Controller '{controller.name}' already has parameter '{parameterName}' but it is not Float.";
-                return false;
-            }
+                if (p.type != AnimatorControllerParameterType.Float)
+                {
+                    error = $"Controller '{controller.name}' already has parameter '{parameterName}' but it is not Float.";
+                    return false;
+                }
 
-            if (setDefaultValue && Mathf.Abs(existing.defaultFloat - defaultValue) > 0.0001f)
-            {
-                existing.defaultFloat = defaultValue;
-                EditorUtility.SetDirty(controller);
-            }
+                if (setDefaultValue && Mathf.Abs(p.defaultFloat - defaultValue) > 0.0001f)
+                {
+                    p.defaultFloat = defaultValue;
+                    controller.parameters = parameters; // Reassign because parameters returns a copy
+                    EditorUtility.SetDirty(controller);
+                }
 
-            return true;
+                return true;
+            }
         }
 
-        controller.AddParameter(parameterName, AnimatorControllerParameterType.Float);
-        var created = controller.parameters.FirstOrDefault(p => p.name == parameterName);
-        if (created != null && setDefaultValue) created.defaultFloat = defaultValue;
-
+        // Parameter does not exist, add it
+        var newParam = new AnimatorControllerParameter
+        {
+            name = parameterName,
+            type = AnimatorControllerParameterType.Float,
+            defaultFloat = setDefaultValue ? defaultValue : 0f
+        };
+        controller.AddParameter(newParam);
         EditorUtility.SetDirty(controller);
         return true;
     }
@@ -372,13 +422,16 @@ public partial class BlendShapeLinkService
                 hasExistingWrapper = true;
             }
 
-            Motion rewritten = RewriteMotion(controller, state.motion, planned, clipCache, visitedTrees, ref clipsWrapped);
+            bool motionChanged = false;
+            Motion rewritten = RewriteMotion(controller, state.motion, planned, clipCache, visitedTrees, ref clipsWrapped, ref motionChanged);
 
-            if (rewritten == null || rewritten == state.motion) continue;
-            state.motion = rewritten;
-            EditorUtility.SetDirty(state);
-            statesRewritten++;
-            changed = true;
+            if (motionChanged || (rewritten != null && rewritten != state.motion))
+            {
+                state.motion = rewritten;
+                EditorUtility.SetDirty(state);
+                statesRewritten++;
+                changed = true;
+            }
         }
 
         foreach (var childMachine in stateMachine.stateMachines)
@@ -428,7 +481,8 @@ public partial class BlendShapeLinkService
         PlannedLink planned,
         IDictionary<AnimationClip, Motion> clipCache,
         ISet<BlendTree> visitedTrees,
-        ref int clipsWrapped)
+        ref int clipsWrapped,
+        ref bool changed)
     {
         if (motion == null) return null;
 
@@ -445,40 +499,49 @@ public partial class BlendShapeLinkService
                 if (wrapperChildren != null && wrapperChildren.Length == 2)
                 {
                     var variantMotion = wrapperChildren[1].motion;
-                    var rewrittenVariant = RewriteMotion(controller, variantMotion, planned, clipCache, visitedTrees, ref clipsWrapped);
-                    if (rewrittenVariant != null && rewrittenVariant != variantMotion)
+                    bool variantChanged = false;
+                    var rewrittenVariant = RewriteMotion(controller, variantMotion, planned, clipCache, visitedTrees, ref clipsWrapped, ref variantChanged);
+                    if (variantChanged || (rewrittenVariant != null && rewrittenVariant != variantMotion))
                     {
                         wrapperChildren[1].motion = rewrittenVariant;
                         tree.children = wrapperChildren;
                         EditorUtility.SetDirty(tree);
+                        changed = true;
                     }
                 }
 
                 return tree;
             }
 
-            bool changed = false;
+            bool childrenChanged = false;
             var children = tree.children;
             for (int i = 0; i < children.Length; i++)
             {
                 var childMotion = children[i].motion;
-                var rewritten = RewriteMotion(controller, childMotion, planned, clipCache, visitedTrees, ref clipsWrapped);
-                if (rewritten == null || rewritten == childMotion) continue;
-                children[i].motion = rewritten;
-                changed = true;
+                bool childChanged = false;
+                var rewritten = RewriteMotion(controller, childMotion, planned, clipCache, visitedTrees, ref clipsWrapped, ref childChanged);
+                if (childChanged || (rewritten != null && rewritten != childMotion))
+                {
+                    children[i].motion = rewritten;
+                    childrenChanged = true;
+                }
             }
 
-            if (changed)
+            if (childrenChanged)
             {
                 tree.children = children;
                 EditorUtility.SetDirty(tree);
+                changed = true;
             }
 
             return tree;
         }
 
         if (!(motion is AnimationClip clip)) return motion;
-        if (clipCache.TryGetValue(clip, out var cached)) return cached;
+        if (clipCache.TryGetValue(clip, out var cached))
+        {
+            return cached;
+        }
 
         var variantClip = TryCreateVariantClip(controller, clip, planned);
         if (variantClip == null)
@@ -490,16 +553,26 @@ public partial class BlendShapeLinkService
         var wrapperTree = CreateWrapperTree(controller, clip, variantClip, planned.factorParameterName);
         clipCache[clip] = wrapperTree;
         clipsWrapped++;
+        changed = true;
         return wrapperTree;
     }
 
     private static AnimationClip TryCreateVariantClip(AnimatorController controller, AnimationClip sourceClip, PlannedLink planned)
     {
-        if (sourceClip == null) return null;
-        if (planned.fixedByType == CorrectiveActivationType.Animation && planned.fixedByAnimationClip == null) return null;
-        if (planned.toFixType == CorrectiveActivationType.Animation &&
-            !DoesClipMatchAnimationTarget(sourceClip, planned.toFixName, planned.toFixAnimationSignature)) return null;
-
+        if (sourceClip == null)
+        {
+            return null;
+        }
+        if (planned.fixedByType == CorrectiveActivationType.Animation && planned.fixedByAnimationClip == null)
+        {
+            return null;
+        }
+        if (planned.toFixType == CorrectiveActivationType.Animation)
+        {
+            bool matches = DoesClipMatchAnimationTarget(sourceClip, planned.toFixName, planned.toFixAnimationSignature);
+            if (!matches) return null;
+        }
+        
         if (planned.toFixType == CorrectiveActivationType.Blendshape && planned.fixedByType == CorrectiveActivationType.Blendshape)
         {
             if (!TryGetBlendshapeCurve(sourceClip, planned.sourcePath, planned.sourceProperty, out var sourceCurve)) return null;

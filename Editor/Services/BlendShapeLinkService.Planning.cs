@@ -28,6 +28,7 @@ public partial class BlendShapeLinkService
             customSliderSelectionNames);
         var renderers = avatarRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true) ??
                         Array.Empty<SkinnedMeshRenderer>();
+        var ultiPaw = FindUltiPaw(avatarRoot);
         Dictionary<string, List<AnimationClip>> animationClipLookup = null;
         Func<Dictionary<string, List<AnimationClip>>> getAnimationClipLookup = () =>
             animationClipLookup ?? (animationClipLookup = GetAnimationClipLookupCached());
@@ -38,7 +39,7 @@ public partial class BlendShapeLinkService
             if (driver.correctiveBlendshapes == null || driver.correctiveBlendshapes.Length == 0) continue;
 
             bool isSliderFactor = driver.isSlider && selectedSliders.Contains(driver.name);
-            float globalConstantFactor = Mathf.Clamp01(ReadBlendshapeWeight01(renderers, driver.name));
+            float globalConstantFactor = GetIntendedFactor(ultiPaw, driver, null, renderers);
 
             foreach (var corrective in driver.correctiveBlendshapes)
             {
@@ -110,7 +111,7 @@ public partial class BlendShapeLinkService
                         AnimationUtility.CalculateTransformPath(renderer.transform, avatarRoot.transform);
                     if (string.IsNullOrWhiteSpace(rendererPath)) continue;
 
-                    float constantFactor = Mathf.Clamp01(ReadBlendshapeWeight01(renderer, driver.name));
+                    float constantFactor = GetIntendedFactor(ultiPaw, driver, renderer, null);
                     string factorParam = isSliderFactor
                         ? VRCFuryService.GetSliderGlobalParamName(driver.name)
                         : BuildConstantFactorParamName(driver.name, rendererPath, corrective.toFixType.ToString(),
@@ -463,24 +464,96 @@ public partial class BlendShapeLinkService
         return (max - min) > eps || absMax > eps;
     }
 
-    private static float ReadBlendshapeWeight01(SkinnedMeshRenderer[] renderers, string blendshapeName)
+    private static float GetIntendedFactor(UltiPaw ultiPaw, CustomBlendshapeEntry driver,
+        SkinnedMeshRenderer specificRenderer, SkinnedMeshRenderer[] allRenderers)
     {
-        if (renderers == null || string.IsNullOrWhiteSpace(blendshapeName)) return 0f;
-
-        foreach (var renderer in renderers)
+        // 1. Priority: UltiPaw override from the component (this handles user intent best)
+        if (ultiPaw != null)
         {
-            float value = ReadBlendshapeWeight01(renderer, blendshapeName);
-            if (value > 0f) return value;
+            int idx = ultiPaw.customBlendshapeOverrideNames.IndexOf(driver.name);
+            if (idx >= 0 && idx < ultiPaw.customBlendshapeOverrideValues.Count)
+            {
+                return Mathf.Clamp01(ultiPaw.customBlendshapeOverrideValues[idx] / 100f);
+            }
+        }
+
+        // 2. Fallback: Live SMR weight from the ORIGINAL avatar (if we can find it)
+        if (ultiPaw != null)
+        {
+            var originalRoot = ultiPaw.transform.root;
+            if (specificRenderer != null)
+            {
+                // Try to find the same-named renderer on original root
+                var originalRenderer = originalRoot.Find(specificRenderer.name)?.GetComponent<SkinnedMeshRenderer>();
+                if (originalRenderer == null)
+                {
+                    originalRenderer = originalRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true)
+                        .FirstOrDefault(s => s.name == specificRenderer.name);
+                }
+
+                if (originalRenderer != null)
+                {
+                    float val = ReadBlendshapeWeight01(originalRenderer, driver.name);
+                    if (!float.IsNaN(val)) return val;
+                }
+            }
+            else
+            {
+                var originalRenderers = originalRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+                float val = ReadBlendshapeWeight01(originalRenderers, driver.name);
+                if (!float.IsNaN(val)) return val;
+            }
+        }
+
+        // 3. Fallback: Providing renderers (usually the clone)
+        float smrWeight = float.NaN;
+        if (specificRenderer != null)
+        {
+            smrWeight = ReadBlendshapeWeight01(specificRenderer, driver.name);
+        }
+        else if (allRenderers != null)
+        {
+            smrWeight = ReadBlendshapeWeight01(allRenderers, driver.name);
+        }
+
+        // Only use clone weight if it's non-zero (heuristic: if it's zero on clone but not on original, clone was reset)
+        if (!float.IsNaN(smrWeight) && smrWeight > 0.0001f) return smrWeight;
+
+        // 4. Last resort: Version default value (if SMR weight was zero or not found)
+        if (driver != null && float.TryParse(driver.defaultValue, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out float parsed))
+        {
+            return Mathf.Clamp01(parsed / 100f);
         }
 
         return 0f;
     }
 
+    private static float ReadBlendshapeWeight01(SkinnedMeshRenderer[] renderers, string blendshapeName)
+    {
+        if (renderers == null || string.IsNullOrWhiteSpace(blendshapeName)) return float.NaN;
+
+        foreach (var renderer in renderers)
+        {
+            float value = ReadBlendshapeWeight01(renderer, blendshapeName);
+            if (!float.IsNaN(value) && value > 0f) return value;
+        }
+
+        // If we didn't find any non-zero, check if we found at least one zero
+        foreach (var renderer in renderers)
+        {
+            float value = ReadBlendshapeWeight01(renderer, blendshapeName);
+            if (!float.IsNaN(value)) return 0f;
+        }
+
+        return float.NaN;
+    }
+
     private static float ReadBlendshapeWeight01(SkinnedMeshRenderer renderer, string blendshapeName)
     {
-        if (renderer == null || renderer.sharedMesh == null || string.IsNullOrWhiteSpace(blendshapeName)) return 0f;
+        if (renderer == null || renderer.sharedMesh == null || string.IsNullOrWhiteSpace(blendshapeName)) return float.NaN;
         int index = renderer.sharedMesh.GetBlendShapeIndex(blendshapeName);
-        if (index < 0) return 0f;
+        if (index < 0) return float.NaN;
         return renderer.GetBlendShapeWeight(index) / 100f;
     }
 

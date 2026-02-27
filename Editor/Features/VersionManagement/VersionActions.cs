@@ -392,15 +392,9 @@ public class VersionActions
                 UltiPawLogger.Log("[VersionActions] Custom veins removed");
             }
             
-            // Apply blendshape default values and clear custom overrides
+            // Apply blendshape default values and manage sliders GameObject
             if (!isReset && version != null && version.customBlendshapes != null && version.customBlendshapes.Length > 0)
             {
-                // Clear all custom overrides when switching versions
-                editor.ultiPawTarget.customBlendshapeOverrideNames.Clear();
-                editor.ultiPawTarget.customBlendshapeOverrideValues.Clear();
-                editor.ultiPawTarget.useCustomSliderSelection = false;
-                editor.ultiPawTarget.customSliderSelectionNames.Clear();
-                
                 // Find the Body mesh (and optional hair meshes for sync)
                 var allSmrs = root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
                 var bodyMesh = allSmrs
@@ -419,17 +413,26 @@ public class VersionActions
                         if (bodyIndex >= 0)
                         {
                             float defaultValue = float.TryParse(entry.defaultValue, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsed) ? parsed : 0f;
-                            bodyMesh.SetBlendShapeWeight(bodyIndex, defaultValue);
+                            
+                            // Check if there is a custom override for this blendshape
+                            float valueToApply = defaultValue;
+                            int overrideIdx = editor.ultiPawTarget.customBlendshapeOverrideNames.IndexOf(entry.name);
+                            if (overrideIdx >= 0 && overrideIdx < editor.ultiPawTarget.customBlendshapeOverrideValues.Count)
+                            {
+                                valueToApply = editor.ultiPawTarget.customBlendshapeOverrideValues[overrideIdx];
+                            }
+
+                            bodyMesh.SetBlendShapeWeight(bodyIndex, valueToApply);
 
                             if (mohawkMesh?.sharedMesh != null)
                             {
                                 int mhIndex = mohawkMesh.sharedMesh.GetBlendShapeIndex(entry.name);
-                                if (mhIndex >= 0) mohawkMesh.SetBlendShapeWeight(mhIndex, defaultValue);
+                                if (mhIndex >= 0) mohawkMesh.SetBlendShapeWeight(mhIndex, valueToApply);
                             }
                             if (maneMesh?.sharedMesh != null)
                             {
                                 int maIndex = maneMesh.sharedMesh.GetBlendShapeIndex(entry.name);
-                                if (maIndex >= 0) maneMesh.SetBlendShapeWeight(maIndex, defaultValue);
+                                if (maIndex >= 0) maneMesh.SetBlendShapeWeight(maIndex, valueToApply);
                             }
                         }
                     }
@@ -437,7 +440,52 @@ public class VersionActions
                     EditorUtility.SetDirty(bodyMesh);
                     if (mohawkMesh != null) EditorUtility.SetDirty(mohawkMesh);
                     if (maneMesh != null) EditorUtility.SetDirty(maneMesh);
-                    UltiPawLogger.Log($"[VersionActions] Applied {version.customBlendshapes.Length} blendshape default values (synced to hair if present)");
+                    UltiPawLogger.Log($"[VersionActions] Applied blendshape values (honoring {editor.ultiPawTarget.customBlendshapeOverrideNames.Count} overrides)");
+                }
+
+                // Handle "ultipaw sliders" GameObject state and deletion
+                var slidersTransform = root.Find(VRCFuryService.SLIDERS_GAMEOBJECT_NAME);
+                var hasSliders = version.customBlendshapes.Any(e => e.isSlider);
+
+                if (!hasSliders)
+                {
+                    if (slidersTransform != null)
+                    {
+                        UltiPawLogger.Log("[VersionActions] Version has no sliders. Deleting sliders GameObject.");
+                        Undo.DestroyObjectImmediate(slidersTransform.gameObject);
+                    }
+                }
+                else
+                {
+                    // Ensure sliders are applied/updated for the new version
+                    var allSliderEntries = version.customBlendshapes.Where(e => e.isSlider).ToList();
+                    List<CustomBlendshapeEntry> selectedSliders;
+
+                    if (editor.ultiPawTarget.useCustomSliderSelection)
+                    {
+                        var savedNames = new HashSet<string>(editor.ultiPawTarget.customSliderSelectionNames ?? new List<string>());
+                        selectedSliders = allSliderEntries.Where(e => savedNames.Contains(e.name)).ToList();
+                    }
+                    else
+                    {
+                        selectedSliders = allSliderEntries.Where(e => e.isSliderDefault).ToList();
+                    }
+
+                    UltiPawLogger.Log($"[VersionActions] Applying sliders for version {version.version}. Count: {selectedSliders.Count}");
+                    VRCFuryService.Instance.ApplySliders(root.gameObject, editor.ultiPawTarget.slidersMenuName, selectedSliders);
+
+                    // Ensure the active state is correct (ApplySliders handles creation state, but we enforce it here for existing ones too)
+                    slidersTransform = root.Find(VRCFuryService.SLIDERS_GAMEOBJECT_NAME);
+                    if (slidersTransform != null)
+                    {
+                        bool desiredState = editor.ultiPawTarget.useCustomSlidersState ? editor.ultiPawTarget.customSlidersState : true;
+                        if (slidersTransform.gameObject.activeSelf != desiredState)
+                        {
+                            UltiPawLogger.Log($"[VersionActions] Setting sliders GameObject active state to: {desiredState}");
+                            Undo.RecordObject(slidersTransform.gameObject, "Set Sliders Active State");
+                            slidersTransform.gameObject.SetActive(desiredState);
+                        }
+                    }
                 }
             }
             else if (isReset)
@@ -447,7 +495,17 @@ public class VersionActions
                 editor.ultiPawTarget.customBlendshapeOverrideValues.Clear();
                 editor.ultiPawTarget.useCustomSliderSelection = false;
                 editor.ultiPawTarget.customSliderSelectionNames.Clear();
+                editor.ultiPawTarget.useCustomSlidersState = false;
+                editor.ultiPawTarget.customSlidersState = true;
                 SyncAppliedVersionBlendshapeLinkCache(null);
+
+                // Delete sliders GameObject on reset
+                var slidersTransform = root.Find(VRCFuryService.SLIDERS_GAMEOBJECT_NAME);
+                if (slidersTransform != null)
+                {
+                    UltiPawLogger.Log("[VersionActions] Reset requested. Deleting sliders GameObject.");
+                    Undo.DestroyObjectImmediate(slidersTransform.gameObject);
+                }
             }
         }
         
@@ -658,6 +716,7 @@ public class VersionActions
             !string.IsNullOrEmpty(v.appliedCustomAviHash) &&
             v.appliedCustomAviHash.Equals(currentFileHash, StringComparison.OrdinalIgnoreCase));
 
+        if (editor?.ultiPawTarget == null) return;
         Undo.RecordObject(editor.ultiPawTarget, "Update UltiPaw State");
 
         if (matchingVersion != null)

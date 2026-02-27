@@ -23,6 +23,8 @@ public class SlidersDrawer
 
     private const int MAX_PARAMETERS = 256;
 
+    private bool lastKnownGameObjectState = true;
+
     public SlidersDrawer(UltiPawEditor editor)
     {
         this.editor = editor;
@@ -192,6 +194,20 @@ public class SlidersDrawer
         var entries = GetSliderEntries();
         if (entries.Count == 0) return;
 
+        GameObject avatarRoot = editor.ultiPawTarget.transform.root.gameObject;
+        Transform slidersTransform = avatarRoot.transform.Find(VRCFuryService.SLIDERS_GAMEOBJECT_NAME);
+        bool gameObjectActive = slidersTransform != null && slidersTransform.gameObject.activeSelf;
+
+        // Detect manual change from Hierarchy
+        if (slidersTransform != null && gameObjectActive != lastKnownGameObjectState)
+        {
+            lastKnownGameObjectState = gameObjectActive;
+            Undo.RecordObject(editor.ultiPawTarget, "Sync Sliders State from GameObject");
+            editor.ultiPawTarget.useCustomSlidersState = true;
+            editor.ultiPawTarget.customSlidersState = gameObjectActive;
+            EditorUtility.SetDirty(editor.ultiPawTarget);
+        }
+
         // If entries changed, refresh names and selection
         var currentNames = entries.Select(e => e.name).ToList();
         if (entries.Count != sliderNames.Count || !sliderNames.SequenceEqual(currentNames))
@@ -234,7 +250,28 @@ public class SlidersDrawer
             {
                 GUILayout.FlexibleSpace();
                 
+                EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.LabelField("Sliders", EditorStyles.boldLabel);
+                
+                bool currentSlidersActive = editor.ultiPawTarget.useCustomSlidersState ? editor.ultiPawTarget.customSlidersState : true;
+                EditorGUI.BeginChangeCheck();
+                bool nextSlidersActive = EditorGUILayout.Toggle(currentSlidersActive, GUILayout.Width(32));
+                if (EditorGUI.EndChangeCheck())
+                {
+                    Undo.RecordObject(editor.ultiPawTarget, "Toggle Sliders State");
+                    editor.ultiPawTarget.useCustomSlidersState = true;
+                    editor.ultiPawTarget.customSlidersState = nextSlidersActive;
+                    EditorUtility.SetDirty(editor.ultiPawTarget);
+                    
+                    if (slidersTransform != null)
+                    {
+                        Undo.RecordObject(slidersTransform.gameObject, "Toggle Sliders GameObject");
+                        slidersTransform.gameObject.SetActive(nextSlidersActive);
+                        lastKnownGameObjectState = nextSlidersActive;
+                    }
+                }
+                EditorGUILayout.EndHorizontal();
+
                 EditorGUILayout.Space(5);
 
                 repartitionGraph.Draw(graphData);
@@ -374,16 +411,27 @@ public class SlidersDrawer
         GameObject avatarRoot = editor.ultiPawTarget.transform.root.gameObject;
         string menuName = editor.ultiPawTarget.slidersMenuName;
 
+        System.Action applyAction = () => {
+            VRCFuryService.Instance.ApplySliders(avatarRoot, menuName, selectedEntries);
+            
+            // Ensure the active state matches user preference or default
+            var slidersTransform = avatarRoot.transform.Find(VRCFuryService.SLIDERS_GAMEOBJECT_NAME);
+            if (slidersTransform != null)
+            {
+                bool desiredState = editor.ultiPawTarget.useCustomSlidersState ? editor.ultiPawTarget.customSlidersState : true;
+                slidersTransform.gameObject.SetActive(desiredState);
+                lastKnownGameObjectState = desiredState;
+            }
+        };
+
         if (immediate)
         {
-            VRCFuryService.Instance.ApplySliders(avatarRoot, menuName, selectedEntries);
+            applyAction();
             return;
         }
 
         // Use the TaskQueue to avoid blocking the UI
-        VRCFuryTaskQueue.Enqueue(() => {
-            VRCFuryService.Instance.ApplySliders(avatarRoot, menuName, selectedEntries);
-        });
+        VRCFuryTaskQueue.Enqueue(applyAction);
     }
 }
 #endif

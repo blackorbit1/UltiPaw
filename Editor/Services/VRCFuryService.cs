@@ -9,7 +9,7 @@ public class VRCFuryService
     private static VRCFuryService _instance;
     public static VRCFuryService Instance => _instance ??= new VRCFuryService();
 
-    private const string SLIDERS_GAMEOBJECT_NAME = "ultipaw sliders";
+    public const string SLIDERS_GAMEOBJECT_NAME = "ultipaw sliders";
 
     // Type Cache
     private System.Type _vrcFuryType;
@@ -67,6 +67,14 @@ public class VRCFuryService
             slidersObj = new GameObject(SLIDERS_GAMEOBJECT_NAME);
             slidersObj.transform.SetParent(avatarRoot.transform, false);
             Undo.RegisterCreatedObjectUndo(slidersObj, "Create UltiPaw Sliders GameObject");
+            
+            // Set initial state from UltiPaw component
+            var ultiPaw = avatarRoot.GetComponentInChildren<UltiPaw>(true);
+            if (ultiPaw != null)
+            {
+                bool desiredState = ultiPaw.useCustomSlidersState ? ultiPaw.customSlidersState : true;
+                slidersObj.SetActive(desiredState);
+            }
         }
         else
         {
@@ -309,6 +317,14 @@ public class VRCFuryService
             slidersObj = new GameObject(SLIDERS_GAMEOBJECT_NAME);
             slidersObj.transform.SetParent(avatarRoot.transform, false);
             Undo.RegisterCreatedObjectUndo(slidersObj, "Create UltiPaw Sliders GameObject");
+
+            // Set initial state from UltiPaw component
+            var ultiPaw = avatarRoot.GetComponentInChildren<UltiPaw>(true);
+            if (ultiPaw != null)
+            {
+                bool desiredState = ultiPaw.useCustomSlidersState ? ultiPaw.customSlidersState : true;
+                slidersObj.SetActive(desiredState);
+            }
         }
         else
         {
