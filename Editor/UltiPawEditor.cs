@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
+using UltiPawEditorUtils;
 using Newtonsoft.Json;
 
 [CustomEditor(typeof(UltiPaw))]
@@ -220,8 +221,7 @@ public class UltiPawEditor : UnityEditor.Editor
     {
         if (ultiPawTarget == null) return;
         var root = ultiPawTarget.transform.root;
-        var bodySmr = root.GetComponentsInChildren<SkinnedMeshRenderer>(true)
-            .FirstOrDefault(smr => smr.gameObject.name.Equals("Body", StringComparison.OrdinalIgnoreCase));
+        var bodySmr = MeshFinder.FindMeshPrioritizingRoot(root, "Body");
         
         if (bodySmr?.sharedMesh == null) return;
         

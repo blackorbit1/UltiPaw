@@ -5,6 +5,7 @@ using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UltiPawEditorUtils;
 
 public class MaterialService
 {
@@ -387,8 +388,7 @@ public class MaterialService
         }
 
         // Find the SkinnedMeshRenderer with the matching name
-        var smr = avatarRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true)
-            .FirstOrDefault(s => s.gameObject.name.Equals(materialSlot, System.StringComparison.OrdinalIgnoreCase));
+        var smr = MeshFinder.FindMeshPrioritizingRoot(avatarRoot, materialSlot);
 
         if (smr == null)
         {

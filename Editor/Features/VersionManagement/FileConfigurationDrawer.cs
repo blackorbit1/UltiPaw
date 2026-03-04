@@ -3,6 +3,7 @@ using System;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
+using UltiPawEditorUtils;
 
 public class FileConfigurationDrawer
 {
@@ -79,8 +80,7 @@ public class FileConfigurationDrawer
     private void AutoDetectBaseFbxViaHierarchy()
     {
         var root = editor.ultiPawTarget.transform.root;
-        var bodySmr = root.GetComponentsInChildren<SkinnedMeshRenderer>(true)
-            .FirstOrDefault(smr => smr.gameObject.name.Equals("Body", StringComparison.OrdinalIgnoreCase));
+        var bodySmr = MeshFinder.FindMeshPrioritizingRoot(root, "Body");
         
         if (bodySmr?.sharedMesh == null) return;
         

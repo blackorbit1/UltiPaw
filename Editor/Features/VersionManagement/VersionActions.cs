@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
+using UltiPawEditorUtils;
 
 public class VersionActions
 {
@@ -396,13 +397,9 @@ public class VersionActions
             if (!isReset && version != null && version.customBlendshapes != null && version.customBlendshapes.Length > 0)
             {
                 // Find the Body mesh (and optional hair meshes for sync)
-                var allSmrs = root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
-                var bodyMesh = allSmrs
-                    .FirstOrDefault(s => s.gameObject.name.Equals("Body", System.StringComparison.OrdinalIgnoreCase));
-                var mohawkMesh = allSmrs
-                    .FirstOrDefault(s => s.gameObject.name.Equals("MohawkHair", System.StringComparison.OrdinalIgnoreCase));
-                var maneMesh = allSmrs
-                    .FirstOrDefault(s => s.gameObject.name.Equals("ManeHair", System.StringComparison.OrdinalIgnoreCase));
+                var bodyMesh = MeshFinder.FindMeshPrioritizingRoot(root, "Body");
+                var mohawkMesh = MeshFinder.FindMeshPrioritizingRoot(root, "MohawkHair");
+                var maneMesh = MeshFinder.FindMeshPrioritizingRoot(root, "ManeHair");
                 
                 if (bodyMesh?.sharedMesh != null)
                 {
@@ -521,8 +518,7 @@ public class VersionActions
     {
         if (root == null) return;
 
-        var bodyMesh = root.GetComponentsInChildren<SkinnedMeshRenderer>(true)
-            .FirstOrDefault(s => s.gameObject.name.Equals("Body", System.StringComparison.OrdinalIgnoreCase));
+        var bodyMesh = MeshFinder.FindMeshPrioritizingRoot(root, "Body");
 
         if (bodyMesh?.sharedMesh == null) return;
 

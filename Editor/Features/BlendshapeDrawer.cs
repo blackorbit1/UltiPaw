@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
+using UltiPawEditorUtils;
 
 public class BlendshapeDrawer
 {
@@ -24,10 +25,10 @@ public class BlendshapeDrawer
         var appliedVersion = editor.ultiPawTarget.appliedUltiPawVersion;
         if (!editor.isUltiPaw || appliedVersion?.customBlendshapes == null || !appliedVersion.customBlendshapes.Any()) return;
 
-        var allSmrs = editor.ultiPawTarget.transform.root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
-        var smr = allSmrs.FirstOrDefault(s => s.gameObject.name.Equals("Body", System.StringComparison.OrdinalIgnoreCase));
-        var mohawkSmr = allSmrs.FirstOrDefault(s => s.gameObject.name.Equals("MohawkHair", System.StringComparison.OrdinalIgnoreCase));
-        var maneSmr = allSmrs.FirstOrDefault(s => s.gameObject.name.Equals("ManeHair", System.StringComparison.OrdinalIgnoreCase));
+        var root = editor.ultiPawTarget.transform.root;
+        var smr = MeshFinder.FindMeshPrioritizingRoot(root, "Body");
+        var mohawkSmr = MeshFinder.FindMeshPrioritizingRoot(root, "MohawkHair");
+        var maneSmr = MeshFinder.FindMeshPrioritizingRoot(root, "ManeHair");
         
         if (smr?.sharedMesh == null) return;
 

@@ -35,8 +35,7 @@ public class DynamicNormalsService
         var root = editor.ultiPawTarget.transform.root;
         
         // Find the Body mesh
-        var bodyMesh = root.GetComponentsInChildren<SkinnedMeshRenderer>(true)
-            .FirstOrDefault(s => s.gameObject.name.Equals("Body", System.StringComparison.OrdinalIgnoreCase));
+        var bodyMesh = MeshFinder.FindMeshPrioritizingRoot(root, "Body");
 
         if (bodyMesh?.sharedMesh == null)
         {
@@ -155,8 +154,7 @@ public class DynamicNormalsService
         var root = editor.ultiPawTarget.transform.root;
         
         // Find the Body mesh
-        var bodyMesh = root.GetComponentsInChildren<SkinnedMeshRenderer>(true)
-            .FirstOrDefault(s => s.gameObject.name.Equals("Body", System.StringComparison.OrdinalIgnoreCase));
+        var bodyMesh = MeshFinder.FindMeshPrioritizingRoot(root, "Body");
 
         if (bodyMesh?.sharedMesh == null)
         {

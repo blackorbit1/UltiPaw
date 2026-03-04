@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
+using UltiPawEditorUtils;
 
 public class VRCFuryService
 {
@@ -225,11 +226,8 @@ public class VRCFuryService
             return 0f;
         }
 
-        var skinnedMeshes = avatarRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true);
-        if (skinnedMeshes == null || skinnedMeshes.Length == 0) return 0f;
-
-        SkinnedMeshRenderer bodySmr = skinnedMeshes
-            .FirstOrDefault(smr => smr != null && smr.gameObject.name.Equals("Body", System.StringComparison.OrdinalIgnoreCase));
+        var root = avatarRoot.transform.root;
+        SkinnedMeshRenderer bodySmr = MeshFinder.FindMeshPrioritizingRoot(root, "Body");
 
         if (bodySmr != null && bodySmr.sharedMesh != null)
         {
@@ -240,6 +238,7 @@ public class VRCFuryService
             }
         }
 
+        var skinnedMeshes = MeshFinder.GetAllSkinnedMeshRenderers(root);
         foreach (var smr in skinnedMeshes)
         {
             if (smr == null || smr.sharedMesh == null) continue;
