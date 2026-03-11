@@ -55,6 +55,7 @@ public class UltiPawEditor : UnityEditor.Editor
     public List<UserCustomVersionEntry> userCustomVersions = new List<UserCustomVersionEntry>();
     public UserCustomVersionEntry selectedCustomVersionForAction;
     public bool currentIsCustom;
+    private Vector2 connectivityReportScroll;
     
     public string uiRenderingError;
     private string lastUiRenderingExceptionSignature;
@@ -105,6 +106,8 @@ public class UltiPawEditor : UnityEditor.Editor
         // Initialize modules
         creatorModule.Initialize();
         CheckAuthentication();
+        UltiPawConnectivityMonitor.StatusChanged += RepaintFromConnectivityMonitor;
+        UltiPawConnectivityMonitor.EnsureCheckStarted(authToken);
         
         // Ensure modules are enabled
         versionModule.OnEnable();
@@ -127,6 +130,8 @@ public class UltiPawEditor : UnityEditor.Editor
             versionService.OnVersionsUpdated -= OnVersionsUpdated;
             versionService.OnVersionFetchError -= OnVersionFetchError;
         }
+
+        UltiPawConnectivityMonitor.StatusChanged -= RepaintFromConnectivityMonitor;
     }
     
     private void OnPlayModeStateChanged(PlayModeStateChange state)
@@ -265,6 +270,7 @@ public class UltiPawEditor : UnityEditor.Editor
         try
         {
             SafeUiCall(DrawBanner);
+            SafeUiCall(DrawConnectivityDiagnosticsPanel);
             
             // Account module just under the banner
             SafeUiCall(() => accountModule?.Draw());
@@ -406,6 +412,30 @@ public class UltiPawEditor : UnityEditor.Editor
         GUI.DrawTexture(rect, bannerTexture, ScaleMode.StretchToFill);
         GUILayout.Space(5);
     }
+
+    private void DrawConnectivityDiagnosticsPanel()
+    {
+        if (string.IsNullOrEmpty(UltiPawConnectivityMonitor.FailureReport))
+        {
+            return;
+        }
+
+        EditorGUILayout.Space(4);
+        using (new EditorGUILayout.VerticalScope("box"))
+        {
+            EditorGUILayout.HelpBox("The tool cannot connect to the server, copy the data bellow and send it to @blackorbit on discord", MessageType.Error);
+
+            connectivityReportScroll = EditorGUILayout.BeginScrollView(connectivityReportScroll, GUILayout.MinHeight(140f));
+            var style = new GUIStyle(EditorStyles.textArea) { wordWrap = false };
+            EditorGUILayout.TextArea(UltiPawConnectivityMonitor.FailureReport, style, GUILayout.ExpandHeight(true));
+            EditorGUILayout.EndScrollView();
+
+            if (GUILayout.Button("copy in the clipboard", GUILayout.Height(24f)))
+            {
+                EditorGUIUtility.systemCopyBuffer = UltiPawConnectivityMonitor.FailureReport;
+            }
+        }
+    }
     
     public void CheckAuthentication()
     {
@@ -495,5 +525,10 @@ public class UltiPawEditor : UnityEditor.Editor
     }
 
     public int CompareVersions(string v1, string v2) => ParseVersion(v1).CompareTo(ParseVersion(v2));
+
+    private void RepaintFromConnectivityMonitor()
+    {
+        Repaint();
+    }
 }
 #endif

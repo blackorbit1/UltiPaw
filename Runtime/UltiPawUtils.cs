@@ -1,4 +1,5 @@
 ﻿#if UNITY_EDITOR
+using System;
 using UnityEditor;
 using UnityEngine;
 using System.IO;
@@ -10,6 +11,13 @@ using System.Threading.Tasks;
 using UnityEditorInternal;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json;
+
+public enum ApiSimulationMode
+{
+    Off = 0,
+    TransportFailure = 1,
+    SslFailure = 2
+}
 
 public static class UltiPawUtils
 {
@@ -26,6 +34,7 @@ public static class UltiPawUtils
 
     // EditorPrefs key for Dev Environment setting
     private const string DevEnvironmentPrefKey = "UltiPaw_DevEnvironment";
+    private const string ApiSimulationModePrefKey = "UltiPaw_ApiSimulationMode";
     
     // Dev Environment property with persistent storage
     public static bool isDevEnvironment
@@ -38,6 +47,28 @@ public static class UltiPawUtils
         set
         {
             try { EditorPrefs.SetBool(DevEnvironmentPrefKey, value); } catch { }
+        }
+    }
+
+    public static ApiSimulationMode apiSimulationMode
+    {
+        get
+        {
+            try
+            {
+                int value = EditorPrefs.GetInt(ApiSimulationModePrefKey, (int)ApiSimulationMode.Off);
+                return Enum.IsDefined(typeof(ApiSimulationMode), value)
+                    ? (ApiSimulationMode)value
+                    : ApiSimulationMode.Off;
+            }
+            catch
+            {
+                return ApiSimulationMode.Off;
+            }
+        }
+        set
+        {
+            try { EditorPrefs.SetInt(ApiSimulationModePrefKey, (int)value); } catch { }
         }
     }
     
@@ -55,6 +86,14 @@ public static class UltiPawUtils
     
     public static string getApiUrl(string scope = "unity-wizard")
     {
+        switch (apiSimulationMode)
+        {
+            case ApiSimulationMode.TransportFailure:
+                return "https://127.0.0.1:1/" + scope;
+            case ApiSimulationMode.SslFailure:
+                return "https://wrong.host.badssl.com/" + scope;
+        }
+
         if (isDevEnvironment)
         {
             return "http://localhost:4100/" + scope;

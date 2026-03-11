@@ -99,6 +99,43 @@ public class AdvancedModeModule
                 }
                 EditorGUILayout.EndHorizontal();
 
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Connectivity Simulation", EditorStyles.boldLabel);
+                ApiSimulationMode currentSimulationMode = UltiPawUtils.apiSimulationMode;
+                ApiSimulationMode newSimulationMode = (ApiSimulationMode)EditorGUILayout.EnumPopup(
+                    new GUIContent("API simulation", "Overrides package API requests for quick failure testing."),
+                    currentSimulationMode);
+                if (newSimulationMode != currentSimulationMode)
+                {
+                    UltiPawUtils.apiSimulationMode = newSimulationMode;
+                    UltiPawConnectivityMonitor.Retry(editor.authToken);
+                    editor.RefreshAccountAndVersions();
+                }
+
+                EditorGUILayout.HelpBox(
+                    "Off uses the real API.\n" +
+                    "Transport Failure points requests to https://127.0.0.1:1.\n" +
+                    "SSL Failure points requests to https://wrong.host.badssl.com.\n" +
+                    "Turn this back to Off before using Magic Sync normally.",
+                    MessageType.None);
+
+                EditorGUILayout.BeginHorizontal();
+                GUILayout.Space(EditorGUI.indentLevel * 15);
+                if (GUILayout.Button("Open connectivity tests", GUILayout.Width(180)))
+                {
+                    ConnectivityTestsWindow.ShowWindow();
+                }
+                EditorGUILayout.EndHorizontal();
+
+                EditorGUILayout.BeginHorizontal();
+                GUILayout.Space(EditorGUI.indentLevel * 15);
+                if (GUILayout.Button("Retry connectivity check", GUILayout.Width(180)))
+                {
+                    UltiPawConnectivityMonitor.Retry(editor.authToken);
+                }
+                EditorGUILayout.EndHorizontal();
+
+
                 // Flush user cache button
                 EditorGUILayout.BeginHorizontal();  
                 GUILayout.Space(EditorGUI.indentLevel * 15);
