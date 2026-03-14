@@ -96,6 +96,15 @@ public class VersionManagementModule
         }
 
         var selectedVersion = editor.selectedVersionForAction;
+        var availableVersions = editor.GetAllVersions();
+        bool hasSelectedReset = selectedVersion == VersionListDrawer.RESET_VERSION;
+        bool hasSelectedAvailableVersion = selectedVersion != null && availableVersions.Exists(v => v.Equals(selectedVersion));
+        if (selectedVersion != null && !hasSelectedReset && !hasSelectedAvailableVersion)
+        {
+            selectedVersion = null;
+            editor.selectedVersionForAction = null;
+        }
+
         bool recommendedIsNull = editor.recommendedVersion == null;
         if (editor.selectedVersionForAction != lastSelectionForWarning || recommendedIsNull != lastRecommendedWasNull)
         {
@@ -129,7 +138,8 @@ public class VersionManagementModule
             }
         }
         
-        bool selectionIsValid = selectedVersion != null;
+        bool selectionIsValid = selectedVersion != null &&
+                                (selectedVersion == VersionListDrawer.RESET_VERSION || availableVersions.Exists(v => v.Equals(selectedVersion)));
         bool isResetSelected = selectedVersion == VersionListDrawer.RESET_VERSION;
         
         using (new EditorGUI.DisabledScope(!canInteract))

@@ -69,6 +69,7 @@ public class VersionActions
         }
         else
         {
+            editor.selectedVersionForAction = null;
             // Handle access denied specially (error encoded as ACCESS_DENIED:{assetId})
             if (!string.IsNullOrEmpty(error) && error.StartsWith("ACCESS_DENIED:"))
             {
