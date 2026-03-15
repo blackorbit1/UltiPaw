@@ -805,6 +805,10 @@ public class CreatorModeModule
             {
                 EditorGUILayout.HelpBox("Assign a normal map texture to include custom veins.", MessageType.Warning);
             }
+            else
+            {
+                DrawCustomVeinsImportWarning(textureProp.objectReferenceValue as Texture2D);
+            }
         }
 
         EditorGUILayout.EndVertical();
@@ -860,6 +864,81 @@ public class CreatorModeModule
             string parentPath = GetVeinsTexturePathForVersion(selectedParentVersionObject);
             autoAssignedVeinsTexturePath = (!string.IsNullOrEmpty(selectedPath) && selectedPath == parentPath) ? selectedPath : null;
         }
+    }
+
+    private void DrawCustomVeinsImportWarning(Texture2D texture)
+    {
+        if (texture == null) return;
+
+        string assetPath = AssetDatabase.GetAssetPath(texture);
+        if (string.IsNullOrWhiteSpace(assetPath)) return;
+
+        if (TryGetCustomVeinsTextureImporter(assetPath, out var importer) && IsValidCustomVeinsNormalMapImport(importer))
+        {
+            return;
+        }
+
+        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+        EditorGUILayout.HelpBox("This texture is not marked as a normal map", MessageType.Warning);
+
+        using (new EditorGUILayout.HorizontalScope())
+        {
+            GUILayout.FlexibleSpace();
+            if (GUILayout.Button("Fix Now", GUILayout.Width(90f)))
+            {
+                FixCustomVeinsNormalMapImport(assetPath);
+            }
+        }
+
+        EditorGUILayout.EndVertical();
+    }
+
+    private static bool TryGetCustomVeinsTextureImporter(string assetPath, out TextureImporter importer)
+    {
+        importer = null;
+        if (string.IsNullOrWhiteSpace(assetPath)) return false;
+
+        importer = AssetImporter.GetAtPath(assetPath) as TextureImporter;
+        return importer != null;
+    }
+
+    private static bool IsValidCustomVeinsNormalMapImport(TextureImporter importer)
+    {
+        if (importer == null) return false;
+
+        return importer.textureType == TextureImporterType.NormalMap &&
+               importer.mipmapEnabled &&
+               !importer.sRGBTexture &&
+               !importer.convertToNormalmap &&
+               !importer.isReadable &&
+               !importer.streamingMipmaps &&
+               importer.textureShape == TextureImporterShape.Texture2D &&
+               importer.alphaSource == TextureImporterAlphaSource.FromInput &&
+               !importer.alphaIsTransparency;
+    }
+
+    private static void FixCustomVeinsNormalMapImport(string assetPath)
+    {
+        if (!TryGetCustomVeinsTextureImporter(assetPath, out var importer))
+        {
+            EditorUtility.DisplayDialog("UltiPaw", "Could not find a texture importer for the selected file.", "OK");
+            return;
+        }
+
+        importer.textureType = TextureImporterType.NormalMap;
+        importer.mipmapEnabled = true;
+        importer.sRGBTexture = false;
+        importer.convertToNormalmap = false;
+        importer.isReadable = false;
+        importer.streamingMipmaps = false;
+        importer.alphaSource = TextureImporterAlphaSource.FromInput;
+        importer.alphaIsTransparency = false;
+        importer.npotScale = TextureImporterNPOTScale.ToNearest;
+        importer.wrapMode = TextureWrapMode.Repeat;
+        importer.filterMode = FilterMode.Bilinear;
+        importer.anisoLevel = 1;
+
+        importer.SaveAndReimport();
     }
 
     private static string GetVeinsTexturePathForVersion(UltiPawVersion version)
