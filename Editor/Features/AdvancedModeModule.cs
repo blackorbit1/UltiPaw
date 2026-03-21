@@ -182,6 +182,27 @@ public class AdvancedModeModule
                     EditorIssueReporter.MinSeverityLevel = newMin;
                 }
                 
+                // Blenshape processing section
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Blenshape processing", EditorStyles.boldLabel);
+
+                if (editor.ultiPawTarget != null) {
+                    EditorGUI.BeginChangeCheck();
+                    bool preserveBlendshapeValues = EditorGUILayout.Toggle(
+                        new GUIContent(
+                            "Preserve Blendshapes On Version Switch",
+                            "Saves current blendshape weights by name before switching version, then restores matching names afterward. New blendshapes use version defaults when available."),
+                        editor.ultiPawTarget.preserveBlendshapeValuesOnVersionSwitch);
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        editor.ultiPawTarget.preserveBlendshapeValuesOnVersionSwitch = preserveBlendshapeValues;
+                        editor.ultiPawTarget.preserveBlendshapeValuesOnVersionSwitchInitialized = true;
+                        EditorUtility.SetDirty(editor.ultiPawTarget);
+                    }
+
+                    EditorGUILayout.Space();
+                }
+                
                 // Dynamic Normals section
                 EditorGUILayout.Space();
                 EditorGUILayout.LabelField("Dynamic Normals", EditorStyles.boldLabel);

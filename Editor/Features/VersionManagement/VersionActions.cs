@@ -10,6 +10,8 @@ using UltiPawEditorUtils;
 
 public class VersionActions
 {
+    private const float BlendshapeWeightEpsilon = 0.001f;
+
     private readonly UltiPawEditor editor;
     private readonly NetworkService networkService;
     private readonly FileManagerService fileManagerService;
@@ -251,6 +253,8 @@ public class VersionActions
     internal IEnumerator ApplyOrResetCoroutine(UltiPawVersion version, bool isReset)
     {
         var root = editor.ultiPawTarget.transform.root;
+        bool preserveBlendshapeValues = editor.ultiPawTarget != null && editor.ultiPawTarget.preserveBlendshapeValuesOnVersionSwitch;
+        var blendshapeSnapshot = preserveBlendshapeValues ? CaptureBlendshapeState(root) : null;
         fileManagerService.RemoveExistingLogic(root);
 
         UltiPawLogger.Log($"[VersionActions] ApplyOrReset start (reset={isReset}, version={(version != null ? version.version : "null")})");
@@ -437,56 +441,24 @@ public class VersionActions
                 UltiPawLogger.Log("[VersionActions] Custom veins removed");
             }
             
-            // Apply blendshape default values and manage sliders GameObject
-            if (!isReset && version != null && version.customBlendshapes != null && version.customBlendshapes.Length > 0)
+            // Restore blendshape values by name after all mesh swaps are complete.
+            if (!isReset && version != null)
             {
-                // Find the Body mesh (and optional hair meshes for sync)
-                var bodyMesh = MeshFinder.FindMeshPrioritizingRoot(root, "Body");
-                var mohawkMesh = MeshFinder.FindMeshPrioritizingRoot(root, "MohawkHair");
-                var maneMesh = MeshFinder.FindMeshPrioritizingRoot(root, "ManeHair");
-                
-                if (bodyMesh?.sharedMesh != null)
+                if (preserveBlendshapeValues)
                 {
-                    // Apply default values from the version and sync to hair meshes when they have the same-named blendshape
-                    foreach (var entry in version.customBlendshapes)
-                    {
-                        int bodyIndex = bodyMesh.sharedMesh.GetBlendShapeIndex(entry.name);
-                        if (bodyIndex >= 0)
-                        {
-                            float defaultValue = float.TryParse(entry.defaultValue, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsed) ? parsed : 0f;
-                            
-                            // Check if there is a custom override for this blendshape
-                            float valueToApply = defaultValue;
-                            int overrideIdx = editor.ultiPawTarget.customBlendshapeOverrideNames.IndexOf(entry.name);
-                            if (overrideIdx >= 0 && overrideIdx < editor.ultiPawTarget.customBlendshapeOverrideValues.Count)
-                            {
-                                valueToApply = editor.ultiPawTarget.customBlendshapeOverrideValues[overrideIdx];
-                            }
-
-                            bodyMesh.SetBlendShapeWeight(bodyIndex, valueToApply);
-
-                            if (mohawkMesh?.sharedMesh != null)
-                            {
-                                int mhIndex = mohawkMesh.sharedMesh.GetBlendShapeIndex(entry.name);
-                                if (mhIndex >= 0) mohawkMesh.SetBlendShapeWeight(mhIndex, valueToApply);
-                            }
-                            if (maneMesh?.sharedMesh != null)
-                            {
-                                int maIndex = maneMesh.sharedMesh.GetBlendShapeIndex(entry.name);
-                                if (maIndex >= 0) maneMesh.SetBlendShapeWeight(maIndex, valueToApply);
-                            }
-                        }
-                    }
-                    
-                    EditorUtility.SetDirty(bodyMesh);
-                    if (mohawkMesh != null) EditorUtility.SetDirty(mohawkMesh);
-                    if (maneMesh != null) EditorUtility.SetDirty(maneMesh);
-                    UltiPawLogger.Log($"[VersionActions] Applied blendshape values (honoring {editor.ultiPawTarget.customBlendshapeOverrideNames.Count} overrides)");
+                    RestoreBlendshapeState(root, blendshapeSnapshot, BuildBlendshapeDefaultLookup(version));
+                    SyncBlendshapeOverridesFromCurrentWeights(root, version);
+                    UltiPawLogger.Log($"[VersionActions] Restored blendshape values by name (saved renderers: {blendshapeSnapshot.Count}, overrides: {editor.ultiPawTarget.customBlendshapeOverrideNames.Count})");
+                }
+                else
+                {
+                    ApplyVersionBlendshapeValues(root, version);
+                    UltiPawLogger.Log("[VersionActions] Blendshape preservation on version switch is disabled. Applied version defaults/overrides using legacy behavior.");
                 }
 
                 // Handle "ultipaw sliders" GameObject state and deletion
                 var slidersTransform = root.Find(VRCFuryService.SLIDERS_GAMEOBJECT_NAME);
-                var hasSliders = version.customBlendshapes.Any(e => e.isSlider);
+                var hasSliders = version.customBlendshapes != null && version.customBlendshapes.Any(e => e.isSlider);
 
                 if (!hasSliders)
                 {
@@ -570,6 +542,194 @@ public class VersionActions
         bodyMesh.sharedMesh = null;
         EditorUtility.SetDirty(bodyMesh);
         UltiPawLogger.Log("[VersionActions] Cleared Body mesh assignment prior to refresh.");
+    }
+
+    private Dictionary<string, Dictionary<string, float>> CaptureBlendshapeState(Transform root)
+    {
+        var snapshot = new Dictionary<string, Dictionary<string, float>>(StringComparer.Ordinal);
+        if (root == null) return snapshot;
+
+        foreach (var renderer in root.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+        {
+            if (renderer == null || renderer.sharedMesh == null) continue;
+
+            var weights = new Dictionary<string, float>(StringComparer.Ordinal);
+            for (int i = 0; i < renderer.sharedMesh.blendShapeCount; i++)
+            {
+                string blendshapeName = renderer.sharedMesh.GetBlendShapeName(i);
+                if (string.IsNullOrEmpty(blendshapeName)) continue;
+                weights[blendshapeName] = renderer.GetBlendShapeWeight(i);
+            }
+
+            snapshot[GetRelativeTransformPath(root, renderer.transform)] = weights;
+        }
+
+        return snapshot;
+    }
+
+    private void RestoreBlendshapeState(Transform root, Dictionary<string, Dictionary<string, float>> snapshot, Dictionary<string, float> defaultValuesByName)
+    {
+        if (root == null) return;
+
+        foreach (var renderer in root.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+        {
+            if (renderer == null || renderer.sharedMesh == null) continue;
+
+            string rendererPath = GetRelativeTransformPath(root, renderer.transform);
+            snapshot.TryGetValue(rendererPath, out var savedWeightsForRenderer);
+
+            Undo.RecordObject(renderer, "Restore Blendshape Values");
+            for (int i = 0; i < renderer.sharedMesh.blendShapeCount; i++)
+            {
+                string blendshapeName = renderer.sharedMesh.GetBlendShapeName(i);
+                float valueToApply = 0f;
+
+                if (!string.IsNullOrEmpty(blendshapeName))
+                {
+                    if (savedWeightsForRenderer != null && savedWeightsForRenderer.TryGetValue(blendshapeName, out var savedValue))
+                    {
+                        valueToApply = savedValue;
+                    }
+                    else if (defaultValuesByName != null && defaultValuesByName.TryGetValue(blendshapeName, out var defaultValue))
+                    {
+                        valueToApply = defaultValue;
+                    }
+                }
+
+                renderer.SetBlendShapeWeight(i, valueToApply);
+            }
+
+            EditorUtility.SetDirty(renderer);
+        }
+    }
+
+    private Dictionary<string, float> BuildBlendshapeDefaultLookup(UltiPawVersion version)
+    {
+        var defaults = new Dictionary<string, float>(StringComparer.Ordinal);
+        if (version?.customBlendshapes == null) return defaults;
+
+        foreach (var entry in version.customBlendshapes)
+        {
+            if (entry == null || string.IsNullOrEmpty(entry.name)) continue;
+            defaults[entry.name] = ParseBlendshapeDefaultValue(entry.defaultValue);
+        }
+
+        return defaults;
+    }
+
+    private void SyncBlendshapeOverridesFromCurrentWeights(Transform root, UltiPawVersion version)
+    {
+        editor.ultiPawTarget.customBlendshapeOverrideNames.Clear();
+        editor.ultiPawTarget.customBlendshapeOverrideValues.Clear();
+        editor.ultiPawTarget.blendShapeValues.Clear();
+
+        if (root == null || version?.customBlendshapes == null) return;
+
+        var bodyMesh = MeshFinder.FindMeshPrioritizingRoot(root, "Body");
+        if (bodyMesh?.sharedMesh == null) return;
+
+        foreach (var entry in version.customBlendshapes)
+        {
+            if (entry == null)
+            {
+                editor.ultiPawTarget.blendShapeValues.Add(0f);
+                continue;
+            }
+
+            float defaultValue = ParseBlendshapeDefaultValue(entry.defaultValue);
+            float currentValue = defaultValue;
+            int bodyIndex = bodyMesh.sharedMesh.GetBlendShapeIndex(entry.name);
+            if (bodyIndex >= 0)
+            {
+                currentValue = bodyMesh.GetBlendShapeWeight(bodyIndex);
+            }
+
+            editor.ultiPawTarget.blendShapeValues.Add(currentValue);
+
+            if (Mathf.Abs(currentValue - defaultValue) > BlendshapeWeightEpsilon)
+            {
+                editor.ultiPawTarget.customBlendshapeOverrideNames.Add(entry.name);
+                editor.ultiPawTarget.customBlendshapeOverrideValues.Add(currentValue);
+            }
+        }
+    }
+
+    private void ApplyVersionBlendshapeValues(Transform root, UltiPawVersion version)
+    {
+        editor.ultiPawTarget.blendShapeValues.Clear();
+
+        if (root == null || version?.customBlendshapes == null || version.customBlendshapes.Length == 0) return;
+
+        var bodyMesh = MeshFinder.FindMeshPrioritizingRoot(root, "Body");
+        var mohawkMesh = MeshFinder.FindMeshPrioritizingRoot(root, "MohawkHair");
+        var maneMesh = MeshFinder.FindMeshPrioritizingRoot(root, "ManeHair");
+
+        if (bodyMesh?.sharedMesh == null) return;
+
+        foreach (var entry in version.customBlendshapes)
+        {
+            if (entry == null)
+            {
+                editor.ultiPawTarget.blendShapeValues.Add(0f);
+                continue;
+            }
+
+            float defaultValue = ParseBlendshapeDefaultValue(entry.defaultValue);
+            float valueToApply = defaultValue;
+            int overrideIdx = editor.ultiPawTarget.customBlendshapeOverrideNames.IndexOf(entry.name);
+            if (overrideIdx >= 0 && overrideIdx < editor.ultiPawTarget.customBlendshapeOverrideValues.Count)
+            {
+                valueToApply = editor.ultiPawTarget.customBlendshapeOverrideValues[overrideIdx];
+            }
+
+            int bodyIndex = bodyMesh.sharedMesh.GetBlendShapeIndex(entry.name);
+            if (bodyIndex >= 0)
+            {
+                bodyMesh.SetBlendShapeWeight(bodyIndex, valueToApply);
+            }
+
+            if (mohawkMesh?.sharedMesh != null)
+            {
+                int mhIndex = mohawkMesh.sharedMesh.GetBlendShapeIndex(entry.name);
+                if (mhIndex >= 0) mohawkMesh.SetBlendShapeWeight(mhIndex, valueToApply);
+            }
+
+            if (maneMesh?.sharedMesh != null)
+            {
+                int maIndex = maneMesh.sharedMesh.GetBlendShapeIndex(entry.name);
+                if (maIndex >= 0) maneMesh.SetBlendShapeWeight(maIndex, valueToApply);
+            }
+
+            editor.ultiPawTarget.blendShapeValues.Add(valueToApply);
+        }
+
+        EditorUtility.SetDirty(bodyMesh);
+        if (mohawkMesh != null) EditorUtility.SetDirty(mohawkMesh);
+        if (maneMesh != null) EditorUtility.SetDirty(maneMesh);
+    }
+
+    private static float ParseBlendshapeDefaultValue(string defaultValue)
+    {
+        return float.TryParse(defaultValue, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsed)
+            ? parsed
+            : 0f;
+    }
+
+    private static string GetRelativeTransformPath(Transform root, Transform target)
+    {
+        if (root == null || target == null) return string.Empty;
+        if (target == root) return string.Empty;
+
+        var segments = new List<string>();
+        var current = target;
+        while (current != null && current != root)
+        {
+            segments.Add(current.name);
+            current = current.parent;
+        }
+
+        segments.Reverse();
+        return string.Join("/", segments);
     }
 
     private void RefreshBodyMeshFromFBX(Transform root, string fbxPath)

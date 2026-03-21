@@ -69,6 +69,11 @@ public class UltiPaw : MonoBehaviour
     [Tooltip("Stores user-customized blendshape values that override defaults (values: custom values).")]
     [HideInInspector] [SerializeField] public List<float> customBlendshapeOverrideValues = new List<float>();
 
+    [Tooltip("When enabled, version switching preserves blendshape weights by name across mesh changes.")]
+    [HideInInspector] [SerializeField] public bool preserveBlendshapeValuesOnVersionSwitch = true;
+
+    [HideInInspector] [SerializeField] public bool preserveBlendshapeValuesOnVersionSwitchInitialized = false;
+
     [Tooltip("Enable/disable dynamic normals recalculation for blendshapes.")]
     [HideInInspector] public bool useDynamicNormals = true;
 

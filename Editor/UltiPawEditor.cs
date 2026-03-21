@@ -68,6 +68,7 @@ public class UltiPawEditor : UnityEditor.Editor
     private void OnEnable()
     {
         ultiPawTarget = (UltiPaw)target;
+        EnsureSerializedDefaults();
         serializedObject = new SerializedObject(ultiPawTarget);
         fetchAttempted = false;
         
@@ -507,6 +508,18 @@ public class UltiPawEditor : UnityEditor.Editor
         customVeinsNormalMapProp = serializedObject.FindProperty("customVeinsNormalMap");
         includeDynamicNormalsBodyForCreatorProp = serializedObject.FindProperty("includeDynamicNormalsBodyForCreator");
         includeDynamicNormalsFlexingForCreatorProp = serializedObject.FindProperty("includeDynamicNormalsFlexingForCreator");
+    }
+
+    private void EnsureSerializedDefaults()
+    {
+        if (ultiPawTarget == null) return;
+
+        if (!ultiPawTarget.preserveBlendshapeValuesOnVersionSwitchInitialized)
+        {
+            ultiPawTarget.preserveBlendshapeValuesOnVersionSwitch = true;
+            ultiPawTarget.preserveBlendshapeValuesOnVersionSwitchInitialized = true;
+            EditorUtility.SetDirty(ultiPawTarget);
+        }
     }
 
     public void LoadUnsubmittedVersions()
