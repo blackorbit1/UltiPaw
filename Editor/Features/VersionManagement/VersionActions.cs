@@ -29,6 +29,48 @@ public class VersionActions
     public void StartReset() => EditorCoroutineUtility.StartCoroutineOwnerless(ApplyOrResetCoroutine(null, true));
     public void StartRecalculateCurrentFbxHash() => EditorCoroutineUtility.StartCoroutineOwnerless(RecalculateCurrentFbxHashCoroutine());
     public void StartApplyCustomVersion() => EditorCoroutineUtility.StartCoroutineOwnerless(ApplyCustomVersionCoroutine(editor.selectedCustomVersionForAction));
+    public void ExportOfflineVersion(UltiPawVersion version)
+    {
+        if (version == null) return;
+
+        string versionFolderPath = UltiPawUtils.GetVersionDataPath(version.version, version.defaultAviVersion);
+        if (string.IsNullOrWhiteSpace(versionFolderPath) || !Directory.Exists(Path.GetFullPath(versionFolderPath)))
+        {
+            editor.warningsModule.AddWarning("The selected version is not available locally, so it cannot be exported.", MessageType.Error, "Export failed");
+            editor.Repaint();
+            return;
+        }
+
+        string suggestedFileName = $"UltiPaw_saved_version_{version.version.Replace('.', '_')}.unitypackage";
+        string savePath = EditorUtility.SaveFilePanel(
+            "Export Saved Version",
+            "",
+            suggestedFileName,
+            "unitypackage");
+
+        if (string.IsNullOrWhiteSpace(savePath))
+        {
+            return;
+        }
+
+        try
+        {
+            EditorUtility.DisplayProgressBar("Exporting Saved Version", $"Building offline package for {version.version}...", 0.5f);
+            fileManagerService.ExportOfflineVersionPackage(version, savePath);
+            EditorUtility.DisplayDialog("Export Complete", $"Saved version {version.version} has been exported to:\n{savePath}", "OK");
+        }
+        catch (Exception ex)
+        {
+            editor.warningsModule.AddWarning(ex.Message, MessageType.Error, "Export failed");
+            UltiPawLogger.LogError($"[VersionActions] Offline export failed: {ex}");
+        }
+        finally
+        {
+            EditorUtility.ClearProgressBar();
+            editor.LoadImportedVersions();
+            editor.Repaint();
+        }
+    }
 
     private IEnumerator FetchVersionsCoroutine()
     {
@@ -199,6 +241,7 @@ public class VersionActions
                 editor.creatorModule.RemoveUnsubmittedVersion(version);
             }
             AssetDatabase.Refresh();
+            editor.LoadImportedVersions();
         }
 
         editor.isDeleting = false;

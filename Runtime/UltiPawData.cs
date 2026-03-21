@@ -113,6 +113,7 @@ public class UltiPawVersion
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)] public bool? includeDynamicNormalsFlexing;
 
     [JsonIgnore] public bool isUnsubmitted; // Runtime flag, not saved to JSON
+    [JsonIgnore] public bool isImported; // Runtime flag for offline imported versions, not saved to JSON
 
     public bool Equals(UltiPawVersion other)
     {

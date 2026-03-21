@@ -6,6 +6,8 @@ using System.IO.Compression;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Converters;
 using UnityEditor;
 using UnityEngine;
 using CompressionLevel = System.IO.Compression.CompressionLevel;
@@ -268,6 +270,48 @@ public class FileManagerService
     
     [Serializable]
     private class PackageJson { public string name; public string version; }
+
+    public void ExportOfflineVersionPackage(UltiPawVersion version, string outputUnityPackagePath)
+    {
+        if (version == null) throw new ArgumentNullException(nameof(version));
+        if (string.IsNullOrWhiteSpace(outputUnityPackagePath)) throw new ArgumentNullException(nameof(outputUnityPackagePath));
+
+        string versionFolderUnityPath = UltiPawUtils.GetVersionDataPath(version.version, version.defaultAviVersion);
+        if (string.IsNullOrWhiteSpace(versionFolderUnityPath))
+            throw new InvalidOperationException("Version folder path could not be resolved.");
+
+        string versionFolderFullPath = Path.GetFullPath(versionFolderUnityPath);
+        if (!Directory.Exists(versionFolderFullPath))
+            throw new DirectoryNotFoundException($"Version folder not found: {versionFolderFullPath}");
+
+        string versionJsonUnityPath = UltiPawUtils.CombineUnityPath(versionFolderUnityPath, "version.json");
+        string versionJsonFullPath = Path.GetFullPath(versionJsonUnityPath);
+        bool versionJsonExisted = File.Exists(versionJsonFullPath);
+        string metadataJson = JsonConvert.SerializeObject(version, Formatting.Indented, new StringEnumConverter());
+
+        try
+        {
+            UltiPawUtils.EnsureDirectoryExists(versionJsonUnityPath);
+            File.WriteAllText(versionJsonFullPath, metadataJson);
+            AssetDatabase.ImportAsset(versionJsonUnityPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
+
+            AssetDatabase.ExportPackage(
+                new[] { versionFolderUnityPath },
+                outputUnityPackagePath,
+                ExportPackageOptions.Recurse);
+        }
+        finally
+        {
+            if (!versionJsonExisted)
+            {
+                AssetDatabase.DeleteAsset(versionJsonUnityPath);
+            }
+            else
+            {
+                AssetDatabase.ImportAsset(versionJsonUnityPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
+            }
+        }
+    }
     
     public string CreateVersionPackageForUpload(
         string newVersionString, 

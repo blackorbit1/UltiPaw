@@ -454,8 +454,8 @@ public class VersionListDrawer
 
     private void DrawVersionListItem(UltiPawVersion ver, bool isFirst, bool isLast)
     {
-        string binPath = UltiPawUtils.GetVersionBinPath(ver.version, ver.defaultAviVersion);
-        bool isDownloaded = !string.IsNullOrEmpty(binPath) && File.Exists(binPath);
+        string versionFolderPath = UltiPawUtils.GetVersionDataPath(ver.version, ver.defaultAviVersion);
+        bool hasLocalContent = !string.IsNullOrEmpty(versionFolderPath) && Directory.Exists(Path.GetFullPath(versionFolderPath));
         bool isSelected = ver.Equals(editor.selectedVersionForAction);
         bool isApplied = ver.Equals(editor.ultiPawTarget.appliedUltiPawVersion);
 
@@ -494,7 +494,7 @@ public class VersionListDrawer
                 DrawScopeLabel("Installed", new Color(0.33f, 0.79f, 0f));
                 GUILayout.Space(5);
             }
-            DrawScopeLabel(ver.scope.ToString(), GetColorForScope(ver.scope));
+            DrawScopeLabel(ver.isImported ? "Imported" : ver.scope.ToString(), ver.isImported ? new Color(0.45f, 0.85f, 1f) : GetColorForScope(ver.scope));
             GUILayout.Space(10);
             
             EditorGUILayout.EndHorizontal();
@@ -504,7 +504,7 @@ public class VersionListDrawer
             // Action buttons as clickable icons
             using (new EditorGUI.DisabledScope(editor.isDownloading || editor.isDeleting))
             {
-                DrawActionIcons(ver);
+                DrawActionIcons(ver, hasLocalContent);
             }
         });
     }
@@ -577,11 +577,8 @@ public class VersionListDrawer
         return (a + b).ToUpperInvariant();
     }
 
-    private void DrawActionIcons(UltiPawVersion ver)
+    private void DrawActionIcons(UltiPawVersion ver, bool hasLocalContent)
     {
-        string binPath = UltiPawUtils.GetVersionBinPath(ver.version, ver.defaultAviVersion);
-        bool isDownloaded = !string.IsNullOrEmpty(binPath) && File.Exists(binPath);
-        
         EditorGUILayout.BeginVertical();
         GUILayout.FlexibleSpace();
         EditorGUILayout.BeginHorizontal();
@@ -636,8 +633,29 @@ public class VersionListDrawer
             }
         }
         
+        if (hasLocalContent && editor.ultiPawTarget != null && editor.ultiPawTarget.isCreatorMode)
+        {
+            var exportIcon = EditorGUIUtility.IconContent("SaveAs");
+            Rect exportRect = GUILayoutUtility.GetRect(22, 22, GUILayout.Width(22), GUILayout.Height(22));
+
+            if (Event.current.type == EventType.Repaint)
+            {
+                GUI.DrawTexture(exportRect, exportIcon.image);
+                if (exportRect.Contains(Event.current.mousePosition))
+                {
+                    EditorGUIUtility.AddCursorRect(exportRect, MouseCursor.Link);
+                }
+            }
+
+            if (Event.current.type == EventType.MouseDown && Event.current.button == 0 && exportRect.Contains(Event.current.mousePosition))
+            {
+                actions.ExportOfflineVersion(ver);
+                Event.current.Use();
+            }
+        }
+
         // Download/Delete button
-        bool showTrashIcon = isDownloaded || ver.isUnsubmitted;
+        bool showTrashIcon = hasLocalContent || ver.isUnsubmitted;
         var actionIcon = showTrashIcon ? EditorGUIUtility.IconContent("TreeEditor.Trash") : EditorGUIUtility.IconContent("Download-Available");
         Rect actionRect = GUILayoutUtility.GetRect(22, 22, GUILayout.Width(22), GUILayout.Height(22));
         

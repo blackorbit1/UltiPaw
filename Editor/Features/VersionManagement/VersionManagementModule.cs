@@ -1,4 +1,5 @@
 ﻿#if UNITY_EDITOR
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -50,7 +51,11 @@ public class VersionManagementModule
     public void Draw()
     {
         // TODO fileConfigDrawer.Draw();
-        DrawFetchUpdatesButton();
+        bool offlineImportedOnly = !editor.isAuthenticated && editor.importedVersions != null && editor.importedVersions.Count > 0;
+        if (!offlineImportedOnly)
+        {
+            DrawFetchUpdatesButton();
+        }
         
         // Special UI when user doesn't have access to the asset
         if (!string.IsNullOrEmpty(editor.accessDeniedAssetId))
@@ -63,7 +68,14 @@ public class VersionManagementModule
                 string url = UltiPawUtils.getWebsiteUrl() + "assets/" + editor.accessDeniedAssetId;
                 Application.OpenURL(url);
             }
-            return; // Skip the rest of the UI in this state
+
+            if (!editor.GetAllVersions().Any())
+            {
+                return; // No local versions to show, keep the simplified access-denied UI.
+            }
+
+            EditorGUILayout.Space();
+            EditorGUILayout.HelpBox("Local saved versions are still available below.", MessageType.Info);
         }
         
         versionListDrawer.Draw();
@@ -125,16 +137,28 @@ public class VersionManagementModule
             {
                 if (editor.recommendedVersion == null)
                 {
-                    if (!hasShownMissingVersionWarning)
+                    if (!editor.isAuthenticated && availableVersions.Count > 0)
                     {
-                        UltiPawLogger.LogWarning("[UltiPawEditor] No recommended version available. Please select a version from the list.");
-                        hasShownMissingVersionWarning = true;
+                        selectedVersion = availableVersions[0];
+                        editor.selectedVersionForAction = selectedVersion;
+                        lastSelectionForWarning = editor.selectedVersionForAction;
                     }
-                    return;
+                    else
+                    {
+                        if (!hasShownMissingVersionWarning)
+                        {
+                            UltiPawLogger.LogWarning("[UltiPawEditor] No recommended version available. Please select a version from the list.");
+                            hasShownMissingVersionWarning = true;
+                        }
+                        return;
+                    }
                 }
-                selectedVersion = editor.recommendedVersion;
-                editor.selectedVersionForAction = selectedVersion;
-                lastSelectionForWarning = editor.selectedVersionForAction;
+                else
+                {
+                    selectedVersion = editor.recommendedVersion;
+                    editor.selectedVersionForAction = selectedVersion;
+                    lastSelectionForWarning = editor.selectedVersionForAction;
+                }
             }
         }
         

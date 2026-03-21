@@ -48,6 +48,7 @@ public class UltiPawEditor : UnityEditor.Editor
     public string currentBaseFbxHash;
     public bool isUltiPaw;
     public List<UltiPawVersion> serverVersions = new List<UltiPawVersion>();
+    public List<UltiPawVersion> importedVersions = new List<UltiPawVersion>();
     public List<UltiPawVersion> unsubmittedVersions = new List<UltiPawVersion>();
     public UltiPawVersion recommendedVersion, selectedVersionForAction;
     
@@ -99,6 +100,7 @@ public class UltiPawEditor : UnityEditor.Editor
         warningsModule = new WarningsModule();
         
         // Load local versions first (synchronous, but fast)
+        LoadImportedVersions();
         LoadUnsubmittedVersions();
         // Load user custom versions
         userCustomVersions = UserCustomVersionService.Instance.GetAll();
@@ -117,6 +119,7 @@ public class UltiPawEditor : UnityEditor.Editor
         
         // Subscribe to play mode state changes
         EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+        EditorApplication.projectChanged += OnProjectChanged;
     }
     
     private void OnDisable()
@@ -132,12 +135,19 @@ public class UltiPawEditor : UnityEditor.Editor
         }
 
         UltiPawConnectivityMonitor.StatusChanged -= RepaintFromConnectivityMonitor;
+        EditorApplication.projectChanged -= OnProjectChanged;
     }
     
     private void OnPlayModeStateChanged(PlayModeStateChange state)
     {
         advancedModule?.OnPlayModeStateChanged(state);
         avatarOptionsModule?.OnPlayModeStateChanged(state);
+    }
+
+    private void OnProjectChanged()
+    {
+        LoadImportedVersions();
+        Repaint();
     }
 
     private async void StartAsyncInitialization()
@@ -283,6 +293,8 @@ public class UltiPawEditor : UnityEditor.Editor
                 SafeUiCall(() => authModule.DrawMagicSyncAuth());
             }
 
+            bool showOfflineSavedVersionsUi = !isAuthenticated && importedVersions != null && importedVersions.Count > 0;
+
             if (isAuthenticated)
             {
                 SafeUiCall(() => warningsModule?.Draw());
@@ -290,6 +302,12 @@ public class UltiPawEditor : UnityEditor.Editor
                 SafeUiCall(() => versionModule.Draw());
                 SafeUiCall(() => avatarOptionsModule?.Draw());
                 SafeUiCall(() => adjustMaterialModule?.Draw());
+            }
+            else if (showOfflineSavedVersionsUi)
+            {
+                SafeUiCall(DrawOfflineSavedVersionsInfo);
+                SafeUiCall(() => versionModule.Draw());
+                SafeUiCall(() => avatarOptionsModule?.Draw());
             }
 
             // Logout moved to AccountModule
@@ -436,11 +454,21 @@ public class UltiPawEditor : UnityEditor.Editor
             }
         }
     }
+
+    private void DrawOfflineSavedVersionsInfo()
+    {
+        EditorGUILayout.HelpBox("Imported saved versions are available offline. You can apply them or reset to the original Winterpaw without logging in.", MessageType.Info);
+    }
     
     public void CheckAuthentication()
     {
         authToken = AuthenticationService.GetAuth()?.token;
         isAuthenticated = !string.IsNullOrEmpty(authToken);
+        if (!isAuthenticated)
+        {
+            accessDeniedAssetId = null;
+            fetchError = null;
+        }
         accountModule?.Refresh();
     }
 
@@ -507,13 +535,82 @@ public class UltiPawEditor : UnityEditor.Editor
         }
     }
 
+    public void LoadImportedVersions()
+    {
+        importedVersions.Clear();
+
+        string versionsRoot = Path.Combine(Application.dataPath, "UltiPaw", "versions");
+        if (!Directory.Exists(versionsRoot))
+        {
+            return;
+        }
+
+        try
+        {
+            foreach (string versionJsonPath in Directory.GetFiles(versionsRoot, "version.json", SearchOption.AllDirectories))
+            {
+                try
+                {
+                    string json = File.ReadAllText(versionJsonPath);
+                    var version = JsonConvert.DeserializeObject<UltiPawVersion>(json);
+                    if (version == null || string.IsNullOrWhiteSpace(version.version) || string.IsNullOrWhiteSpace(version.defaultAviVersion))
+                    {
+                        UltiPawLogger.LogWarning($"[UltiPaw] Ignoring invalid imported version metadata at {versionJsonPath}");
+                        continue;
+                    }
+
+                    version.isImported = true;
+                    importedVersions.Add(version);
+                }
+                catch (Exception ex)
+                {
+                    UltiPawLogger.LogWarning($"[UltiPaw] Failed to parse imported version metadata at {versionJsonPath}: {ex.Message}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            UltiPawLogger.LogError($"[UltiPaw] Failed to scan imported versions: {ex.Message}");
+        }
+    }
+
     public List<UltiPawVersion> GetAllVersions()
     {
-        // Combine server versions with unsubmitted ones, preventing duplicates
-        var allVersions = new List<UltiPawVersion>(serverVersions);
-        var unsubmittedToAdd = unsubmittedVersions.Where(uv => !allVersions.Any(sv => sv.Equals(uv)));
-        allVersions.AddRange(unsubmittedToAdd);
-        return allVersions.OrderByDescending(v => ParseVersion(v.version)).ToList();
+        if (!isAuthenticated)
+        {
+            return importedVersions
+                .Where(v => v != null)
+                .OrderByDescending(v => ParseVersion(v.version))
+                .ToList();
+        }
+
+        // Merge sources while letting local variants override matching server entries.
+        var merged = new Dictionary<string, UltiPawVersion>(StringComparer.Ordinal);
+
+        foreach (var version in serverVersions)
+        {
+            if (version == null) continue;
+            merged[GetVersionKey(version)] = version;
+        }
+
+        foreach (var version in importedVersions)
+        {
+            if (version == null) continue;
+            merged[GetVersionKey(version)] = version;
+        }
+
+        foreach (var version in unsubmittedVersions)
+        {
+            if (version == null) continue;
+            merged[GetVersionKey(version)] = version;
+        }
+
+        return merged.Values.OrderByDescending(v => ParseVersion(v.version)).ToList();
+    }
+
+    private static string GetVersionKey(UltiPawVersion version)
+    {
+        return $"{version.version}|{version.defaultAviVersion}";
     }
     
     public Version ParseVersion(string v)
