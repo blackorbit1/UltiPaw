@@ -8,27 +8,18 @@ namespace UltiPawEditorUtils
     public static class MeshFinder
     {
         /// <summary>
-        /// Finds a SkinnedMeshRenderer by name, prioritizing children directly under the root.
+        /// Finds a SkinnedMeshRenderer by name, prioritizing the shallowest match under the root.
         /// This avoids picking up nested meshes (like those in Armature) when a root-level one exists.
         /// </summary>
         public static SkinnedMeshRenderer FindMeshPrioritizingRoot(Transform root, string meshName)
         {
             if (root == null || string.IsNullOrEmpty(meshName)) return null;
 
-            // Priority 1: Direct children of the root
-            for (int i = 0; i < root.childCount; i++)
-            {
-                Transform child = root.GetChild(i);
-                if (child.name.Equals(meshName, StringComparison.OrdinalIgnoreCase))
-                {
-                    var smr = child.GetComponent<SkinnedMeshRenderer>();
-                    if (smr != null) return smr;
-                }
-            }
-
-            // Priority 2: Anywhere else in the hierarchy (fallback)
             var allSmrs = root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
-            return allSmrs.FirstOrDefault(s => s.gameObject.name.Equals(meshName, StringComparison.OrdinalIgnoreCase));
+            return allSmrs
+                .Where(s => s != null && s.gameObject.name.Equals(meshName, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(s => GetDepthUnderRoot(root, s.transform))
+                .FirstOrDefault();
         }
 
         /// <summary>
@@ -38,6 +29,20 @@ namespace UltiPawEditorUtils
         {
             if (root == null) return Array.Empty<SkinnedMeshRenderer>();
             return root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+        }
+
+        private static int GetDepthUnderRoot(Transform root, Transform target)
+        {
+            if (root == null || target == null) return int.MaxValue;
+
+            int depth = 0;
+            for (var current = target; current != null; current = current.parent)
+            {
+                if (current == root) return depth;
+                depth++;
+            }
+
+            return int.MaxValue;
         }
     }
 }

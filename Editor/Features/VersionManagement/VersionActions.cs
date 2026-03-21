@@ -531,9 +531,8 @@ public class VersionActions
 
     private void RefreshBodyMeshFromFBX(Transform root, string fbxPath)
     {
-        // Find the Body SkinnedMeshRenderer in the scene hierarchy
-        var bodyMesh = root.GetComponentsInChildren<SkinnedMeshRenderer>(true)
-            .FirstOrDefault(s => s.gameObject.name.Equals("Body", System.StringComparison.OrdinalIgnoreCase));
+        // Find the shallowest Body SkinnedMeshRenderer in the scene hierarchy.
+        var bodyMesh = MeshFinder.FindMeshPrioritizingRoot(root, "Body");
         
         if (bodyMesh == null)
         {
@@ -549,9 +548,8 @@ public class VersionActions
             return;
         }
         
-        // Find the Body mesh in the FBX
-        var fbxBodyMesh = fbxObject.GetComponentsInChildren<SkinnedMeshRenderer>(true)
-            .FirstOrDefault(s => s.gameObject.name.Equals("Body", System.StringComparison.OrdinalIgnoreCase));
+        // Find the shallowest Body mesh in the FBX too, so refresh targets the intended mesh there as well.
+        var fbxBodyMesh = MeshFinder.FindMeshPrioritizingRoot(fbxObject.transform, "Body");
         
         if (fbxBodyMesh?.sharedMesh == null)
         {
