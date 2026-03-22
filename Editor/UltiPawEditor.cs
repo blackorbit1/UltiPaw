@@ -64,6 +64,11 @@ public class UltiPawEditor : UnityEditor.Editor
     // Runtime state for detection
     public string currentAppliedFbxHash;
     public bool customWarningShown;
+
+    public bool HasServerAccess
+    {
+        get { return UltiPawPackageVersionService.HasServerAccess(authToken); }
+    }
     
     private void OnEnable()
     {
@@ -111,6 +116,8 @@ public class UltiPawEditor : UnityEditor.Editor
         CheckAuthentication();
         UltiPawConnectivityMonitor.StatusChanged += RepaintFromConnectivityMonitor;
         UltiPawConnectivityMonitor.EnsureCheckStarted(authToken);
+        UltiPawPackageVersionService.StatusChanged += RepaintFromPackageVersionStatus;
+        UltiPawPackageVersionService.EnsureCheckStarted(authToken);
         
         // Ensure modules are enabled
         versionModule.OnEnable();
@@ -136,6 +143,7 @@ public class UltiPawEditor : UnityEditor.Editor
         }
 
         UltiPawConnectivityMonitor.StatusChanged -= RepaintFromConnectivityMonitor;
+        UltiPawPackageVersionService.StatusChanged -= RepaintFromPackageVersionStatus;
         EditorApplication.projectChanged -= OnProjectChanged;
     }
     
@@ -195,7 +203,7 @@ public class UltiPawEditor : UnityEditor.Editor
         }
 
         var cached = versionService.GetCachedVersions(fbxPath, authToken);
-        if (cached.versions.Count > 0)
+        if (HasServerAccess && cached.versions.Count > 0)
         {
             serverVersions = cached.versions;
             recommendedVersion = cached.recommended;
@@ -208,7 +216,7 @@ public class UltiPawEditor : UnityEditor.Editor
         }
 
         // Start background version fetch (will update UI when complete)
-        if (isAuthenticated)
+        if (HasServerAccess)
         {
             fetchAttempted = true;
             versionService.StartVersionFetchInBackground(fbxPath, authToken, useCache: false);
@@ -294,9 +302,20 @@ public class UltiPawEditor : UnityEditor.Editor
                 SafeUiCall(() => authModule.DrawMagicSyncAuth());
             }
 
-            bool showOfflineSavedVersionsUi = !isAuthenticated && importedVersions != null && importedVersions.Count > 0;
+            bool hasMajorUpdateLockout = UltiPawPackageVersionService.RequiresMajorUpdate;
+            bool showOfflineSavedVersionsUi = !HasServerAccess && importedVersions != null && importedVersions.Count > 0;
 
-            if (isAuthenticated)
+            if (hasMajorUpdateLockout)
+            {
+                SafeUiCall(DrawMajorUpdateRequiredInfo);
+                if (showOfflineSavedVersionsUi)
+                {
+                    SafeUiCall(DrawOfflineSavedVersionsInfo);
+                    SafeUiCall(() => versionModule.Draw());
+                    SafeUiCall(() => avatarOptionsModule?.Draw());
+                }
+            }
+            else if (HasServerAccess)
             {
                 SafeUiCall(() => warningsModule?.Draw());
                 SafeUiCall(() => creatorModule.Draw());
@@ -372,8 +391,7 @@ public class UltiPawEditor : UnityEditor.Editor
             {
                 if (AuthenticationService.RemoveAuth())
                 {
-                    isAuthenticated = false;
-                    authToken = null;
+                    CheckAuthentication();
                     Repaint();
                 }
             }
@@ -460,6 +478,30 @@ public class UltiPawEditor : UnityEditor.Editor
     {
         EditorGUILayout.HelpBox("Imported saved versions are available offline. You can apply them or reset to the original Winterpaw without logging in.", MessageType.Info);
     }
+
+    private void DrawMajorUpdateRequiredInfo()
+    {
+        var status = UltiPawPackageVersionService.CurrentStatus;
+        if (status == null || !status.requiresMajorUpdate)
+        {
+            return;
+        }
+
+        var titleStyle = new GUIStyle(EditorStyles.boldLabel);
+        titleStyle.fontSize = 20;
+        titleStyle.alignment = TextAnchor.MiddleCenter;
+        titleStyle.normal.textColor = new Color(0.85f, 0.15f, 0.15f);
+
+        EditorGUILayout.Space(8f);
+        EditorGUILayout.LabelField("Update needed !", titleStyle, GUILayout.Height(28f));
+        EditorGUILayout.Space(4f);
+
+        string message = string.IsNullOrWhiteSpace(status.updateMessage)
+            ? $"A new major version of UltiPaw is available.\n\nCurrent version: {status.currentVersion}\nLatest version: {status.latestVersion}\n\nUpdate the package from VCC before using connected features."
+            : status.updateMessage;
+
+        EditorGUILayout.HelpBox(message, MessageType.Warning);
+    }
     
     public void CheckAuthentication()
     {
@@ -470,6 +512,7 @@ public class UltiPawEditor : UnityEditor.Editor
             accessDeniedAssetId = null;
             fetchError = null;
         }
+        UltiPawPackageVersionService.EnsureCheckStarted(authToken, true);
         accountModule?.Refresh();
     }
 
@@ -488,7 +531,7 @@ public class UltiPawEditor : UnityEditor.Editor
         }
 
         string fbxPath = GetCurrentFBXPath();
-        if (!string.IsNullOrEmpty(fbxPath) && isAuthenticated)
+        if (!string.IsNullOrEmpty(fbxPath) && HasServerAccess)
         {
             versionService?.StartVersionFetchInBackground(fbxPath, authToken, useCache: false);
         }
@@ -589,7 +632,7 @@ public class UltiPawEditor : UnityEditor.Editor
 
     public List<UltiPawVersion> GetAllVersions()
     {
-        if (!isAuthenticated)
+        if (!HasServerAccess)
         {
             return importedVersions
                 .Where(v => v != null)
@@ -637,6 +680,11 @@ public class UltiPawEditor : UnityEditor.Editor
     public int CompareVersions(string v1, string v2) => ParseVersion(v1).CompareTo(ParseVersion(v2));
 
     private void RepaintFromConnectivityMonitor()
+    {
+        Repaint();
+    }
+
+    private void RepaintFromPackageVersionStatus()
     {
         Repaint();
     }

@@ -76,6 +76,7 @@ public class VersionActions
 
     private IEnumerator FetchVersionsCoroutine()
     {
+        if (!editor.HasServerAccess) yield break;
         if (editor.isFetching) yield break;
         editor.isFetching = true;
         editor.warningsModule.Clear();
