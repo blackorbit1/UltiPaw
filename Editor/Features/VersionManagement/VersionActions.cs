@@ -339,7 +339,37 @@ public class VersionActions
                 if (!isReset)
                 {
                     string packagePath = UltiPawUtils.CombineUnityPath(dataPath, "ultipaw logic.unitypackage");
-                    fileManagerService.InstantiateLogicPrefab(packagePath, root);
+                    IEnumerator importLogicRoutine = null;
+                    try
+                    {
+                        importLogicRoutine = fileManagerService.InstantiateLogicPrefabCoroutine(packagePath, root);
+                    }
+                    catch (Exception ex)
+                    {
+                        editor.warningsModule.AddWarning(ex.Message, MessageType.Error, "Logic package import failed");
+                        yield break;
+                    }
+
+                    while (true)
+                    {
+                        object current;
+                        try
+                        {
+                            if (importLogicRoutine == null || !importLogicRoutine.MoveNext())
+                            {
+                                break;
+                            }
+
+                            current = importLogicRoutine.Current;
+                        }
+                        catch (Exception ex)
+                        {
+                            editor.warningsModule.AddWarning(ex.Message, MessageType.Error, "Logic package import failed");
+                            yield break;
+                        }
+
+                        yield return current;
+                    }
                 }
             }
             
