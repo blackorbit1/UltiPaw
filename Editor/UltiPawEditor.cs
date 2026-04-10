@@ -11,6 +11,9 @@ using Newtonsoft.Json;
 [CustomEditor(typeof(UltiPaw))]
 public class UltiPawEditor : UnityEditor.Editor
 {
+    private const float ConnectivityOverrideCardHeight = 86f;
+    private const float ConnectivityOverrideCardSpacing = 6f;
+
     // --- Target & Serialized Object ---
     public UltiPaw ultiPawTarget;
     public new SerializedObject serializedObject;
@@ -452,7 +455,13 @@ public class UltiPawEditor : UnityEditor.Editor
 
     private void DrawConnectivityDiagnosticsPanel()
     {
-        if (string.IsNullOrEmpty(UltiPawConnectivityMonitor.FailureReport))
+        bool isDevModeEnabled = UltiPawUtils.isDevEnvironment;
+        ApiSimulationMode simulationMode = UltiPawUtils.apiSimulationMode;
+        bool isFakeNetworkErrorEnabled = simulationMode != ApiSimulationMode.Off;
+        bool hasOverrideUi = isDevModeEnabled || isFakeNetworkErrorEnabled;
+        bool hasFailureReport = !string.IsNullOrEmpty(UltiPawConnectivityMonitor.FailureReport);
+
+        if (!hasFailureReport && !hasOverrideUi)
         {
             return;
         }
@@ -462,15 +471,101 @@ public class UltiPawEditor : UnityEditor.Editor
         {
             EditorGUILayout.HelpBox("The tool cannot connect to the server, copy the data bellow and send it to @blackorbit on discord", MessageType.Error);
 
-            connectivityReportScroll = EditorGUILayout.BeginScrollView(connectivityReportScroll, GUILayout.MinHeight(140f));
-            var style = new GUIStyle(EditorStyles.textArea) { wordWrap = false };
-            EditorGUILayout.TextArea(UltiPawConnectivityMonitor.FailureReport, style, GUILayout.ExpandHeight(true));
-            EditorGUILayout.EndScrollView();
-
-            if (GUILayout.Button("copy in the clipboard", GUILayout.Height(24f)))
+            if (isDevModeEnabled || isFakeNetworkErrorEnabled)
             {
-                EditorGUIUtility.systemCopyBuffer = UltiPawConnectivityMonitor.FailureReport;
+                EditorGUILayout.LabelField("Some advanced connectivity overrides are enabled.", EditorStyles.boldLabel);
+                DrawConnectivityOverrideBoxes(isDevModeEnabled, isFakeNetworkErrorEnabled, simulationMode);
+
+                Color oldColor = GUI.backgroundColor;
+                GUI.backgroundColor = Color.green;
+                if (GUILayout.Button("Refresh with overrides off", GUILayout.Height(32f)))
+                {
+                    RefreshWithOverridesOff();
+                }
+                GUI.backgroundColor = oldColor;
             }
+
+            if (hasFailureReport)
+            {
+                connectivityReportScroll = EditorGUILayout.BeginScrollView(connectivityReportScroll, GUILayout.MinHeight(140f));
+                var style = new GUIStyle(EditorStyles.textArea) { wordWrap = false };
+                EditorGUILayout.TextArea(UltiPawConnectivityMonitor.FailureReport, style, GUILayout.ExpandHeight(true));
+                EditorGUILayout.EndScrollView();
+
+                if (GUILayout.Button("copy in the clipboard", GUILayout.Height(24f)))
+                {
+                    EditorGUIUtility.systemCopyBuffer = UltiPawConnectivityMonitor.FailureReport;
+                }
+            }
+        }
+    }
+
+    private void DrawConnectivityOverrideBoxes(bool isDevModeEnabled, bool isFakeNetworkErrorEnabled, ApiSimulationMode simulationMode)
+    {
+        int cardCount = 0;
+        if (isDevModeEnabled) cardCount++;
+        if (isFakeNetworkErrorEnabled) cardCount++;
+        if (cardCount <= 0) return;
+
+        Rect rowRect = GUILayoutUtility.GetRect(0f, ConnectivityOverrideCardHeight, GUILayout.ExpandWidth(true));
+        float cardWidth = (rowRect.width - (ConnectivityOverrideCardSpacing * (cardCount - 1))) / cardCount;
+        float currentX = rowRect.x;
+
+        if (isDevModeEnabled)
+        {
+            Rect cardRect = new Rect(currentX, rowRect.y, cardWidth, ConnectivityOverrideCardHeight);
+            DrawConnectivityOverrideBox(
+                cardRect,
+                "Dev mode",
+                "Requests are using the dev environment endpoints.",
+                DisableDevModeOverrideAndRefresh);
+            currentX += cardWidth + ConnectivityOverrideCardSpacing;
+        }
+
+        if (isFakeNetworkErrorEnabled)
+        {
+            Rect cardRect = new Rect(currentX, rowRect.y, cardWidth, ConnectivityOverrideCardHeight);
+            DrawConnectivityOverrideBox(
+                cardRect,
+                "Fake network error",
+                GetConnectivitySimulationLabel(simulationMode),
+                DisableFakeNetworkErrorOverrideAndRefresh);
+        }
+    }
+
+    private static string GetConnectivitySimulationLabel(ApiSimulationMode simulationMode)
+    {
+        switch (simulationMode)
+        {
+            case ApiSimulationMode.TransportFailure:
+                return "Transport Failure";
+            case ApiSimulationMode.SslFailure:
+                return "SSL Failure";
+            default:
+                return "Off";
+        }
+    }
+
+    private void DrawConnectivityOverrideBox(Rect rect, string title, string description, Action onTurnOff)
+    {
+        GUI.Box(rect, GUIContent.none, EditorStyles.helpBox);
+
+        Rect contentRect = new Rect(rect.x + 8f, rect.y + 8f, rect.width - 16f, rect.height - 16f);
+        Rect titleRect = new Rect(contentRect.x, contentRect.y, contentRect.width, 18f);
+        GUI.Label(titleRect, title, EditorStyles.boldLabel);
+
+        float buttonHeight = 22f;
+        float buttonWidth = Mathf.Min(90f, contentRect.width);
+        Rect buttonRect = new Rect(contentRect.x, contentRect.yMax - buttonHeight, buttonWidth, buttonHeight);
+
+        float descriptionY = titleRect.yMax + 4f;
+        float descriptionHeight = Mathf.Max(16f, buttonRect.y - descriptionY - 6f);
+        Rect descriptionRect = new Rect(contentRect.x, descriptionY, contentRect.width, descriptionHeight);
+        GUI.Label(descriptionRect, description, EditorStyles.wordWrappedLabel);
+
+        if (GUI.Button(buttonRect, "Turn off"))
+        {
+            onTurnOff?.Invoke();
         }
     }
 
@@ -535,6 +630,47 @@ public class UltiPawEditor : UnityEditor.Editor
         {
             versionService?.StartVersionFetchInBackground(fbxPath, authToken, useCache: false);
         }
+    }
+
+    public void DisableDevModeOverride()
+    {
+        if (!UltiPawUtils.isDevEnvironment) return;
+        UltiPawUtils.isDevEnvironment = false;
+        CheckAuthentication();
+        Repaint();
+    }
+
+    public void DisableFakeNetworkErrorOverride()
+    {
+        if (UltiPawUtils.apiSimulationMode == ApiSimulationMode.Off) return;
+        UltiPawUtils.apiSimulationMode = ApiSimulationMode.Off;
+        Repaint();
+    }
+
+    public void DisableDevModeOverrideAndRefresh()
+    {
+        DisableDevModeOverride();
+        UltiPawConnectivityMonitor.Retry(authToken);
+        RefreshAccountAndVersions();
+        Repaint();
+    }
+
+    public void DisableFakeNetworkErrorOverrideAndRefresh()
+    {
+        DisableFakeNetworkErrorOverride();
+        UltiPawConnectivityMonitor.Retry(authToken);
+        RefreshAccountAndVersions();
+        Repaint();
+    }
+
+    public void RefreshWithOverridesOff()
+    {
+        DisableDevModeOverride();
+        DisableFakeNetworkErrorOverride();
+        CheckAuthentication();
+        UltiPawConnectivityMonitor.Retry(authToken);
+        RefreshAccountAndVersions();
+        Repaint();
     }
 
     private void FindSerializedProperties()
