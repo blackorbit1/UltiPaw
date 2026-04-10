@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 using UltiPawEditorUtils;
 
@@ -558,6 +559,7 @@ public class VersionActions
         EditorCoroutineUtility.StartCoroutineOwnerless(RecalculateCurrentFbxHashCoroutine());
 
         EditorUtility.SetDirty(editor.ultiPawTarget);
+        AutoSaveProjectAfterVersionSwitch();
         editor.Repaint();
     }
     
@@ -761,6 +763,28 @@ public class VersionActions
 
         segments.Reverse();
         return string.Join("/", segments);
+    }
+
+    private void AutoSaveProjectAfterVersionSwitch()
+    {
+        try
+        {
+            AssetDatabase.SaveAssets();
+            bool savedScenes = EditorSceneManager.SaveOpenScenes();
+            if (!savedScenes)
+            {
+                UltiPawLogger.LogWarning("[VersionActions] Auto-save completed for assets, but one or more open scenes could not be saved.");
+            }
+            else
+            {
+                UltiPawLogger.Log("[VersionActions] Auto-saved assets and open scenes after version change.");
+            }
+        }
+        catch (Exception ex)
+        {
+            UltiPawLogger.LogError($"[VersionActions] Auto-save after version change failed: {ex.Message}");
+            editor.warningsModule.AddWarning("The version switch succeeded, but UltiPaw could not auto-save the project. Save the project manually to persist the scene state.", MessageType.Warning, "Auto-save failed");
+        }
     }
 
     private void RefreshBodyMeshFromFBX(Transform root, string fbxPath)
